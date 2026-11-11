@@ -240,3 +240,9 @@ permissions, `enablement: true`, artifact paths, no `--force` or
 `--legacy-peer-deps`). `python tools/ci_check.py` passed 7/7, including its own
 workflow integrity check. The clean-room chain then passed with the numbers in
 §10; the root bundle is 953.59 kB and hashes to `2e69b066…`.
+
+The verified tree was pushed to `main` as `98d649f` (fast-forward
+`410a321..98d649f`). The GitHub Actions run itself could not be read from the
+Cloud sandbox: `gh` has no authenticated host and the anonymous Actions API
+returns HTTP 403 for the private repository. Read the status on the repository's
+**Actions** tab; both workflows trigger on a push to `main`.
