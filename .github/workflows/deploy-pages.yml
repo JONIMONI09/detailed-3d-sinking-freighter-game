@@ -18,6 +18,9 @@ concurrency:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -45,8 +48,16 @@ jobs:
           mkdir -p dist/sonnet
           npx vite build detailed-3d-sinking-freighter-game_sonnet --outDir ../dist/sonnet --base ./
 
+      - name: Verify Pages artifact
+        run: |
+          test -f dist/index.html
+          test -f dist/sonnet/index.html
+          du -sh dist
+
       - name: Setup Pages
         uses: actions/configure-pages@v4
+        with:
+          enablement: true
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
