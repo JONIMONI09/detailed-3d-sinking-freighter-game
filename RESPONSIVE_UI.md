@@ -234,5 +234,39 @@ Root spot checks after the Sonnet change: 1280×800 23/23 buttons, 390×844
 The root bundle hash moves from `2e69b066…` (German Sonnet tree) to
 `1c9d3b60…` although no root source changed: Tailwind's project-wide scan
 includes the Sonnet source, so the generated utility CSS changes. Removing the
-Sonnet folder before a root build yields `8ccb0d75…`. The root UI itself was
-re-measured and is unaffected.
+Sonnet folder before a root build yields `8ccb0d75…`.The root UI itself was re-measured and is unaffected.
+
+---
+
+## 10. Fullscreen and touch-pointer regression (2026-11-11)
+
+The Android crash report at `785x303` pointed to the root look zone:
+`InvalidStateError: Failed to execute 'setPointerCapture'` escaped the handler
+and reached the global crash guard. The root game also had no fullscreen
+control at all.
+
+Fix:
+
+- All pointer captures in both editions go through `safeSetPointerCapture()`,
+  which contains `InvalidStateError` and ignores disconnected/invalid targets.
+- The root HUD has a fullscreen button; both editions use the awaited
+  `toggleFullscreen()` helper and display a status message when the browser
+  blocks the request.
+- `tests/browser-guards.test.mjs` is part of `npm test`, and `ci.yml` now runs
+  the full test command.
+
+Measured after the fix:
+
+| Viewport | Edition | Buttons fully visible | Clipped | Covered |
+| :--- | :--- | :---: | :---: | :---: |
+| 1280×800 | Root | 22/22 | 0 | 0 |
+| 390×844 | Root | 18/18 | 0 | 0 |
+| 785×303 | Root | 18/18 | 0 | 0 |
+| 1280×800 | Sonnet menu | 5/5 | 0 | 0 |
+| 390×844 | Sonnet menu | 5/5 | 0 | 0 |
+
+The `785x303` pointer zone exists and a synthetic `pointerdown` with invalid
+pointer id no longer throws or shows the crash screen. Real clicks enter
+fullscreen in both editions (`document.fullscreenElement === HTML`); a request
+from a background tab is rejected by the browser and is reported by the new
+status message. The layout counts above include the new fullscreen button.

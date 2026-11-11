@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Game } from "../game/game";
 import type { Settings } from "../game/settings";
+import { safeSetPointerCapture } from "../lib/browserGuards";
 
 interface Props {
   game: Game | null;
@@ -28,7 +29,7 @@ function Btn({ label, size = 54, unit, op, onDown, onUp, style, active, small }:
       role="button"
       onPointerDown={(e) => {
         e.stopPropagation();
-        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+        safeSetPointerCapture(e.currentTarget as HTMLElement, e.pointerId);
         onDown();
       }}
       onPointerUp={(e) => {

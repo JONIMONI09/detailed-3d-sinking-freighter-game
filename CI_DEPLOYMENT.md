@@ -323,3 +323,52 @@ artifact checks and no force flags. `python tools/ci_check.py` passed 7/7.
 The GitHub Actions run itself still cannot be read from this sandbox (`gh`
 unauthenticated, anonymous API 403 for the private repository); check the
 repository's **Actions** tab. Both workflows trigger on the push to `main`.
+
+---
+
+## 13. Fullscreen and touch-pointer crash fix (2026-11-11)
+
+The reported Android crash at `785x303` was reproduced from the crash log:
+`InvalidStateError: Failed to execute 'setPointerCapture'` in the root look
+zone. Android Chrome can cancel a pointer before React's `pointerdown` handler
+runs, so the unguarded capture call threw and reached the global crash guard.
+
+Changes:
+
+1. Both editions now use `safeSetPointerCapture()` from
+   `src/lib/browserGuards.ts` (Sonnet has its own copy). It rejects null,
+   disconnected and invalid targets and contains `InvalidStateError`, so touch
+   movement continues without capture instead of crashing.
+2. The root HUD gained a fullscreen button. Both editions use the awaited
+   `toggleFullscreen()` helper, which catches the **promise rejection** that a
+   synchronous `try/catch` cannot catch. A blocked request now shows a short
+   status message instead of silently doing nothing.
+3. `tests/browser-guards.test.mjs` covers throwing/disconnected pointer targets,
+   successful and rejected fullscreen requests, exit, unsupported APIs and both
+   edition helper copies. `npm test` now runs physics + browser guards + Python;
+   `ci.yml` invokes `npm test` instead of only the Python suite, so these tests
+   run on GitHub.
+
+Browser verification (real Playwright click in the active tab):
+
+- Root fullscreen: `document.fullscreenElement` becomes `HTML`; button changes
+  to *Exit fullscreen*. Sonnet fullscreen works the same way. A background tab
+  rejects with `TypeError: not granted`; that is a browser focus rule and is
+  surfaced by the new status message, not an application crash.
+- Original viewport `785x303`: 18/18 buttons fully visible, 0 clipped, 0 covered;
+  synthetic `pointerdown` with an invalid pointer id produces no error and no
+  crash screen.
+- `390x844`: 18/18 buttons, 0 clipped/covered, pointer zone present.
+- `1280x800`: 22/22 buttons, 0 clipped/covered. Sonnet menu: 5/5 at both
+  `1280x800` and `390x844`.
+
+Final artifacts after this fix:
+
+```
+b590882086dbd9be6dba4e8fce0d5831ac03e1205211997196c728e11b67eb72  dist/index.html
+7ea4957dfe82f83ac489e159b5683d0a2f056424329399482cd1ffa5d1a9635f  dist/sonnet/index.html
+7ea4957dfe82f83ac489e159b5683d0a2f056424329399482cd1ffa5d1a9635f  detailed-3d-sinking-freighter-game_sonnet/dist/index.html
+```
+
+Root build: 956.06 kB (gzip 251.25 kB). Sonnet build: 1,001.09 kB
+(gzip 275.92 kB).

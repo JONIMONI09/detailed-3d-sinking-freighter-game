@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Settings,
   FileText,
@@ -20,6 +20,8 @@ import {
   VolumeX,
   Radio,
   ShieldAlert,
+  Maximize,
+  Minimize,
 } from 'lucide-react';
 import {
   AudioSettings,
@@ -29,6 +31,7 @@ import {
   WEAPONS_LIST,
 } from '../types/game';
 import { SimulationCommandRef } from './MaritimeViewport3D';
+import { toggleFullscreen } from '../lib/browserGuards';
 import { soundEngine } from '../audio/SoundEngine';
 
 interface NavalHudOverlayProps {
@@ -58,6 +61,29 @@ export const NavalHudOverlay: React.FC<NavalHudOverlayProps> = ({
       (window.innerHeight <= 560 || window.innerWidth < 640)
   );
 
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const [fullscreenBlocked, setFullscreenBlocked] = useState<boolean>(false);
+
+  useEffect(() => {
+    const doc = document as Document & { webkitFullscreenElement?: Element | null };
+    const sync = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement || doc.webkitFullscreenElement));
+    };
+    document.addEventListener('fullscreenchange', sync);
+    document.addEventListener('webkitfullscreenchange', sync);
+    sync();
+    return () => {
+      document.removeEventListener('fullscreenchange', sync);
+      document.removeEventListener('webkitfullscreenchange', sync);
+    };
+  }, []);
+
+  const handleFullscreen = async () => {
+    const result = await toggleFullscreen();
+    setIsFullscreen(result.active);
+    setFullscreenBlocked(result.error);
+  };
+
   const statusColor =
     telemetry.shipStatus === 'NOMINAL'
       ? 'text-emerald-400 border-emerald-500/40 bg-emerald-500/10'
@@ -73,6 +99,15 @@ export const NavalHudOverlay: React.FC<NavalHudOverlayProps> = ({
           <div className="px-4 py-1.5 rounded-full bg-sky-950/90 border border-sky-400 text-sky-200 font-mono-tech text-xs font-bold tracking-wider">
             UNDERWATER // PRESS [SPACE] TO SURFACE
           </div>
+        </div>
+      )}
+
+      {fullscreenBlocked && (
+        <div
+          role="status"
+          className="pointer-events-none fixed left-1/2 top-24 z-30 -translate-x-1/2 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-bold text-slate-950 shadow-xl"
+        >
+          Fullscreen is blocked by this browser. Use the browser menu.
         </div>
       )}
 
@@ -204,6 +239,26 @@ export const NavalHudOverlay: React.FC<NavalHudOverlayProps> = ({
           >
             <RotateCcw className="w-4 h-4" />
             <span className="hidden md:inline short:hidden">RESET</span>
+          </button>
+
+          {/* Fullscreen Toggle */}
+          <button
+            onClick={() => void handleFullscreen()}
+            className="naval-panel rounded-xl p-2 short:p-1.5 text-slate-300 hover:text-white cursor-pointer transition"
+            title={
+              fullscreenBlocked
+                ? 'Fullscreen is blocked by this browser'
+                : isFullscreen
+                ? 'Exit fullscreen'
+                : 'Enter fullscreen'
+            }
+            aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+          >
+            {isFullscreen ? (
+              <Minimize className="w-4 h-4 text-amber-400" />
+            ) : (
+              <Maximize className="w-4 h-4 text-amber-400" />
+            )}
           </button>
 
           {/* Settings Modal Button */}

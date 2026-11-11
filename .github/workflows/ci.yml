@@ -33,8 +33,8 @@ jobs:
           npx tsc --noEmit
           npx tsc --project detailed-3d-sinking-freighter-game_sonnet/tsconfig.json --noEmit
 
-      - name: Run Python CI Integrity Suite
-        run: python tools/ci_check.py
+      - name: Run Test Suite (Physics, Browser Guards, Python Integrity)
+        run: npm test
 
       - name: Build Root Distribution
         run: npx vite build

@@ -55,6 +55,12 @@ An advanced interactive maritime simulation built with **Vite**, **React 19**, *
 | **`Right Mouse Click`**| Detonate Remote Charges |
 | **`C`** | Toggle Camera Mode (First Person / Free Orbit) |
 
+The HUD top bar also has a fullscreen toggle. It uses the real Fullscreen API;
+if the browser blocks a request (for example while the tab is in the
+background), the game shows a status message instead of throwing. Both editions
+share the guarded pointer-capture and fullscreen helpers and include regression
+tests for them.
+
 ---
 
 ## 📁 Repository Structure
@@ -137,7 +143,9 @@ Details and measurements: [RESPONSIVE_UI.md](RESPONSIVE_UI.md).
 
 ## 🚀 CI & GitHub Pages Deployment
 
-Both editions are verified on every push to `main`:
+Both editions are verified on every push to `main`. `npm test` runs the physics
+suite, the browser-guard regression suite and the Python integrity checks; CI
+invokes the same command:
 
 ```bash
 npm ci

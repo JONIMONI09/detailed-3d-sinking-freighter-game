@@ -27,6 +27,13 @@
 - **Verified:** both Sonnet build paths produce the same 1,000.20 kB artifact and hash; scans of both bundles find 0 German markers and 0 umlauts; both typechecks, `npm test` and both Vite builds exit 0. Preview at 1280×800 and 390×844 shows 5/5 menu buttons and 6/6 help buttons with 0 clipped/covered, settings scroll with *Done* visible. The root UI re-measured 23/23 and 21/21 buttons with 0 clipped/covered.
 - **Lesson:** Scan the built bundle, not only JSX; template literals and fallback labels are easy to miss. Also expect the root single-file hash to move when a project-wide Tailwind scan sees a sibling edition's source — verify the root UI instead of assuming a hash change means root code changed.
 
+### [RESOLVED] Android Fullscreen / Touch Crash at 785×303
+- **Issue:** The deployed root game crashed with `InvalidStateError: Failed to execute 'setPointerCapture'` in the touch look zone at `785x303`; the fullscreen control appeared not to work.
+- **Root Cause:** The root look/joystick handlers called `setPointerCapture` unguarded, and Android Chrome can cancel a pointer before React's `pointerdown` runs. The root edition had no fullscreen control; the Sonnet function used only a synchronous `try/catch`, which cannot catch the promise rejection from `requestFullscreen()`.
+- **Fix:** Added `safeSetPointerCapture()` and awaited `toggleFullscreen()` helpers to both editions; guarded all capture calls; added a root HUD fullscreen button and a visible status message for blocked requests. Added `tests/browser-guards.test.mjs` (14 tests), wired it into `npm test`, and made `ci.yml` run `npm test` instead of only the Python suite.
+- **Verified:** Both editions enter real fullscreen on an active-tab Playwright click (`document.fullscreenElement === HTML`); a background tab returns `TypeError: not granted` and shows the status instead of crashing. At `785x303` root shows 18/18 buttons, 0 clipped/covered, pointer zone present, invalid pointer id no longer throws. At `1280x800` root 22/22; at `390x844` root 18/18 and Sonnet menu 5/5.
+- **Lesson:** Treat browser APIs as fallible async operations: await and catch the promise, guard pointer capture, test with active-tab user gestures, and commit the regression tests into the same CI command.
+
 ### [RESOLVED] GitHub Pages Deploy Never Created a Site
 - **Issue:** The Pages workflow never published a site; the project URL stayed blank or 404.
 - **Root Cause:** `actions/configure-pages` ran without `enablement`, so the job aborted whenever no Pages site existed; no `github-pages` environment was declared; and a branch-based Pages source would serve the raw `index.html`, which references `/src/main.tsx` and has no compiled CSS.

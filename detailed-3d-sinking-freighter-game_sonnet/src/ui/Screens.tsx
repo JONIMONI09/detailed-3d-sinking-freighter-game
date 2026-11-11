@@ -1,19 +1,30 @@
+import { useState } from "react";
 import type { EndInfo } from "../game/game";
+import { toggleFullscreen } from "../lib/browserGuards";
 
 const btnBase = "min-h-[50px] w-full rounded-xl px-5 py-3 text-base font-bold tracking-wide transition active:scale-[0.97] sm:text-lg";
 
-export function toggleFullscreen() {
-  try {
-    const d: any = document;
-    if (document.fullscreenElement || d.webkitFullscreenElement) {
-      (document.exitFullscreen || d.webkitExitFullscreen)?.call(document);
-    } else {
-      const el: any = document.documentElement;
-      (el.requestFullscreen || el.webkitRequestFullscreen)?.call(el);
-    }
-  } catch {
-    /* nicht unterstützt */
-  }
+function FullscreenToggle({ className, label }: { className: string; label: string }) {
+  const [blocked, setBlocked] = useState(false);
+  return (
+    <div className="flex flex-col items-center">
+      <button
+        type="button"
+        onClick={async () => {
+          const result = await toggleFullscreen();
+          setBlocked(result.error);
+        }}
+        className={className}
+      >
+        {label}
+      </button>
+      {blocked && (
+        <span role="status" className="mt-1 text-[11px] leading-tight text-amber-200">
+          Fullscreen is blocked by this browser. Use the browser menu.
+        </span>
+      )}
+    </div>
+  );
 }
 
 export function MainMenu({ onStart, onSandbox, onSettings, onHelp, touch }: { onStart: () => void; onSandbox: () => void; onSettings: () => void; onHelp: () => void; touch: boolean }) {
@@ -74,9 +85,10 @@ export function MainMenu({ onStart, onSandbox, onSettings, onHelp, touch }: { on
               ❓ Help
             </button>
           </div>
-          <button onClick={toggleFullscreen} className="min-h-[44px] rounded-lg text-sm font-semibold text-slate-200 underline-offset-4 hover:underline">
-            ⛶ Toggle Fullscreen
-          </button>
+          <FullscreenToggle
+            className="min-h-[44px] rounded-lg text-sm font-semibold text-slate-200 underline-offset-4 hover:underline"
+            label="⛶ Toggle Fullscreen"
+          />
         </div>
         <div className="mt-3 rounded-full bg-black/40 px-3 py-1 text-xs text-slate-200">{touch ? "📱 Touch controls detected" : "🖱 Mouse & keyboard"} · runs on any device</div>
       </div>
@@ -181,9 +193,10 @@ export function ReadyPanel({ title, onPlay, onSettings, onHelp, onMenu, onRestar
               ⌂ Menu
             </button>
           </div>
-          <button onClick={toggleFullscreen} className="min-h-[40px] text-sm font-semibold text-slate-300 underline-offset-4 hover:underline">
-            ⛶ Fullscreen
-          </button>
+          <FullscreenToggle
+            className="min-h-[40px] text-sm font-semibold text-slate-300 underline-offset-4 hover:underline"
+            label="⛶ Fullscreen"
+          />
         </div>
       </div>
     </div>

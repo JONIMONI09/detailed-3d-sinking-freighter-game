@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { ControlSettings, InteractablePrompt } from '../types/game';
 import { SimulationCommandRef } from './MaritimeViewport3D';
+import { safeSetPointerCapture } from '../lib/browserGuards';
 
 interface TouchControlsOverlayProps {
   controls: ControlSettings;
@@ -60,7 +61,7 @@ export const TouchControlsOverlay: React.FC<TouchControlsOverlayProps> = ({
 
   const handleJoystickStart = (e: React.PointerEvent<HTMLDivElement>) => {
     e.stopPropagation();
-    e.currentTarget.setPointerCapture(e.pointerId);
+    safeSetPointerCapture(e.currentTarget, e.pointerId);
     const rect = e.currentTarget.getBoundingClientRect();
     joyCenterRef.current = {
       x: rect.left + rect.width / 2,
@@ -92,7 +93,7 @@ export const TouchControlsOverlay: React.FC<TouchControlsOverlayProps> = ({
 
   const handleLookStart = (e: React.PointerEvent<HTMLDivElement>) => {
     e.stopPropagation();
-    e.currentTarget.setPointerCapture(e.pointerId);
+    safeSetPointerCapture(e.currentTarget, e.pointerId);
     lookTouchRef.current = { x: e.clientX, y: e.clientY };
   };
 

@@ -9,6 +9,7 @@ import sys
 import os
 import re
 import math
+import json
 import subprocess
 from pathlib import Path
 
@@ -78,6 +79,31 @@ def check_workflows():
             return False
     
     log("GitHub Actions CI and Pages workflows verified successfully.", "PASS")
+    return True
+
+def check_test_suite_wiring():
+    log("Verifying test suite wiring...")
+    package_path = WORKSPACE / "package.json"
+    physics_path = WORKSPACE / "tests" / "physics.test.mjs"
+    browser_path = WORKSPACE / "tests" / "browser-guards.test.mjs"
+
+    if not package_path.exists() or not physics_path.exists() or not browser_path.exists():
+        log("Test suite files are missing!", "FAIL")
+        return False
+
+    scripts = json.loads(package_path.read_text(encoding="utf-8")).get("scripts", {})
+    test_script = scripts.get("test", "")
+    required = [
+        "tests/physics.test.mjs",
+        "tests/browser-guards.test.mjs",
+        "tools/ci_check.py",
+    ]
+    missing = [item for item in required if item not in test_script]
+    if missing:
+        log(f"package.json test script misses: {', '.join(missing)}", "FAIL")
+        return False
+
+    log("Physics, browser-guard and Python suites are wired into npm test.", "PASS")
     return True
 
 def check_engine_room_collision_clearance():
@@ -163,6 +189,7 @@ def main():
         check_git_ignore,
         check_vite_configs,
         check_workflows,
+        check_test_suite_wiring,
         check_engine_room_collision_clearance,
         check_physics_torricelli_math,
         check_bending_moment_math,

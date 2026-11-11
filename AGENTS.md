@@ -12,6 +12,13 @@
 ## Subtree Governance
 - **Code Language:** English (identifiers, comments, docs, commit messages).
 - **Quality Standard:** 100% complete implementations; strictly NO placeholders, NO empty stubs, NO `// TODO` markers.
+
+## Verification & Delivery
+- `npm test` runs the physics suite, the browser-guard regression suite and the Python integrity checks; CI invokes the same command.
+- Browser APIs that can throw or reject (pointer capture, fullscreen) must go through `src/lib/browserGuards.ts` and have regression coverage in `tests/`.
+- Validate `.github/workflows/*.yml` with Python (parse, duplicate keys, required steps) before pushing.
+- Work on a feature branch; merge only after GitHub CI is green.
+- Keep tests and documentation in English and update both when behavior changes.
 - **Physics Fidelity:**
   - Hydrodynamic multi-compartment water simulation with pressure head calculation ($Q = C_d A \sqrt{2g \Delta h}$).
   - Realistic localized explosive damage preventing non-keel detonations from snapping the ship.
