@@ -1,0 +1,2176 @@
+import * as THREE from "three";
+import { AudioEngine } from "./audio";
+import { Sky, computeEnv, Env } from "./environment";
+import { Ocean } from "./ocean";
+import { ParticleSystem, createRain } from "./particles";
+import { Input } from "./input";
+import { Player } from "./player";
+import { buildShip, ShipModel } from "./shipBuilder";
+import { ShipSim } from "./shipSim";
+import { Compartment, DECK_Y, Door, Lifeboat, WI } from "./shipTypes";
+import type { Settings } from "./settings";
+import { createTextures, setAnisotropy, TexSet } from "./textures";
+import { ViewModel, WEAPONS, WeaponId } from "./weapons";
+import { Guard } from "./enemies";
+import { rayAABB } from "./physics";
+
+export type Mode = "mission" | "sandbox";
+
+export interface HudState {
+  hp: number;
+  armor: number;
+  weapon: WeaponId;
+  weaponName: string;
+  mag: number;
+  reserve: number;
+  tnt: number;
+  owned: Record<WeaponId, boolean>;
+  oxygen: number;
+  underwater: boolean;
+  wading: boolean;
+  prompt: string;
+  promptKind: "" | "normal" | "locked";
+  objectives: { text: string; done: boolean }[];
+  messages: { id: number; text: string; kind: string }[];
+  flood: { name: string; fill: number; flow: number }[];
+  F: number;
+  sinking: boolean;
+  tilt: number;
+  pitchDeg: number;
+  rollDeg: number;
+  alarm: boolean;
+  fps: number;
+  hit: number;
+  dmg: number;
+  keys: { red: boolean; blue: boolean };
+  armedMarkers: number;
+  planted: number;
+  mode: Mode;
+  time: number;
+  kills: number;
+  reloading: boolean;
+  chase: boolean;
+  heading: number;
+  escape: boolean;
+  detonatable: boolean;
+  sprint: boolean;
+  crouch: boolean;
+  locked: boolean;
+  dragMode: boolean;
+  sunk: boolean;
+  guardsAlive: number;
+}
+
+export interface EndInfo {
+  kind: "dead" | "win" | "drown";
+  cause: string;
+  time: number;
+  kills: number;
+  flood: number;
+  mode: Mode;
+}
+
+export interface GameCallbacks {
+  onHud: (h: HudState) => void;
+  onEnd: (e: EndInfo) => void;
+  onCrash: (e: unknown) => void;
+  onPause: () => void;
+  onProgress?: (p: number, label: string) => void;
+}
+
+interface Dyn {
+  mesh: THREE.Group;
+  body: { x: number; y: number; z: number; vx: number; vy: number; vz: number; r: number; h: number; onGround: boolean; step: number };
+  fuse: number;
+  resting: boolean;
+  beep: number;
+  spark: number;
+  led: THREE.Mesh;
+  placedMarker: boolean;
+  remote: number;
+}
+
+interface Effect {
+  update: (dt: number) => boolean;
+  dispose?: () => void;
+}
+
+const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
+
+export class Game {
+  host: HTMLElement;
+  settings: Settings;
+  mode: Mode;
+  cb: GameCallbacks;
+
+  renderer!: THREE.WebGLRenderer;
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(75, 1, 0.08, 4000);
+  vmScene = new THREE.Scene();
+  vmCam = new THREE.PerspectiveCamera(62, 1, 0.01, 10);
+  tex!: TexSet;
+  sky!: Sky;
+  ocean!: Ocean;
+  env!: Env;
+  ship!: ShipModel;
+  sim!: ShipSim;
+  audio = new AudioEngine();
+  input = new Input();
+  player = new Player();
+  vm!: ViewModel;
+  pn!: ParticleSystem;
+  pa!: ParticleSystem;
+  rain!: THREE.LineSegments;
+  hemi!: THREE.HemisphereLight;
+  sun!: THREE.DirectionalLight;
+  lampPool: THREE.PointLight[] = [];
+  flashLights: THREE.PointLight[] = [];
+  muzzleLight!: THREE.PointLight;
+  flashlight!: THREE.SpotLight;
+  guards: Guard[] = [];
+  dyns: Dyn[] = [];
+  effects: Effect[] = [];
+  gulls: { g: THREE.Group; wl: THREE.Mesh; wr: THREE.Mesh; r: number; h: number; a: number; s: number; ph: number }[] = [];
+
+  // Zustand
+  raf = 0;
+  running = false;
+  paused = false;
+  time = 0;
+  lastT = 0;
+  dead = false;
+  deadT = 0;
+  ended = false;
+  kills = 0;
+  fpsAcc = 0;
+  fpsN = 0;
+  fps = 60;
+  fpsTimer = 0;
+  dynRes = 1;
+  lastResChange = 0;
+  hudTimer = 0;
+  msgId = 1;
+  msgs: { id: number; text: string; kind: string; t: number }[] = [];
+  dmgFlash = 0;
+  hitMarker = 0;
+  shake = 0;
+  noiseT = 0;
+  noisePos = V();
+  noiseRange = 1;
+  indoor = 0;
+  flashOn = false;
+  alarm = false;
+  gullTimer = 5;
+  creakTimer = 8;
+  smokeT = 0;
+  foamT = 0;
+  hasKey = { red: false, blue: false };
+  owned: Record<WeaponId, boolean> = { pistol: true, shotgun: false, rifle: false, tnt: true };
+  ammo = { pistol: { mag: 12, res: 36 }, shotgun: { mag: 0, res: 0 }, rifle: { mag: 0, res: 0 } };
+  tnt = 4;
+  cur: WeaponId = "pistol";
+  last: WeaponId = "pistol";
+  cooldown = 0;
+  reloadT = 0;
+  reloading = false;
+  shellLoad = false;
+  bloom = 0;
+  detonated = false;
+  armedCount = 0;
+  escapeState: null | { boat: Lifeboat; t: number; phase: number; startPos: THREE.Vector3; dir: THREE.Vector3; speed: number } = null;
+  prompt = "";
+  promptKind: "" | "normal" | "locked" = "";
+  promptTarget: null | (() => void) = null;
+  tracers: { line: THREE.Line; t: number }[] = [];
+  holes: THREE.Mesh[] = [];
+  holeIdx = 0;
+  scorch: THREE.Mesh[] = [];
+  scorchIdx = 0;
+  lockOk = false;
+  dragMode = false;
+  disposed = false;
+  headLight = 0;
+  camShake = V();
+  lastLookDX = 0;
+  lastLookDY = 0;
+  waterOverlay = false;
+  private tmpV = V();
+  private tmpQ = new THREE.Quaternion();
+  private tmpE = new THREE.Euler();
+  private resizeObs?: ResizeObserver;
+  private onResize = () => this.resize();
+  private onLockChange = () => {
+    this.lockOk = document.pointerLockElement === this.renderer?.domElement;
+    this.input.locked = this.lockOk;
+    if (!this.lockOk && this.running && !this.paused && !this.dead && !this.escapeState && !this.dragMode && !this.isTouch()) this.cb.onPause();
+  };
+  private onLockError = () => {
+    this.dragMode = true;
+    this.input.dragLook = true;
+    this.say("Maus-Fang nicht verfügbar – Maus gedrückt halten und ziehen zum Umsehen.", "warn");
+  };
+  private onVis = () => {
+    if (document.hidden && this.running && !this.paused) this.cb.onPause();
+  };
+  private onFirstGesture = () => this.audio.resume();
+  private lostHandler = (e: Event) => {
+    e.preventDefault();
+    this.fail(new Error("WebGL-Kontext verloren (Grafikspeicher/Treiber). Bitte Grafik reduzieren und neu starten."));
+  };
+
+  constructor(host: HTMLElement, settings: Settings, mode: Mode, cb: GameCallbacks) {
+    this.host = host;
+    this.settings = settings;
+    this.mode = mode;
+    this.cb = cb;
+  }
+
+  isTouch(): boolean {
+    const s = this.settings.touch;
+    if (s === "on") return true;
+    if (s === "off") return false;
+    try {
+      return window.matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 1;
+    } catch {
+      return false;
+    }
+  }
+
+  // ------------------------------------------------------------------ Aufbau
+  init() {
+    const s = this.settings;
+    const prog = (p: number, l: string) => this.cb.onProgress?.(p, l);
+    prog(0.05, "Grafik wird initialisiert …");
+    const canvas = document.createElement("canvas");
+    canvas.style.cssText = "width:100%;height:100%;display:block;touch-action:none;outline:none";
+    canvas.tabIndex = 0;
+    this.host.appendChild(canvas);
+    try {
+      this.renderer = new THREE.WebGLRenderer({ canvas, antialias: s.antialias, powerPreference: "high-performance" });
+    } catch (e) {
+      throw new Error("WebGL konnte nicht gestartet werden. Dein Gerät/Browser unterstützt WebGL evtl. nicht oder es ist deaktiviert. (" + (e instanceof Error ? e.message : String(e)) + ")");
+    }
+    const r = this.renderer;
+    r.toneMapping = THREE.ACESFilmicToneMapping;
+    r.toneMappingExposure = 1.0;
+    r.shadowMap.enabled = true;
+    r.shadowMap.type = THREE.PCFShadowMap;
+    r.localClippingEnabled = true;
+    r.autoClear = false;
+    canvas.addEventListener("webglcontextlost", this.lostHandler);
+    setAnisotropy(Math.min(8, r.capabilities.getMaxAnisotropy()));
+    this.resize();
+
+    prog(0.15, "Texturen …");
+    this.tex = createTextures(s.preset === "low" ? 256 : 512);
+
+    prog(0.25, "Himmel & Ozean …");
+    this.sky = new Sky();
+    this.scene.add(this.sky.mesh);
+    this.ocean = new Ocean();
+    this.scene.add(this.ocean.mesh);
+    this.scene.add(this.camera);
+
+    // Lichter
+    this.hemi = new THREE.HemisphereLight(0xffffff, 0x445566, 1);
+    this.scene.add(this.hemi);
+    this.sun = new THREE.DirectionalLight(0xffffff, 3);
+    this.sun.shadow.camera.near = 1;
+    this.sun.shadow.camera.far = 400;
+    this.sun.shadow.bias = -0.0004;
+    this.sun.shadow.normalBias = 0.06;
+    this.scene.add(this.sun, this.sun.target);
+    for (let i = 0; i < 2; i++) {
+      const l = new THREE.PointLight(0xffaa55, 0, 60, 1.6);
+      this.scene.add(l);
+      this.flashLights.push(l);
+    }
+    this.muzzleLight = new THREE.PointLight(0xffcc77, 0, 14, 1.8);
+    this.camera.add(this.muzzleLight);
+    this.muzzleLight.position.set(0.2, -0.1, -0.6);
+    this.flashlight = new THREE.SpotLight(0xfff2d8, 0, 40, 0.5, 0.45, 1.2);
+    this.camera.add(this.flashlight);
+    this.camera.add(this.flashlight.target);
+    this.flashlight.position.set(0.15, -0.12, 0);
+    this.flashlight.target.position.set(0, 0, -5);
+
+    prog(0.4, "Frachter wird gebaut …");
+    this.ship = buildShip(this.tex, { sandbox: this.mode === "sandbox" });
+    this.scene.add(this.ship.group, this.ship.waterGroup);
+    this.ship.group.add(this.ship.holeGroup);
+    this.sim = new ShipSim(this.ship.group, this.ship.compartments);
+    this.ship.doors.forEach((d) => {
+      d.onEvent = (e, door) => {
+        const pos = this.posAudio(door.center);
+        if (e === "open") this.audio.door(door.kind === "slide" ? "slide" : "open", pos);
+        else if (e === "close") this.audio.door(door.kind === "slide" ? "slide" : "close", pos);
+        else if (e === "unlock") this.audio.unlock();
+      };
+    });
+
+    prog(0.6, "Effekte …");
+    this.pn = new ParticleSystem(4000, false);
+    this.pa = new ParticleSystem(3000, true);
+    this.scene.add(this.pn.points, this.pa.points);
+    this.rain = createRain(1800);
+    this.rain.visible = false;
+    this.scene.add(this.rain);
+    this.buildGulls();
+    this.buildDecalPools();
+
+    prog(0.75, "Waffen …");
+    this.vm = new ViewModel(this.tex.glow);
+    this.vm.root.scale.setScalar(0.8);
+    this.vmScene.add(this.vm.root);
+    this.vmScene.add(new THREE.AmbientLight(0xffffff, 1.6));
+    const vl = new THREE.DirectionalLight(0xffffff, 2.2);
+    vl.position.set(0.4, 1, 0.8);
+    this.vmScene.add(vl);
+    this.vmScene.add(this.vmCam);
+
+    // Wachen
+    if (this.mode === "mission" && s.guards) {
+      for (const sp of this.ship.guardSpawns) {
+        const g = new Guard(sp);
+        this.ship.group.add(g.group);
+        this.guards.push(g);
+      }
+    }
+
+    // Spieler
+    this.player.teleport(9.8, DECK_Y, -42, Math.PI);
+    if (this.mode === "sandbox") {
+      this.owned = { pistol: true, shotgun: true, rifle: true, tnt: true };
+      this.ammo = { pistol: { mag: 12, res: 120 }, shotgun: { mag: 6, res: 48 }, rifle: { mag: 30, res: 240 } };
+      this.tnt = 20;
+      this.hasKey = { red: true, blue: true };
+      this.player.armor = 100;
+    }
+    this.vm.select(this.cur, true);
+
+    prog(0.9, "Audio …");
+    this.audio.vols = { master: s.master, sfx: s.sfx, ambient: s.ambient, music: s.music };
+    this.audio.init();
+
+    // Input
+    this.input.attach(canvas);
+    document.addEventListener("pointerlockchange", this.onLockChange);
+    document.addEventListener("pointerlockerror", this.onLockError);
+    document.addEventListener("visibilitychange", this.onVis);
+    window.addEventListener("resize", this.onResize);
+    window.addEventListener("pointerdown", this.onFirstGesture);
+    window.addEventListener("keydown", this.onFirstGesture);
+    if (typeof ResizeObserver !== "undefined") {
+      this.resizeObs = new ResizeObserver(() => this.resize());
+      this.resizeObs.observe(this.host);
+    }
+
+    (window as any).__game = this;
+    this.applySettings(s, true);
+    this.sim.update(0.016, 0, this.ocean, 1);
+    this.ship.group.updateMatrixWorld(true);
+
+    if (this.mode === "mission") {
+      this.say("Willkommen an Bord der NORDWIND. Dein Auftrag: Versenke den Frachter und flieh im Rettungsboot!", "info");
+      setTimeout(() => this.say("Tipp: TNT an den orangen Sprengpunkten im Rumpf platzieren (2 Stück), dann mit G zünden.", "info"), 5000);
+    } else {
+      this.say("Sandbox-Modus: Alle Waffen, 20 TNT, alle Türen offen. Viel Spaß!", "info");
+    }
+    prog(1, "Bereit");
+  }
+
+  start() {
+    this.running = true;
+    this.lastT = performance.now();
+    this.raf = requestAnimationFrame(this.loop);
+  }
+
+  requestLock() {
+    if (this.isTouch()) return;
+    const c = this.renderer?.domElement;
+    if (!c) return;
+    try {
+      const p = (c as any).requestPointerLock?.();
+      if (p && typeof p.catch === "function") p.catch(() => this.onLockError());
+    } catch {
+      this.onLockError();
+    }
+    c.focus();
+  }
+
+  setPaused(p: boolean) {
+    if (this.paused === p) return;
+    this.paused = p;
+    if (p) {
+      if (document.pointerLockElement) document.exitPointerLock();
+      try {
+        this.audio.ctx?.suspend();
+      } catch {
+        /* ignore */
+      }
+      this.input.clearQueue();
+      this.input.held.clear();
+    } else {
+      this.audio.resume();
+      this.lastT = performance.now();
+      this.input.clearQueue();
+    }
+  }
+
+  resize() {
+    if (!this.renderer) return;
+    const w = Math.max(2, this.host.clientWidth || window.innerWidth);
+    const h = Math.max(2, this.host.clientHeight || window.innerHeight);
+    let pr = Math.min(window.devicePixelRatio || 1, 2) * this.settings.resolution * this.dynRes;
+    const maxPix = 5.5e6;
+    if (w * h * pr * pr > maxPix) pr = Math.sqrt(maxPix / (w * h));
+    this.renderer.setPixelRatio(Math.max(0.35, pr));
+    this.renderer.setSize(w, h, false);
+    this.camera.aspect = w / h;
+    this.camera.updateProjectionMatrix();
+    this.vmCam.aspect = w / h;
+    this.vmCam.updateProjectionMatrix();
+    const scale = (h * this.renderer.getPixelRatio()) / (2 * Math.tan((this.camera.fov * Math.PI) / 360));
+    this.pn?.setScale(scale);
+    this.pa?.setScale(scale);
+  }
+
+  applySettings(s: Settings, first = false) {
+    this.settings = s;
+    this.camera.fov = s.fov;
+    this.camera.updateProjectionMatrix();
+    this.resize();
+    // Schatten
+    const sizes = [0, 1024, 2048, 4096];
+    const ext = [0, 32, 44, 56];
+    this.sun.castShadow = s.shadows > 0;
+    if (s.shadows > 0) {
+      const n = sizes[s.shadows];
+      if (this.sun.shadow.mapSize.x !== n) {
+        this.sun.shadow.map?.dispose();
+        this.sun.shadow.map = null;
+        this.sun.shadow.mapSize.set(n, n);
+      }
+      const e = ext[s.shadows];
+      const c = this.sun.shadow.camera;
+      c.left = -e;
+      c.right = e;
+      c.top = e;
+      c.bottom = -e;
+      c.updateProjectionMatrix();
+    }
+    this.ocean.setQuality(s.water);
+    this.pn.density = Math.max(0.05, s.particles);
+    this.pa.density = Math.max(0.05, s.particles);
+    this.audio.setVolumes({ master: s.master, sfx: s.sfx, ambient: s.ambient, music: s.music });
+    this.env = computeEnv(s.timeOfDay, s.weather);
+    this.sky.apply(this.env);
+    this.rain.visible = this.env.rain > 0 && s.particles > 0.1;
+    this.rebuildLampPool();
+    if (!first) this.say("Einstellungen angewendet.", "info");
+  }
+
+  private rebuildLampPool() {
+    for (const l of this.lampPool) {
+      this.ship.group.remove(l);
+      l.dispose();
+    }
+    this.lampPool = [];
+    for (let i = 0; i < this.settings.lights; i++) {
+      const l = new THREE.PointLight(0xfff0d0, 0, 15, 1.5);
+      this.ship.group.add(l);
+      this.lampPool.push(l);
+    }
+  }
+
+  private buildGulls() {
+    const mat = new THREE.MeshBasicMaterial({ color: 0xf2f2f2, side: THREE.DoubleSide });
+    const wingGeo = new THREE.PlaneGeometry(1.1, 0.28);
+    wingGeo.translate(0.55, 0, 0);
+    const bodyGeo = new THREE.BoxGeometry(0.22, 0.16, 0.7);
+    for (let i = 0; i < 7; i++) {
+      const g = new THREE.Group();
+      g.add(new THREE.Mesh(bodyGeo, mat));
+      const wl = new THREE.Mesh(wingGeo, mat);
+      const wr = new THREE.Mesh(wingGeo, mat);
+      wr.scale.x = -1;
+      wl.position.x = 0.08;
+      wr.position.x = -0.08;
+      g.add(wl, wr);
+      g.scale.setScalar(1.6);
+      this.scene.add(g);
+      this.gulls.push({ g, wl, wr, r: 45 + Math.random() * 60, h: 14 + Math.random() * 22, a: Math.random() * 6.28, s: 0.12 + Math.random() * 0.1, ph: Math.random() * 6 });
+    }
+  }
+
+  private buildDecalPools() {
+    const holeMat = new THREE.MeshBasicMaterial({ color: 0x050505, transparent: true, opacity: 0.85, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
+    const hg = new THREE.CircleGeometry(0.045, 8);
+    for (let i = 0; i < 70; i++) {
+      const m = new THREE.Mesh(hg, holeMat);
+      m.visible = false;
+      this.ship.group.add(m);
+      this.holes.push(m);
+    }
+    const sm = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.55, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
+    const sg = new THREE.CircleGeometry(1, 20);
+    for (let i = 0; i < 16; i++) {
+      const m = new THREE.Mesh(sg, sm);
+      m.visible = false;
+      this.ship.group.add(m);
+      this.scorch.push(m);
+    }
+  }
+
+  // ------------------------------------------------------------------ Hilfsfunktionen
+  say(text: string, kind = "info") {
+    const lastMsg = this.msgs[this.msgs.length - 1];
+    if (lastMsg && lastMsg.text === text) {
+      lastMsg.t = this.time + 4;
+      return;
+    }
+    this.msgs.push({ id: this.msgId++, text, kind, t: this.time + (kind === "warn" ? 6 : 5) });
+    if (this.msgs.length > 6) this.msgs.shift();
+  }
+
+  worldPos(local: THREE.Vector3, out = V()): THREE.Vector3 {
+    return out.copy(local).applyMatrix4(this.ship.group.matrixWorld);
+  }
+
+  posAudio(local: THREE.Vector3): { dist: number; pan: number } {
+    const w = this.worldPos(local, this.tmpV);
+    const d = w.clone().sub(this.camera.position);
+    const dist = d.length();
+    const right = V(1, 0, 0).applyQuaternion(this.camera.quaternion);
+    return { dist, pan: dist > 0.01 ? d.dot(right) / dist : 0 };
+  }
+
+  localDir(worldDir: THREE.Vector3): THREE.Vector3 {
+    const q = this.ship.group.quaternion.clone().invert();
+    return worldDir.clone().applyQuaternion(q);
+  }
+
+  lookDirLocal(): THREE.Vector3 {
+    const p = this.player;
+    this.tmpE.set(p.pitch, p.yaw, 0, "YXZ");
+    return V(0, 0, -1).applyEuler(this.tmpE);
+  }
+
+  eyeLocal(): THREE.Vector3 {
+    const e = this.player.eye();
+    return V(e[0], e[1], e[2]);
+  }
+
+  /** lokale Wasserhöhe an Punkt (oder -Infinity) */
+  waterAt = (x: number, y: number, z: number): number => {
+    for (const c of this.ship.compartments) {
+      if (Math.abs(x) <= WI + 0.4 && z >= c.min.z - 0.3 && z <= c.max.z + 0.3 && y >= c.min.y - 0.4 && y <= c.max.y + 0.05) {
+        return c.fill > 0.004 ? this.sim.localLevel(c, x, z) : -Infinity;
+      }
+    }
+    const m = this.ship.group.matrixWorld.elements;
+    const wx = m[0] * x + m[4] * y + m[8] * z + m[12];
+    const wz = m[2] * x + m[6] * y + m[10] * z + m[14];
+    const oh = this.ocean.height(wx, wz, this.time);
+    if (m[5] < 0.05) return -Infinity;
+    return (oh - m[13] - m[1] * x - m[9] * z) / m[5];
+  };
+
+  compAt(x: number, y: number, z: number): Compartment | null {
+    for (const c of this.ship.compartments) {
+      if (x >= c.min.x - 0.5 && x <= c.max.x + 0.5 && z >= c.min.z - 0.3 && z <= c.max.z + 0.3 && y >= c.min.y - 0.5 && y <= c.max.y + 0.5) return c;
+    }
+    return null;
+  }
+
+  fail(e: unknown) {
+    if (this.ended) return;
+    this.running = false;
+    cancelAnimationFrame(this.raf);
+    console.error("Game crash:", e);
+    this.cb.onCrash(e);
+  }
+
+  // ------------------------------------------------------------------ Hauptschleife
+  private loop = (now: number) => {
+    if (!this.running) return;
+    this.raf = requestAnimationFrame(this.loop);
+    try {
+      let dt = (now - this.lastT) / 1000;
+      this.lastT = now;
+      if (!isFinite(dt) || dt < 0) dt = 0.016;
+      dt = Math.min(dt, 0.05);
+      if (!this.paused) {
+        this.update(dt);
+        this.trackFps(dt);
+      }
+      this.render();
+    } catch (e) {
+      this.fail(e);
+    }
+  };
+
+  private trackFps(dt: number) {
+    this.fpsAcc += dt;
+    this.fpsN++;
+    if (this.fpsAcc >= 1) {
+      this.fps = this.fpsN / this.fpsAcc;
+      this.fpsAcc = 0;
+      this.fpsN = 0;
+      if (this.settings.autoQuality) {
+        this.fpsTimer++;
+        if (this.fps < 26 && this.dynRes > 0.55 && this.time - this.lastResChange > 3) {
+          this.dynRes = Math.max(0.5, this.dynRes - 0.12);
+          this.lastResChange = this.time;
+          this.resize();
+        } else if (this.fps > 58 && this.dynRes < 1 && this.time - this.lastResChange > 10) {
+          this.dynRes = Math.min(1, this.dynRes + 0.08);
+          this.lastResChange = this.time;
+          this.resize();
+        }
+      }
+    }
+  }
+
+  private update(dt: number) {
+    const inp = this.input;
+    inp.pollGamepad();
+    if (inp.pressed("pause")) {
+      this.cb.onPause();
+      return;
+    }
+    this.time += dt;
+    const t = this.time;
+    const st = this.settings;
+
+    // Schiff
+    this.sim.update(dt, t, this.ocean, st.floodSpeed);
+    if (this.sim.firstBreach && !this.alarm && !this.sim.sunk) {
+      this.alarm = true;
+    }
+    if (this.sim.sunk) this.alarm = false;
+    this.noiseT = Math.max(0, this.noiseT - dt);
+    this.dmgFlash = Math.max(0, this.dmgFlash - dt * 1.6);
+    this.hitMarker = Math.max(0, this.hitMarker - dt * 4);
+    this.shake = Math.max(0, this.shake - dt * 1.8);
+
+    const p = this.player;
+    const b = p.body;
+    const controls = !this.dead && !this.escapeState && !this.ended;
+
+    // Spieler
+    const ev = p.update(
+      dt,
+      inp,
+      { world: this.ship.world, slide: this.sim.tiltDeg > 6 ? this.sim.slideVector() : [0, 0], water: this.waterAt, sens: st.sens, touchSens: st.touchSens, invertY: st.invertY },
+      controls,
+    );
+    this.lastLookDX = 0;
+    if (ev.step) {
+      const inB = this.indoor > 0.5;
+      this.audio.step(p.swimming || p.wading ? "wet" : inB ? "carpet" : "metal", p.sprinting ? 1.2 : p.crouch > 0.5 ? 0.5 : 0.9);
+    }
+    if (ev.jumped) this.audio.step("metal", 0.6);
+    if (ev.landed < -4) {
+      this.audio.step("metal", 1.4);
+      if (ev.landed < -13) this.damagePlayer((-ev.landed - 13) * 9, "Sturz aus großer Höhe");
+    }
+    // Sicherheitsnetz: aus der Welt gefallen
+    if (b.y < -25 || !isFinite(b.x + b.y + b.z)) {
+      this.damagePlayer(1000, "Aus der Welt gefallen");
+    }
+    // Sicherheitsnetz: Schiff verlassen / außerhalb der Welt -> zurück an Deck
+    if (controls && (Math.abs(b.x) > 13.5 || b.z < -72 || b.z > 72 || b.y > 25)) {
+      p.teleport(9.8, DECK_Y, -42, Math.PI);
+      this.say("Zurück an Deck gesetzt.", "warn");
+    }
+    // Sauerstoff
+    if (p.submerged && p.alive) {
+      p.oxygen -= dt / 30;
+      if (p.oxygen <= 0) {
+        p.oxygen = 0;
+        this.damagePlayer(14 * dt, "Ertrunken", true);
+      }
+      if (Math.random() < dt * 3) this.audio.gurgle();
+    } else p.oxygen = Math.min(1, p.oxygen + dt * 0.7);
+    if (p.wading && !this.escapeState) {
+      // Kälteschock leicht
+    }
+
+    // Innenraum-Faktor
+    const el = this.eyeLocal();
+    let inside = false;
+    for (const z of this.ship.zones) {
+      if (z.containsPoint(el)) {
+        inside = true;
+        break;
+      }
+    }
+    this.indoor += ((inside ? 1 : 0) - this.indoor) * Math.min(1, dt * 3);
+
+    if (controls) this.handleInput(dt);
+    this.updateInteraction(dt);
+
+    // Türen
+    const bodies: { x: number; y: number; z: number; r: number; h: number }[] = [b];
+    for (const g of this.guards) if (!g.dead) bodies.push({ x: g.body.x, y: g.body.y, z: g.body.z, r: g.body.r, h: g.body.h });
+    for (const d of this.ship.doors) d.update(dt, bodies);
+
+    this.updateGuards(dt);
+    this.updateDyns(dt);
+    this.updateBarrels(dt);
+    this.updateWorldFx(dt);
+    this.updateMission();
+    this.updateEscape(dt);
+    this.updateEffects(dt);
+
+    // Animierte Teile
+    for (const a of this.ship.animated) a(t, dt);
+    this.updatePickups();
+
+    // Tod
+    if (this.dead) {
+      this.deadT += dt;
+      if (this.deadT > 2.2 && !this.ended) {
+        this.ended = true;
+        this.audio.lose();
+        this.cb.onEnd({ kind: this.deathCause === "Ertrunken" ? "drown" : "dead", cause: this.deathCause, time: this.time, kills: this.kills, flood: this.sim.F, mode: this.mode });
+      }
+    }
+
+    // Partikel
+    this.pn.update(dt);
+    this.pa.update(dt);
+
+    // Kamera, Licht, Audio
+    this.updateCamera(dt);
+    this.updateLights(dt);
+    this.updateAudio(dt);
+
+    // HUD
+    this.hudTimer -= dt;
+    if (this.hudTimer <= 0) {
+      this.hudTimer = 0.09;
+      this.pushHud();
+    }
+  }
+
+  deathCause = "";
+
+  // ------------------------------------------------------------------ Eingaben / Waffen
+  private handleInput(dt: number) {
+    const inp = this.input;
+    this.cooldown = Math.max(0, this.cooldown - dt);
+    this.bloom = Math.max(0, this.bloom - dt * 1.5);
+    // Waffenwechsel
+    const order: WeaponId[] = ["pistol", "shotgun", "rifle", "tnt"];
+    const sel = (id: WeaponId) => {
+      if (!this.owned[id] || id === this.cur) return;
+      this.last = this.cur;
+      this.cur = id;
+      this.vm.select(id);
+      this.reloading = false;
+      this.audio.reload("pump");
+    };
+    if (inp.pressed("w1")) sel("pistol");
+    if (inp.pressed("w2")) sel("shotgun");
+    if (inp.pressed("w3")) sel("rifle");
+    if (inp.pressed("w4")) sel("tnt");
+    if (inp.pressed("last")) sel(this.last);
+    const cycle = (dir: number) => {
+      let i = order.indexOf(this.cur);
+      for (let k = 0; k < 4; k++) {
+        i = (i + dir + 4) % 4;
+        if (this.owned[order[i]]) {
+          sel(order[i]);
+          return;
+        }
+      }
+    };
+    if (inp.pressed("next")) cycle(1);
+    if (inp.pressed("prev")) cycle(-1);
+    if (inp.pressed("flash")) {
+      this.flashOn = !this.flashOn;
+      this.audio.click();
+    }
+    if (inp.pressed("detonate")) this.detonateAll();
+    inp.pressed("status");
+
+    // Nachladen
+    if (inp.pressed("reload")) this.startReload();
+    if (this.reloading) {
+      this.reloadT -= dt;
+      const w = WEAPONS[this.cur];
+      if (this.reloadT <= 0) {
+        if (this.cur === "shotgun") {
+          const a = this.ammo.shotgun;
+          if (a.res > 0 && a.mag < w.mag) {
+            a.mag++;
+            a.res--;
+            this.audio.reload("shell");
+            if (a.mag < w.mag && a.res > 0) {
+              this.reloadT = w.reload;
+              this.vm.startReload(w.reload);
+            } else {
+              this.reloading = false;
+              this.audio.reload("pump");
+            }
+          } else this.reloading = false;
+        } else if (this.cur === "pistol" || this.cur === "rifle") {
+          const a = this.ammo[this.cur];
+          const need = w.mag - a.mag;
+          const take = Math.min(need, a.res);
+          a.mag += take;
+          a.res -= take;
+          this.reloading = false;
+        }
+      }
+    }
+    // Schießen
+    const wantFire = inp.fire;
+    if (this.cur === "tnt") {
+      if (inp.pressed("alt")) this.placeTnt();
+      if (wantFire && this.cooldown <= 0) {
+        if (!this.isTouch() && !this.lockOk && !this.dragMode) return;
+        this.throwTnt();
+      }
+    } else {
+      const w = WEAPONS[this.cur];
+      inp.pressed("alt");
+      if (wantFire) {
+        if (!this.isTouch() && !this.lockOk && !this.dragMode) return;
+        if (w.auto || !this.fireHeld) this.tryFire();
+        this.fireHeld = true;
+      } else this.fireHeld = false;
+    }
+  }
+  private fireHeld = false;
+
+  private startReload() {
+    if (this.reloading || this.cur === "tnt") return;
+    const w = WEAPONS[this.cur];
+    const a = this.ammo[this.cur];
+    if (a.mag >= w.mag || a.res <= 0) return;
+    this.reloading = true;
+    if (this.cur === "shotgun") {
+      this.reloadT = w.reload * 0.8;
+      this.vm.startReload(w.reload);
+    } else {
+      this.reloadT = w.reload;
+      this.vm.startReload(w.reload);
+      this.audio.reload("mag");
+    }
+  }
+
+  private tryFire() {
+    if (this.cur === "tnt" || this.cooldown > 0) return;
+    const w = WEAPONS[this.cur];
+    const a = this.ammo[this.cur];
+    if (this.reloading) {
+      if (this.cur === "shotgun" && a.mag > 0) {
+        this.reloading = false;
+        this.vm.cancelReload();
+      } else return;
+    }
+    if (a.mag <= 0) {
+      this.audio.empty();
+      this.cooldown = 0.3;
+      if (a.res > 0) this.startReload();
+      return;
+    }
+    a.mag--;
+    this.cooldown = 60 / w.rpm;
+    this.vm.fireKick(w.recoil);
+    this.audio.shot(this.cur as "pistol" | "shotgun" | "rifle");
+    this.player.pitch += 0.006 * w.recoil + Math.random() * 0.003;
+    this.player.yaw += (Math.random() - 0.5) * 0.004 * w.recoil;
+    this.shake = Math.min(1, this.shake + 0.08 * w.recoil);
+    this.noiseT = 0.4;
+    this.noiseRange = 1;
+    this.noisePos.copy(this.eyeLocal());
+    this.muzzleLight.intensity = 25;
+    this.bloom = Math.min(1, this.bloom + 0.12);
+    const origin = this.eyeLocal();
+    const dir0 = this.lookDirLocal();
+    const right = V(Math.cos(this.player.yaw), 0, -Math.sin(this.player.yaw));
+    const up = V().crossVectors(right, dir0).normalize();
+    const spread = w.spread * (this.cur === "rifle" ? 1 + this.bloom * 1.5 : 1) * (this.player.crouch > 0.5 ? 0.7 : 1) * (this.player.speed > 3 ? 1.5 : 1);
+    for (let i = 0; i < w.pellets; i++) {
+      const d = dir0.clone();
+      const rr = Math.random() * spread,
+        aa = Math.random() * Math.PI * 2;
+      d.addScaledVector(right, Math.cos(aa) * rr).addScaledVector(up, Math.sin(aa) * rr).normalize();
+      this.hitscan(origin, d, w.damage, w.range, i === 0);
+    }
+    if (a.mag <= 0 && a.res > 0) setTimeout(() => this.startReload(), 250);
+  }
+
+  private tracer(from: THREE.Vector3, to: THREE.Vector3, color = 0xffe9a0) {
+    let tr = this.tracers.find((x) => x.t <= 0);
+    if (!tr) {
+      if (this.tracers.length > 14) return;
+      const g = new THREE.BufferGeometry().setFromPoints([V(), V(0, 0, 1)]);
+      const line = new THREE.Line(g, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }));
+      line.frustumCulled = false;
+      this.scene.add(line);
+      tr = { line, t: 0 };
+      this.tracers.push(tr);
+    }
+    const pos = tr.line.geometry.attributes.position as THREE.BufferAttribute;
+    const a = this.worldPos(from, V()),
+      b = this.worldPos(to, V());
+    pos.setXYZ(0, a.x, a.y, a.z);
+    pos.setXYZ(1, b.x, b.y, b.z);
+    pos.needsUpdate = true;
+    (tr.line.material as THREE.LineBasicMaterial).color.setHex(color);
+    tr.line.visible = true;
+    tr.t = 0.06;
+  }
+
+  hitscan(origin: THREE.Vector3, dir: THREE.Vector3, damage: number, range: number, primary: boolean) {
+    const world = this.ship.world;
+    const wall = world.raycast(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, range, (c) => c.tag !== "glassbroken");
+    let bestT = wall ? wall.dist : range;
+    let kind: "none" | "wall" | "guard" | "tnt" = wall ? "wall" : "none";
+    let guard: Guard | null = null;
+    let head = false;
+    let dyn: Dyn | null = null;
+    for (const g of this.guards) {
+      if (g.dead) continue;
+      const bd = g.body;
+      const t = rayAABB(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, bd.x - 0.33, bd.y, bd.z - 0.33, bd.x + 0.33, bd.y + 1.82, bd.z + 0.33);
+      if (t >= 0 && t < bestT) {
+        bestT = t;
+        kind = "guard";
+        guard = g;
+        head = origin.y + dir.y * t > bd.y + 1.45;
+      }
+    }
+    for (const d of this.dyns) {
+      const c = V(d.body.x, d.body.y + 0.15, d.body.z).sub(origin);
+      const tc = c.dot(dir);
+      if (tc > 0 && tc < bestT) {
+        const dist2 = c.lengthSq() - tc * tc;
+        if (dist2 < 0.09) {
+          bestT = tc;
+          kind = "tnt";
+          dyn = d;
+        }
+      }
+    }
+    const hp = origin.clone().addScaledVector(dir, bestT);
+    if (primary || kind !== "none") {
+      const start = origin.clone().addScaledVector(dir, 0.8).add(V(0, -0.12, 0));
+      if (this.cur !== "shotgun" || primary) this.tracer(start, hp);
+    }
+    const pa = this.posAudio(hp);
+    if (kind === "guard" && guard) {
+      const killed = guard.damage(damage, head, origin.x, origin.z);
+      this.hitMarker = 1;
+      this.audio.hit(head);
+      for (let i = 0; i < 6; i++) this.pn.emit(...this.pw(hp), (Math.random() - 0.5) * 2, Math.random() * 2, (Math.random() - 0.5) * 2, 0.5, 0.06, 0.2, 0.55, 0.03, 0.03, 0.8, 9, 1);
+      if (killed) {
+        this.kills++;
+        this.say(head ? "Kopfschuss!" : "Wache ausgeschaltet", "info");
+      }
+      this.alertGuards(origin, 1);
+    } else if (kind === "tnt" && dyn) {
+      this.explodeDyn(dyn);
+    } else if (kind === "wall" && wall) {
+      const n = V(wall.nx, wall.ny, wall.nz);
+      const c = wall.collider;
+      const tag = c.tag;
+      if (tag === "barrel" && c.owner) {
+        this.hitMarker = 0.6;
+        const brl = c.owner as any;
+        brl.hp -= damage;
+        this.audio.bulletImpact(pa, true);
+        this.sparks(hp, n, 5);
+        if (brl.hp <= 0 && !brl.dead && brl.fuse <= 0) brl.fuse = 0.05;
+      } else if (tag === "crate" && c.owner) {
+        const cr = c.owner as any;
+        cr.hp -= damage;
+        this.audio.bulletImpact(pa, false);
+        for (let i = 0; i < 4; i++) this.pn.emit(...this.pw(hp), (Math.random() - 0.5) * 3, Math.random() * 3, (Math.random() - 0.5) * 3, 0.6, 0.05, 0.08, 0.5, 0.35, 0.2, 1, 8, 1);
+        if (cr.hp <= 0) this.breakCrate(cr);
+      } else if (tag === "glass" && c.owner) {
+        this.breakGlass(c.owner);
+        // Kugel fliegt durch das Fenster weiter
+        const o2 = hp.clone().addScaledVector(dir, 0.15);
+        this.hitscan(o2, dir, damage, range - bestT, false);
+      } else {
+        this.audio.bulletImpact(pa, tag !== "door" || true);
+        this.sparks(hp, n, 5);
+        this.bulletHole(hp, n);
+      }
+    } else if (kind === "none") {
+      // Meer treffen -> Spritzer
+      const w = this.worldPos(origin.clone().addScaledVector(dir, Math.min(range, 60)));
+      if (w.y < 1 && dir.y < -0.02) {
+        /* kein Treffer */
+      }
+    }
+  }
+
+  private pw(local: THREE.Vector3): [number, number, number] {
+    const w = this.worldPos(local, this.tmpV);
+    return [w.x, w.y, w.z];
+  }
+
+  private sparks(hp: THREE.Vector3, n: THREE.Vector3, count: number) {
+    const w = this.worldPos(hp, V());
+    const nw = n.clone().transformDirection(this.ship.group.matrixWorld);
+    for (let i = 0; i < count; i++) {
+      const v = nw.clone().multiplyScalar(2 + Math.random() * 3).add(V((Math.random() - 0.5) * 4, Math.random() * 2, (Math.random() - 0.5) * 4));
+      this.pa.emit(w.x, w.y, w.z, v.x, v.y, v.z, 0.3 + Math.random() * 0.3, 0.05, 0.02, 1, 0.8, 0.35, 1, 9, 0.5);
+    }
+    this.pn.emit(w.x, w.y, w.z, nw.x * 0.5, nw.y * 0.5 + 0.3, nw.z * 0.5, 0.7, 0.1, 0.35, 0.5, 0.5, 0.5, 0.3, -0.5, 1);
+  }
+
+  private bulletHole(hp: THREE.Vector3, n: THREE.Vector3) {
+    const m = this.holes[this.holeIdx++ % this.holes.length];
+    m.position.copy(hp).addScaledVector(n, 0.012);
+    m.lookAt(hp.clone().add(n));
+    m.visible = true;
+  }
+
+  alertGuards(from: THREE.Vector3, range: number) {
+    for (const g of this.guards) if (!g.dead && g.eyePos.distanceTo(from) < 40 * range) g.alert(from.x, from.y, from.z);
+  }
+
+  breakGlass(pane: any) {
+    if (pane.broken) return;
+    pane.broken = true;
+    pane.mesh.visible = false;
+    pane.collider.enabled = false;
+    pane.collider.tag = "glassbroken";
+    this.audio.glass(this.posAudio(pane.pos));
+    const w = this.worldPos(pane.pos, V());
+    for (let i = 0; i < 26; i++) {
+      const dx = (Math.random() - 0.5) * pane.w * (pane.axis === "x" ? 1 : 0),
+        dz = (Math.random() - 0.5) * pane.w * (pane.axis === "z" ? 1 : 0),
+        dy = (Math.random() - 0.5) * pane.h;
+      this.pa.emit(w.x + dx, w.y + dy, w.z + dz, (Math.random() - 0.5) * 3, Math.random() * 2, (Math.random() - 0.5) * 3, 1 + Math.random(), 0.07, 0.05, 0.75, 0.9, 1, 0.9, 9, 0.2);
+    }
+  }
+
+  breakCrate(c: any) {
+    if (c.dead) return;
+    c.dead = true;
+    c.mesh.visible = false;
+    this.ship.world.remove(c.collider);
+    this.audio.bulletImpact(this.posAudio(c.pos), false);
+    const w = this.worldPos(c.pos, V());
+    for (let i = 0; i < 18; i++) this.pn.emit(w.x, w.y, w.z, (Math.random() - 0.5) * 5, Math.random() * 4, (Math.random() - 0.5) * 5, 1.2, 0.08, 0.06, 0.45, 0.3, 0.15, 1, 9, 0.4);
+    if (c.loot) {
+      const t = c.loot;
+      if (t === "ammo_pistol") {
+        this.ammo.pistol.res += 24;
+        this.say("Kiste: +24 Pistolenmunition", "pickup");
+      } else if (t === "ammo_shotgun") {
+        this.ammo.shotgun.res += 8;
+        this.say("Kiste: +8 Schrotpatronen", "pickup");
+      } else if (t === "ammo_rifle") {
+        this.ammo.rifle.res += 30;
+        this.say("Kiste: +30 Gewehrmunition", "pickup");
+      } else if (t === "medkit") {
+        this.player.health = Math.min(100, this.player.health + 40);
+        this.say("Kiste: Verbandszeug (+40 HP)", "pickup");
+      } else if (t === "tnt") {
+        this.tnt += 2;
+        this.say("Kiste: +2 TNT", "pickup");
+      }
+      this.audio.pickup();
+    }
+  }
+
+  // ------------------------------------------------------------------ TNT
+  private makeTntMesh(): { g: THREE.Group; led: THREE.Mesh } {
+    const g = new THREE.Group();
+    const red = new THREE.MeshStandardMaterial({ color: 0xb02a22, roughness: 0.6 });
+    for (let i = 0; i < 3; i++) {
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.3, 8), red);
+      m.position.set((i - 1) * 0.09, 0, 0);
+      m.rotation.x = Math.PI / 2;
+      m.castShadow = true;
+      g.add(m);
+    }
+    const tape = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.025, 0.05), new THREE.MeshStandardMaterial({ color: 0x111111 }));
+    tape.position.y = 0.0;
+    g.add(tape);
+    const timer = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.05, 0.08), new THREE.MeshStandardMaterial({ color: 0x222222 }));
+    timer.position.set(0, 0.07, 0);
+    g.add(timer);
+    const led = new THREE.Mesh(new THREE.SphereGeometry(0.018, 6, 6), new THREE.MeshBasicMaterial({ color: 0xff2200 }));
+    led.position.set(0.03, 0.105, 0);
+    g.add(led);
+    return { g, led };
+  }
+
+  private spawnDyn(pos: THREE.Vector3, vel: THREE.Vector3, fuse: number) {
+    const { g, led } = this.makeTntMesh();
+    g.position.copy(pos);
+    this.ship.group.add(g);
+    const d: Dyn = {
+      mesh: g,
+      body: { x: pos.x, y: pos.y - 0.1, z: pos.z, vx: vel.x, vy: vel.y, vz: vel.z, r: 0.14, h: 0.2, onGround: false, step: 0.05 },
+      fuse,
+      resting: false,
+      beep: 0,
+      spark: 0,
+      led,
+      placedMarker: false,
+      remote: -1,
+    };
+    this.dyns.push(d);
+    this.audio.fuseLit();
+    return d;
+  }
+
+  private fuseTime() {
+    return this.settings.difficulty === "easy" ? 8 : this.settings.difficulty === "hard" ? 5 : 6.5;
+  }
+
+  private throwTnt() {
+    if (this.tnt <= 0) {
+      this.audio.empty();
+      this.cooldown = 0.4;
+      this.say("Kein TNT mehr!", "warn");
+      return;
+    }
+    this.tnt--;
+    this.cooldown = 0.9;
+    this.vm.throwT = 1;
+    this.audio.throw();
+    const dir = this.lookDirLocal();
+    const o = this.eyeLocal().addScaledVector(dir, 0.5).add(V(0, -0.15, 0));
+    const pb = this.player.body;
+    const v = dir.clone().multiplyScalar(11).add(V(pb.vx * 0.6, 2.4, pb.vz * 0.6));
+    this.spawnDyn(o, v, this.fuseTime());
+    this.noiseT = 0.2;
+    this.noisePos.copy(o);
+    if (this.tnt === 0) this.say("Letztes TNT geworfen.", "warn");
+  }
+
+  private placeTnt() {
+    if (this.tnt <= 0) {
+      this.audio.empty();
+      this.say("Kein TNT mehr!", "warn");
+      return;
+    }
+    const dir = this.lookDirLocal();
+    const e = this.eyeLocal();
+    const fwd = V(dir.x, 0, dir.z).normalize();
+    const o = e.clone().addScaledVector(fwd, 0.7);
+    o.y = this.player.body.y + 0.35;
+    // nicht in Wände legen
+    const hit = this.ship.world.raycast(e.x, e.y - 0.5, e.z, fwd.x, 0, fwd.z, 0.8);
+    if (hit) o.copy(e).addScaledVector(fwd, Math.max(0.2, hit.dist - 0.25)).setY(this.player.body.y + 0.35);
+    this.tnt--;
+    this.cooldown = 0.6;
+    this.vm.throwT = 0.6;
+    this.audio.step("metal", 0.5);
+    const d = this.spawnDyn(o, fwd.multiplyScalar(0.8).setY(0.2), this.fuseTime() + 4);
+    this.say("TNT platziert. Zünden mit G (Fernzünder) – oder die Zündschnur brennt ab!", "info");
+    return d;
+  }
+
+  private detonateAll() {
+    if (this.cur !== "tnt" && this.dyns.length === 0) {
+      this.say("Keine Ladung platziert.", "warn");
+      return;
+    }
+    if (this.dyns.length === 0) {
+      this.say("Keine Ladung platziert.", "warn");
+      this.audio.empty();
+      return;
+    }
+    this.audio.detonator();
+    this.detonated = true;
+    let i = 0;
+    for (const d of this.dyns) {
+      d.remote = 0.25 + i * 0.22;
+      i++;
+    }
+  }
+
+  private explodeDyn(d: Dyn) {
+    const idx = this.dyns.indexOf(d);
+    if (idx < 0) return;
+    this.dyns.splice(idx, 1);
+    this.ship.group.remove(d.mesh);
+    const p = V(d.body.x, d.body.y + 0.15, d.body.z);
+    this.detonated = true;
+    this.explode(p, 1.0, "tnt");
+  }
+
+  private updateDyns(dt: number) {
+    const w = this.ship.world;
+    for (const d of [...this.dyns]) {
+      const b = d.body;
+      if (d.remote >= 0) {
+        d.remote -= dt;
+        if (d.remote < 0) {
+          this.explodeDyn(d);
+          continue;
+        }
+      }
+      b.vy -= 14 * dt;
+      const sl = this.sim.tiltDeg > 6 ? this.sim.slideVector() : [0, 0];
+      if (b.onGround) {
+        b.vx *= Math.exp(-dt * 7);
+        b.vz *= Math.exp(-dt * 7);
+        b.vx += sl[0] * dt * 0.6;
+        b.vz += sl[1] * dt * 0.6;
+      }
+      const vx0 = b.vx,
+        vy0 = b.vy,
+        vz0 = b.vz;
+      const res = w.move(b, b.vx * dt, b.vy * dt, b.vz * dt);
+      if (res.hitX) b.vx = -vx0 * 0.35;
+      if (res.hitZ) b.vz = -vz0 * 0.35;
+      if (res.hitY && vy0 < -1.5) {
+        b.vy = -vy0 * 0.25;
+        this.audio.step("metal", 0.6);
+      }
+      if (b.y < -30) {
+        this.dyns.splice(this.dyns.indexOf(d), 1);
+        this.ship.group.remove(d.mesh);
+        continue;
+      }
+      d.mesh.position.set(b.x, b.y + 0.12, b.z);
+      d.mesh.rotation.y += dt * (Math.abs(b.vx) + Math.abs(b.vz)) * 1.5;
+      const spd = Math.hypot(b.vx, b.vz, b.vy);
+      if (!d.resting && b.onGround && spd < 0.4) {
+        d.resting = true;
+        // Sprengpunkt scharf?
+        for (const m of this.ship.markers) {
+          if (m.armed) continue;
+          const dist = Math.hypot(b.x - m.pos.x, b.z - m.pos.z, (b.y - m.pos.y) * 0.6);
+          if (dist < m.radius) {
+            m.armed = true;
+            this.say(`Sprengpunkt „${m.name}" ist scharf (${this.ship.markers.filter((q) => q.armed).length} / ${this.ship.markers.length})`, "good");
+            this.audio.unlock();
+          }
+        }
+      }
+      // Zündschnur
+      d.fuse -= dt;
+      d.beep -= dt;
+      const rate = d.fuse > 3 ? 0.8 : d.fuse > 1.5 ? 0.4 : 0.15;
+      if (d.beep <= 0) {
+        d.beep = rate;
+        this.audio.beep(d.fuse < 1.5, this.posAudio(d.mesh.position));
+        (d.led.material as THREE.MeshBasicMaterial).color.setHex(0xff2200);
+        setTimeout(() => ((d.led.material as THREE.MeshBasicMaterial).color.setHex(0x330500)), 90);
+      }
+      d.spark -= dt;
+      if (d.spark <= 0) {
+        d.spark = 0.04;
+        const wp = this.worldPos(V(b.x, b.y + 0.28, b.z), V());
+        this.pa.emit(wp.x, wp.y, wp.z, (Math.random() - 0.5) * 1.5, 1 + Math.random() * 1.5, (Math.random() - 0.5) * 1.5, 0.35, 0.05, 0.01, 1, 0.7, 0.2, 1, 6, 0.5);
+        this.pn.emit(wp.x, wp.y, wp.z, 0, 0.5, 0, 0.8, 0.05, 0.25, 0.6, 0.6, 0.6, 0.25, -0.3, 1);
+      }
+      if (d.fuse <= 0) this.explodeDyn(d);
+    }
+  }
+
+  // ------------------------------------------------------------------ Explosionen
+  explode(p: THREE.Vector3, power: number, src: string) {
+    const R = 11 * power;
+    const wp = this.worldPos(p, V());
+    const pa = this.posAudio(p);
+    this.audio.explosion(pa, Math.max(0.6, power));
+    // Licht
+    const fl = this.flashLights.find((l) => l.intensity < 30) || this.flashLights[0];
+    fl.position.copy(wp);
+    fl.intensity = 900 * power;
+    fl.userData.decay = 1;
+    // Partikel
+    const dens = Math.max(0.2, this.settings.particles);
+    const n = (k: number) => Math.round(k * dens * 1.4);
+    for (let i = 0; i < n(60); i++) {
+      const v = V((Math.random() - 0.5), Math.random() * 0.8, (Math.random() - 0.5)).normalize().multiplyScalar((2 + Math.random() * 7) * power);
+      this.pa.emit(wp.x, wp.y, wp.z, v.x, v.y, v.z, 0.5 + Math.random() * 0.7, 1.4 * power, 3.2 * power, 1, 0.5 + Math.random() * 0.3, 0.1, 0.9, -1, 1.5);
+    }
+    for (let i = 0; i < n(45); i++) {
+      const v = V((Math.random() - 0.5) * 2, Math.random() * 1.2, (Math.random() - 0.5) * 2).multiplyScalar(3 * power);
+      this.pn.emit(wp.x, wp.y, wp.z, v.x, v.y + 1, v.z, 3 + Math.random() * 3, 1.5 * power, 6 * power, 0.25, 0.25, 0.25, 0.6, -0.8, 0.6);
+    }
+    for (let i = 0; i < n(80); i++) {
+      const v = V(Math.random() - 0.5, Math.random() * 0.9 + 0.1, Math.random() - 0.5).normalize().multiplyScalar(6 + Math.random() * 16);
+      this.pa.emit(wp.x, wp.y, wp.z, v.x, v.y, v.z, 0.6 + Math.random() * 1.0, 0.12, 0.03, 1, 0.8, 0.4, 1, 14, 0.2);
+    }
+    for (let i = 0; i < n(26); i++) {
+      const v = V(Math.random() - 0.5, Math.random() * 0.9 + 0.2, Math.random() - 0.5).normalize().multiplyScalar(5 + Math.random() * 10);
+      this.pn.emit(wp.x, wp.y, wp.z, v.x, v.y, v.z, 1.4 + Math.random(), 0.16, 0.12, 0.2, 0.18, 0.15, 1, 14, 0.1);
+    }
+    // Druckwelle
+    const sw = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), new THREE.MeshBasicMaterial({ color: 0xffd9a0, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+    sw.position.copy(wp);
+    this.scene.add(sw);
+    let st = 0;
+    this.effects.push({
+      update: (dt) => {
+        st += dt;
+        const k = st / 0.45;
+        sw.scale.setScalar(0.5 + k * R * 0.9);
+        (sw.material as THREE.MeshBasicMaterial).opacity = 0.5 * Math.max(0, 1 - k);
+        return k < 1;
+      },
+      dispose: () => {
+        this.scene.remove(sw);
+        sw.geometry.dispose();
+        (sw.material as THREE.Material).dispose();
+      },
+    });
+    // Spritzer wenn nahe am Meer
+    const seaH = this.ocean.height(wp.x, wp.z, this.time);
+    if (wp.y < seaH + 4 && wp.y > seaH - 6) {
+      for (let i = 0; i < n(40); i++) this.pn.emit(wp.x, seaH, wp.z, (Math.random() - 0.5) * 8, 6 + Math.random() * 10, (Math.random() - 0.5) * 8, 1.6, 0.5, 1.2, 0.9, 0.95, 1, 0.7, 16, 0.2);
+    }
+    // Brandfleck
+    const down = this.ship.world.raycast(p.x, p.y + 0.3, p.z, 0, -1, 0, 3);
+    if (down) {
+      const m = this.scorch[this.scorchIdx++ % this.scorch.length];
+      m.position.set(p.x, p.y + 0.3 - down.dist + 0.02, p.z);
+      m.rotation.set(-Math.PI / 2, 0, 0);
+      m.scale.setScalar(1.2 * power + Math.random() * 0.5);
+      m.visible = true;
+    }
+    // Schaden
+    const pl = this.player.body;
+    const pe = this.eyeLocal();
+    const dp = Math.hypot(pe.x - p.x, pe.y - p.y, pe.z - p.z);
+    this.shake = Math.min(1.6, this.shake + Math.max(0, 1 - dp / 45) * 1.4);
+    if (dp < R && !this.dead) {
+      const los = this.ship.world.lineClear(p.x, p.y, p.z, pe.x, pe.y, pe.z);
+      const dmg = 140 * Math.pow(1 - dp / R, 1.3) * (los ? 1 : 0.3) * (this.settings.difficulty === "hard" ? 1.2 : this.settings.difficulty === "easy" ? 0.7 : 1);
+      if (dmg > 1) {
+        this.damagePlayer(dmg, src === "barrel" ? "Von einem explodierenden Fass getötet" : "Von einer Explosion getötet");
+        const kx = pl.x - p.x,
+          kz = pl.z - p.z,
+          kl = Math.hypot(kx, kz) + 0.1;
+        pl.vx += (kx / kl) * 9 * (1 - dp / R);
+        pl.vz += (kz / kl) * 9 * (1 - dp / R);
+        pl.vy += 4 * (1 - dp / R);
+      }
+    }
+    for (const g of this.guards) {
+      if (g.dead) continue;
+      const gp = g.eyePos;
+      const d = gp.distanceTo(p);
+      if (d < R) {
+        const los = this.ship.world.lineClear(p.x, p.y, p.z, gp.x, gp.y, gp.z);
+        const dmg = 160 * Math.pow(1 - d / R, 1.2) * (los ? 1 : 0.25);
+        if (dmg > 1 && g.damage(dmg, false, p.x, p.z)) {
+          this.kills++;
+          this.say("Wache durch Explosion ausgeschaltet", "info");
+        }
+      }
+    }
+    // Fässer & Kisten & Glas
+    for (const b of this.ship.barrels) {
+      if (b.dead) continue;
+      const d = b.pos.distanceTo(p);
+      if (d < R * 0.75 && b.fuse <= 0) b.fuse = 0.12 + Math.random() * 0.35 + d * 0.02;
+    }
+    for (const c of this.ship.crates) if (!c.dead && c.pos.distanceTo(p) < R * 0.6) this.breakCrate(c);
+    for (const g of this.ship.glass) if (!g.broken && g.pos.distanceTo(p) < R * 1.2) this.breakGlass(g);
+    // TNT in der Nähe zündet mit
+    for (const d of [...this.dyns]) {
+      const dd = V(d.body.x, d.body.y, d.body.z).distanceTo(p);
+      if (dd < R * 0.5 && d.remote < 0) d.remote = 0.1 + Math.random() * 0.2;
+    }
+    // Hüllenbruch
+    const comp = this.compAt(p.x, p.y, p.z);
+    if (comp) {
+      const before = comp.holes.length;
+      const hole = this.sim.addBreach(comp, p, power * (src === "barrel" ? 0.5 : 1));
+      if (hole) {
+        if (comp.holes.length > before) this.makeHoleVisual(hole);
+        this.say(`HÜLLENBRUCH im ${comp.name}! Wasser dringt ein!`, "alert");
+        this.audio.creak(1.3);
+        this.shake = Math.min(1.8, this.shake + 0.5);
+      }
+    }
+    // Lärm
+    this.noiseT = 1.2;
+    this.noiseRange = 2.4;
+    this.noisePos.copy(p);
+    // Rumpf-Knarren
+    setTimeout(() => this.audio.creak(0.8), 700 + Math.random() * 800);
+  }
+
+  private makeHoleVisual(h: { pos: THREE.Vector3; nx: number; ny: number; nz: number; area: number }) {
+    const r = Math.sqrt(h.area / Math.PI) * 0.9;
+    const g = new THREE.Group();
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(r, 14), new THREE.MeshBasicMaterial({ color: 0x020a10, side: THREE.DoubleSide }));
+    const ring = new THREE.Mesh(new THREE.RingGeometry(r, r * 1.35, 14), new THREE.MeshBasicMaterial({ color: 0x3a2a1a, side: THREE.DoubleSide }));
+    ring.position.z = 0.002;
+    g.add(disc, ring);
+    for (let i = 0; i < 9; i++) {
+      const a = (i / 9) * Math.PI * 2;
+      const sp = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.3 + Math.random() * 0.3, 0.04), new THREE.MeshStandardMaterial({ color: 0x555a60, metalness: 0.8, roughness: 0.4 }));
+      sp.position.set(Math.cos(a) * r * 1.2, Math.sin(a) * r * 1.2, 0.12);
+      sp.rotation.z = a + Math.random() - 0.5;
+      sp.rotation.x = (Math.random() - 0.5) * 0.8;
+      g.add(sp);
+    }
+    g.position.copy(h.pos);
+    g.lookAt(h.pos.clone().add(V(h.nx, h.ny, h.nz)));
+    this.ship.holeGroup.add(g);
+  }
+
+  private updateBarrels(dt: number) {
+    for (const b of this.ship.barrels) {
+      if (b.dead) continue;
+      if (b.fuse > 0) {
+        b.fuse -= dt;
+        if (b.fuse <= 0) {
+          b.dead = true;
+          b.mesh.visible = false;
+          this.ship.world.remove(b.collider);
+          this.explode(b.pos.clone(), 0.7, "barrel");
+        }
+      }
+    }
+  }
+
+  // ------------------------------------------------------------------ Schaden / Tod
+  damagePlayer(amount: number, cause: string, silent = false) {
+    const p = this.player;
+    if (!p.alive || amount <= 0) return;
+    let a = amount;
+    if (p.armor > 0) {
+      const ab = Math.min(p.armor, a * 0.5);
+      p.armor -= ab;
+      a -= ab;
+    }
+    p.health -= a;
+    if (!silent) {
+      this.dmgFlash = Math.min(1, this.dmgFlash + a / 35);
+      this.audio.hurt();
+      this.shake = Math.min(1.2, this.shake + a / 40);
+    }
+    if (p.health <= 0) {
+      p.health = 0;
+      p.alive = false;
+      this.dead = true;
+      this.deathCause = cause;
+      this.deadT = 0;
+      this.vm.root.visible = false;
+      if (document.pointerLockElement) document.exitPointerLock();
+    }
+  }
+
+  // ------------------------------------------------------------------ Wachen
+  private updateGuards(dt: number) {
+    if (!this.guards.length) return;
+    const pe = this.eyeLocal();
+    const pb = this.player.body;
+    const slide: [number, number] = this.sim.tiltDeg > 6 ? this.sim.slideVector() : [0, 0];
+    const diff = this.settings.difficulty === "easy" ? 0.7 : this.settings.difficulty === "hard" ? 1.35 : 1;
+    const ctx = {
+      world: this.ship.world,
+      eye: pe,
+      px: pb.x,
+      py: pb.y,
+      pz: pb.z,
+      playerAlive: this.player.alive && !this.escapeState && this.time > 4,
+      doors: this.ship.doors,
+      diff,
+      slide,
+      noise: this.noiseT > 0 ? this.noiseRange : 0,
+      noisePos: this.noisePos,
+      underwater: (x: number, y: number, z: number) => y < this.waterAt(x, y, z),
+      shoot: (g: Guard, from: THREE.Vector3, hit: boolean) => {
+        const pa = this.posAudio(from);
+        this.audio.shot("pistol", pa);
+        const target = pe.clone();
+        if (!hit) target.add(V((Math.random() - 0.5) * 2.2, (Math.random() - 0.5) * 1.2, (Math.random() - 0.5) * 2.2));
+        const origin = from.clone().add(V(-Math.sin(g.yaw) * 0.6, -0.1, -Math.cos(g.yaw) * 0.6));
+        this.tracer(origin, target, 0xffb070);
+        if (hit) this.damagePlayer(7 * diff, "Von einer Wache erschossen");
+        else {
+          const hp = target.clone();
+          this.sparks(hp, V(0, 1, 0), 3);
+          this.audio.bulletImpact(this.posAudio(hp));
+        }
+      },
+    };
+    for (const g of this.guards) {
+      g.update(dt, ctx);
+      // Kollisionssicherheit: Wachen fallen nicht ins Leere
+    }
+  }
+
+  // ------------------------------------------------------------------ Interaktion
+  private updateInteraction(_dt: number) {
+    this.prompt = "";
+    this.promptKind = "";
+    this.promptTarget = null;
+    if (this.dead || this.escapeState) return;
+    const eye = this.eyeLocal();
+    const dir = this.lookDirLocal();
+    const world = this.ship.world;
+    let best = -1e9;
+    let bestAct: (() => void) | null = null;
+    let bestText = "";
+    let bestKind: "" | "normal" | "locked" = "";
+    for (const d of this.ship.doors) {
+      const to = d.center.clone().sub(eye);
+      const dist = to.length();
+      if (dist > 2.7) continue;
+      const dot = to.dot(dir) / dist;
+      if (dot < 0.55 && dist > 1.0) continue;
+      const tgt = d.center.clone().addScaledVector(to, -0.3 / dist);
+      if (!world.lineClear(eye.x, eye.y, eye.z, tgt.x, tgt.y, tgt.z)) continue;
+      const score = -dist + dot * 1.5;
+      if (score > best) {
+        best = score;
+        bestKind = d.locked ? "locked" : "normal";
+        bestText = d.locked ? `${d.name} – verschlossen (${d.locked === "red" ? "rote" : "blaue"} Zugangskarte nötig)` : d.target === 1 ? `${d.name} schließen` : `${d.name} öffnen`;
+        bestAct = () => this.useDoor(d);
+      }
+    }
+    for (const lb of this.ship.lifeboats) {
+      const dd = Math.hypot(eye.x - lb.zone.x, eye.z - lb.zone.z);
+      if (dd < 2.4 && Math.abs(eye.y - lb.zone.y) < 3 && !lb.launched) {
+        const score = 5 - dd;
+        if (score > best) {
+          best = score;
+          const ok = this.sim.sinking || this.mode === "sandbox";
+          bestKind = ok ? "normal" : "locked";
+          bestText = ok ? "In das Rettungsboot einsteigen" : "Rettungsboot – erst das Schiff versenken!";
+          bestAct = () => this.boardLifeboat(lb);
+        }
+      }
+    }
+    this.prompt = bestText;
+    this.promptKind = bestKind;
+    this.promptTarget = bestAct;
+    if (this.input.pressed("interact")) {
+      if (bestAct) bestAct();
+    }
+  }
+
+  private useDoor(d: Door) {
+    if (d.locked) {
+      if (this.hasKey[d.locked]) {
+        d.unlock();
+        this.say(`${d.name} mit ${d.locked === "red" ? "roter" : "blauer"} Karte entsperrt.`, "good");
+        const p = this.player.body;
+        d.toggle(p.x, p.z);
+      } else {
+        this.audio.locked();
+        this.say(`Verschlossen. Du brauchst die ${d.locked === "red" ? "rote" : "blaue"} Zugangskarte.`, "warn");
+      }
+      return;
+    }
+    const p = this.player.body;
+    d.toggle(p.x, p.z);
+  }
+
+  private updatePickups() {
+    const pb = this.player.body;
+    const p = this.player;
+    if (this.dead || this.escapeState) return;
+    for (const pk of this.ship.pickups) {
+      if (pk.taken) continue;
+      const dx = pb.x - pk.pos.x,
+        dz = pb.z - pk.pos.z,
+        dy = pb.y + 0.9 - pk.pos.y;
+      if (dx * dx + dz * dz > 1.1 * 1.1 || Math.abs(dy) > 1.6) continue;
+      let ok = true;
+      switch (pk.type) {
+        case "key_red":
+          this.hasKey.red = true;
+          this.say("Rote Zugangskarte gefunden! (Maschinenleitstand)", "good");
+          break;
+        case "key_blue":
+          this.hasKey.blue = true;
+          this.say("Blaue Zugangskarte gefunden! (Gittertor Laderaum 2)", "good");
+          break;
+        case "medkit":
+          if (p.health >= 100) {
+            ok = false;
+            this.hintOnce("Gesundheit voll – Verbandskasten bleibt liegen.");
+          } else {
+            p.health = Math.min(100, p.health + 50);
+            this.say("+50 Gesundheit", "pickup");
+          }
+          break;
+        case "armor":
+          if (p.armor >= 100) ok = false;
+          else {
+            p.armor = 100;
+            this.say("Schutzweste angelegt", "pickup");
+          }
+          break;
+        case "tnt":
+          this.tnt += pk.amount;
+          this.say(`+${pk.amount} TNT`, "pickup");
+          break;
+        case "ammo_pistol":
+          this.ammo.pistol.res += pk.amount;
+          this.say(`+${pk.amount} Pistolenmunition`, "pickup");
+          break;
+        case "ammo_shotgun":
+          this.ammo.shotgun.res += pk.amount;
+          this.say(`+${pk.amount} Schrotpatronen`, "pickup");
+          break;
+        case "ammo_rifle":
+          this.ammo.rifle.res += pk.amount;
+          this.say(`+${pk.amount} Gewehrmunition`, "pickup");
+          break;
+        case "weapon_shotgun":
+          this.owned.shotgun = true;
+          this.ammo.shotgun.mag = 6;
+          this.ammo.shotgun.res += 6;
+          this.say("Schrotflinte aufgenommen (Taste 2)", "good");
+          break;
+        case "weapon_rifle":
+          this.owned.rifle = true;
+          this.ammo.rifle.mag = 30;
+          this.say("Sturmgewehr aufgenommen (Taste 3)", "good");
+          break;
+      }
+      if (ok) {
+        pk.taken = true;
+        pk.mesh.visible = false;
+        this.audio.pickup();
+      }
+    }
+  }
+  private lastHint = "";
+  private lastHintT = 0;
+  private hintOnce(t: string) {
+    if (this.lastHint === t && this.time - this.lastHintT < 6) return;
+    this.lastHint = t;
+    this.lastHintT = this.time;
+    this.say(t, "info");
+  }
+
+  // ------------------------------------------------------------------ Mission
+  private floodedMsg = new Set<string>();
+  private objState = { allArmed: false, sunkMsg: false, detMsg: false };
+  private updateMission() {
+    const armed = this.ship.markers.filter((m) => m.armed).length;
+    if (armed !== this.armedCount) this.armedCount = armed;
+    if (this.sim.sinking && !this.objState.sunkMsg) {
+      this.objState.sunkMsg = true;
+      this.say("Das Schiff sinkt! Zum Rettungsboot – SCHNELL! (E am Boot)", "alert");
+      this.audio.creak(1.5);
+    }
+    if (!this.sim.sinking) {
+      for (const c of this.ship.compartments) {
+        if (c.fill > 0.97 && !this.floodedMsg.has(c.id)) {
+          this.floodedMsg.add(c.id);
+          this.say(`${c.name} ist vollgelaufen – das Schiff schwimmt noch. Flute ein weiteres Abteil!`, "warn");
+        }
+      }
+    }
+    if (this.armedCount >= 2 && !this.objState.allArmed) {
+      this.objState.allArmed = true;
+      this.say("Genug Sprengpunkte scharf. Zünde mit G (Fernzünder) – dann flieh!", "good");
+    }
+  }
+
+  private objectives(): { text: string; done: boolean }[] {
+    if (this.mode === "sandbox") {
+      return [
+        { text: "Sprenge den Frachter nach Belieben", done: false },
+        { text: "Rettungsboot (E) beendet die Sandbox", done: false },
+      ];
+    }
+    const planted = this.ship.markers.filter((m) => m.armed).length;
+    return [
+      { text: "Blaue Zugangskarte finden (Kajüten, Deck 1)", done: this.hasKey.blue },
+      { text: "Rote Karte (Brücke) für den Maschinenraum – optional", done: this.hasKey.red },
+      { text: `TNT an 2 orangen Sprengpunkten im Rumpf platzieren (${Math.min(planted, 2)}/2)`, done: planted >= 2 },
+      { text: "Ladungen zünden (G) – Schiff versenken", done: this.sim.sinking },
+      { text: "Zum Rettungsboot flüchten (E)", done: this.escapeState !== null },
+    ];
+  }
+
+  // ------------------------------------------------------------------ Rettungsboot
+  private boardLifeboat(lb: Lifeboat) {
+    if (this.escapeState) return;
+    if (!this.sim.sinking && this.mode !== "sandbox") {
+      this.audio.locked();
+      this.say("Das Schiff schwimmt noch! Versenke es zuerst.", "warn");
+      return;
+    }
+    lb.launched = true;
+    this.scene.attach(lb.group);
+    const start = lb.group.position.clone();
+    const dir = V(lb.side, 0, 0);
+    this.escapeState = { boat: lb, t: 0, phase: 0, startPos: start, dir, speed: 0 };
+    this.vm.root.visible = false;
+    this.say("Rettungsboot wird zu Wasser gelassen …", "good");
+    this.audio.door("hatch");
+    if (this.mode === "sandbox") this.sim.forceSink = true;
+    this.noiseT = 0;
+  }
+
+  private updateEscape(dt: number) {
+    const e = this.escapeState;
+    if (!e) return;
+    e.t += dt;
+    const boat = e.boat.group;
+    const sea = this.ocean.height(boat.position.x, boat.position.z, this.time);
+    if (e.phase === 0) {
+      const dur = 4.5;
+      const k = Math.min(1, e.t / dur);
+      const ease = k * k * (3 - 2 * k);
+      const tx = e.startPos.x + e.dir.x * 5;
+      boat.position.x = e.startPos.x + (tx - e.startPos.x) * ease;
+      boat.position.z = e.startPos.z;
+      boat.position.y = e.startPos.y + (sea + 0.35 - e.startPos.y) * ease;
+      boat.rotation.y = e.dir.x * Math.PI / 2;
+      boat.rotation.x = Math.sin(e.t * 2) * 0.03;
+      boat.rotation.z = Math.sin(e.t * 1.7) * 0.05;
+      if (k >= 1) {
+        e.phase = 1;
+        e.t = 0;
+        this.audio.splash(undefined, true);
+        this.audio.door("close");
+        for (let i = 0; i < 30; i++) this.pn.emit(boat.position.x + (Math.random() - 0.5) * 3, sea, boat.position.z + (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 3, 3 + Math.random() * 4, (Math.random() - 0.5) * 3, 1.5, 0.4, 1.0, 0.9, 0.95, 1, 0.6, 9, 0.3);
+        this.say("Motor läuft – weg vom sinkenden Schiff!", "good");
+      }
+    } else {
+      e.speed = Math.min(7, e.speed + dt * 1.8);
+      boat.position.x += e.dir.x * e.speed * dt;
+      const h = this.ocean.height(boat.position.x, boat.position.z, this.time);
+      const hf = this.ocean.height(boat.position.x + e.dir.x * 3, boat.position.z, this.time);
+      boat.position.y += (h + 0.35 - boat.position.y) * Math.min(1, dt * 6);
+      boat.rotation.z = Math.sin(e.t * 1.6) * 0.06 + (hf - h) * 0.05 * e.dir.x;
+      boat.rotation.x = Math.sin(e.t * 1.3) * 0.04;
+      // Gischt
+      if (Math.random() < dt * 40) this.pn.emit(boat.position.x - e.dir.x * 3.5, h, boat.position.z + (Math.random() - 0.5), -e.dir.x * 2, 1.5, (Math.random() - 0.5), 1.2, 0.5, 1.4, 0.9, 0.95, 1, 0.4, 3, 0.5);
+      if (!this.sim.sinking) this.sim.forceSink = true;
+      if ((this.sim.sunk || e.t > 40) && !this.ended) {
+        this.ended = true;
+        this.audio.win();
+        this.cb.onEnd({ kind: "win", cause: "Entkommen", time: this.time, kills: this.kills, flood: this.sim.F, mode: this.mode });
+      }
+    }
+  }
+
+  // ------------------------------------------------------------------ Weltstimmung
+  private updateWorldFx(dt: number) {
+    const t = this.time;
+    const env = this.env;
+    // Rauch aus dem Schornstein
+    const eng = this.ship.compartments[0];
+    const engineOn = eng.fill < 0.55 && !this.sim.sunk;
+    this.smokeT -= dt;
+    if (this.smokeT <= 0 && engineOn && this.settings.particles > 0.1) {
+      this.smokeT = 0.07;
+      const w = this.worldPos(this.ship.funnelTop, V());
+      const wind = 3 + env.windMul * 5;
+      this.pn.emit(w.x, w.y, w.z, -wind * 0.4 + (Math.random() - 0.5), 2.5 + Math.random(), (Math.random() - 0.5) * 1.2, 7, 1.6, 9, 0.18, 0.18, 0.2, 0.55, -0.15, 0.25);
+    }
+    // Wasserstrahlen aus Löchern + Schaum
+    let rush = 0;
+    const eye = this.eyeLocal();
+    for (const c of this.ship.compartments) {
+      for (const h of c.holes) {
+        const wy = this.sim.worldY(h.pos.x, h.pos.y, h.pos.z);
+        const head = Math.max(0, -Math.max(wy, c.worldLevel));
+        if (head <= 0.05) continue;
+        const flowRate = Math.min(1, head / 5);
+        const d = h.pos.distanceTo(eye);
+        rush += (Math.min(1, (h.area * flowRate) / 3) * 1.0) / (1 + d * 0.12);
+        if (Math.random() < dt * 90 * Math.min(1, this.settings.particles + 0.2)) {
+          const w = this.worldPos(h.pos, V());
+          const n = V(h.nx, h.ny, h.nz).transformDirection(this.ship.group.matrixWorld);
+          const sp = 3 + head * 1.0 + Math.random() * 3;
+          this.pn.emit(
+            w.x + (Math.random() - 0.5) * 0.6,
+            w.y + (Math.random() - 0.5) * 0.6,
+            w.z + (Math.random() - 0.5) * 0.6,
+            n.x * sp + (Math.random() - 0.5) * 1.5,
+            n.y * sp + Math.random() * 1.5,
+            n.z * sp + (Math.random() - 0.5) * 1.5,
+            0.7,
+            0.12,
+            0.4,
+            0.75,
+            0.88,
+            1,
+            0.55,
+            9,
+            0.6,
+          );
+        }
+      }
+    }
+    this.rushLevel = Math.min(1, rush);
+
+    // Untergang: Schaum & Luftblasen
+    if (this.sim.sinking && !this.sim.sunk) {
+      this.foamT -= dt;
+      if (this.foamT <= 0) {
+        this.foamT = 0.05;
+        const z = (Math.random() - 0.5) * 120;
+        const side = Math.random() < 0.5 ? -1 : 1;
+        const lp = V(side * (11 + Math.random() * 2), 0, z);
+        const w = this.worldPos(lp, V());
+        const m = this.ship.group.matrixWorld.elements;
+        void m;
+        const sh = this.ocean.height(w.x, w.z, t);
+        this.pn.emit(w.x, sh + 0.1, w.z, side * 0.5, 0.6, (Math.random() - 0.5), 4, 2, 6, 0.95, 0.97, 1, 0.5, 0, 0.3);
+      }
+      this.creakTimer -= dt;
+      if (this.creakTimer <= 0) {
+        this.creakTimer = 2 + Math.random() * 3;
+        this.audio.creak(1.2);
+        this.shake = Math.min(1, this.shake + 0.25);
+      }
+    }
+    // Alarmleuchten
+    const blink = Math.sin(t * 8) > 0;
+    this.ship.alarmLights.forEach((l) => (l.visible = this.alarm && blink));
+    this.ship.navLights.forEach((l, i) => {
+      if (i < 2) return;
+      l.visible = Math.sin(t * 2.2 + i) > -0.2;
+    });
+
+    // Möwen
+    for (const g of this.gulls) {
+      g.a += g.s * dt;
+      const x = Math.cos(g.a) * g.r,
+        z = Math.sin(g.a) * g.r;
+      g.g.position.set(x, g.h + Math.sin(t * 0.5 + g.ph) * 2, z);
+      g.g.rotation.y = -g.a;
+      g.g.rotation.z = Math.sin(t * 0.6 + g.ph) * 0.15;
+      const f = Math.sin(t * 7 + g.ph) * 0.5;
+      g.wl.rotation.z = f;
+      g.wr.rotation.z = -f;
+      g.g.visible = env.storm < 0.8 && env.night < 0.7;
+    }
+    this.gullTimer -= dt;
+    if (this.gullTimer <= 0) {
+      this.gullTimer = 6 + Math.random() * 10;
+      if (env.storm < 0.8 && this.indoor < 0.5) this.audio.gull();
+    }
+    // Regen
+    if (this.rain.visible) {
+      const m = this.rain.material as THREE.ShaderMaterial;
+      m.uniforms.uTime.value = t;
+      m.uniforms.uCam.value.copy(this.camera.position);
+      m.uniforms.uAlpha.value = this.indoor > 0.5 ? 0 : 0.35;
+    }
+    // Tropfen auf der Kamera/Blitz bei Sturm
+    if (env.storm > 0.8 && Math.random() < dt * 0.1) {
+      this.lightning = 1;
+      setTimeout(() => this.audio.explosion({ dist: 120, pan: 0 }, 1.5), 600 + Math.random() * 1500);
+    }
+    this.lightning = Math.max(0, this.lightning - dt * 3);
+    // Mündungslicht abklingen
+    this.muzzleLight.intensity = Math.max(0, this.muzzleLight.intensity - dt * 500);
+    for (const l of this.flashLights) l.intensity = Math.max(0, l.intensity - dt * 1500);
+    for (const tr of this.tracers) {
+      if (tr.t > 0) {
+        tr.t -= dt;
+        if (tr.t <= 0) tr.line.visible = false;
+      }
+    }
+    // Schiff verschwunden?
+    if (this.sim.sunk) this.ship.group.visible = false;
+    for (const c of this.ship.compartments) {
+      const wm = c.waterMesh;
+      wm.visible = c.fill > 0.004 && !this.sim.sunk;
+      if (wm.visible) {
+        const cz = (c.min.z + c.max.z) / 2;
+        const wp = this.worldPos(V(0, c.level, cz), V());
+        wm.position.set(wp.x, c.worldLevel, wp.z);
+        // Clip-Ebenen aktualisieren
+        const mw = this.ship.group.matrixWorld;
+        const nrm = [V(1, 0, 0), V(-1, 0, 0), V(0, 1, 0), V(0, -1, 0), V(0, 0, 1), V(0, 0, -1)];
+        const pts = [V(c.min.x, 0, 0), V(c.max.x, 0, 0), V(0, c.min.y, 0), V(0, c.max.y, 0), V(0, 0, c.min.z), V(0, 0, c.max.z)];
+        // Ebene i: Normale zeigt ins Innere
+        const inward = [V(1, 0, 0), V(-1, 0, 0), V(0, 1, 0), V(0, -1, 0), V(0, 0, 1), V(0, 0, -1)];
+        for (let i = 0; i < 6; i++) {
+          const nw = inward[i].clone().transformDirection(mw);
+          const pw = pts[i].clone().applyMatrix4(mw);
+          c.planes[i].setFromNormalAndCoplanarPoint(nw, pw);
+        }
+        void nrm;
+      }
+    }
+  }
+  rushLevel = 0;
+  lightning = 0;
+
+  private updateEffects(dt: number) {
+    for (let i = this.effects.length - 1; i >= 0; i--) {
+      const e = this.effects[i];
+      if (!e.update(dt)) {
+        e.dispose?.();
+        this.effects.splice(i, 1);
+      }
+    }
+  }
+
+  // ------------------------------------------------------------------ Kamera/Licht/Audio
+  private updateCamera(dt: number) {
+    const cam = this.camera;
+    const p = this.player;
+    const st = this.settings;
+    const e = this.escapeState;
+    if (e) {
+      const boat = e.boat.group;
+      const off = V(0.8, 3.4, 6.8).applyQuaternion(boat.quaternion);
+      cam.position.copy(boat.position).add(off);
+      const target = this.ship.group.position.clone().add(V(0, 8, 0));
+      const m = new THREE.Matrix4().lookAt(cam.position, target, V(0, 1, 0));
+      const q = new THREE.Quaternion().setFromRotationMatrix(m);
+      cam.quaternion.slerp(q, Math.min(1, dt * 3));
+      this.ship.group.updateMatrixWorld(true);
+      return;
+    }
+    const eye = this.eyeLocal();
+    let bobY = 0,
+      bobX = 0;
+    if (st.headBob && p.body.onGround && p.speed > 0.5 && !this.dead) {
+      const amt = Math.min(1, p.speed / 4) * (p.sprinting ? 1.4 : 1);
+      bobY = Math.sin(p.bob * 2) * 0.03 * amt;
+      bobX = Math.cos(p.bob) * 0.02 * amt;
+    }
+    let fall = 0;
+    if (this.dead) {
+      fall = Math.min(1, this.deadT * 1.5);
+      eye.y -= fall * 1.2;
+    }
+    const sk = this.shake * this.shake * st.shake;
+    const shk = V((Math.random() - 0.5) * 0.06 * sk, (Math.random() - 0.5) * 0.06 * sk, 0);
+    eye.y += bobY + shk.y;
+    const lookRight = V(Math.cos(p.yaw), 0, -Math.sin(p.yaw));
+    eye.addScaledVector(lookRight, bobX + shk.x);
+    const ew = this.worldPos(eye, V());
+    cam.position.copy(ew);
+    const lean = Math.sin(p.bob) * 0.004 * (p.speed > 1 ? 1 : 0);
+    this.tmpE.set(p.pitch + (Math.random() - 0.5) * 0.02 * sk, p.yaw + (Math.random() - 0.5) * 0.02 * sk, lean + fall * 1.2 + (Math.random() - 0.5) * 0.02 * sk, "YXZ");
+    this.tmpQ.setFromEuler(this.tmpE);
+    cam.quaternion.copy(this.ship.group.quaternion).multiply(this.tmpQ);
+    cam.updateMatrixWorld(true);
+  }
+
+  private updateLights(dt: number) {
+    const env = this.env;
+    const st = this.settings;
+    const cam = this.camera;
+    const p = this.player;
+    const under = this.cameraUnderwater();
+    this.waterOverlay = under;
+    const ind = this.indoor;
+    this.sun.color.copy(env.sunColor);
+    this.sun.intensity = env.sunIntensity * (1 - 0.88 * ind) * (1 + this.lightning * 0.5);
+    this.sun.position.copy(cam.position).addScaledVector(env.sunDir, 160);
+    this.sun.target.position.copy(cam.position);
+    this.sun.target.updateMatrixWorld();
+    this.hemi.color.copy(env.hemiSky);
+    this.hemi.groundColor.copy(env.hemiGround);
+    const depthDark = under ? 0.45 : 1;
+    this.hemi.intensity = (env.hemiIntensity * (1 - 0.75 * ind) + 0.1 * ind + this.lightning * 2.5) * depthDark;
+    const fogD = 0.0016 * (1.15 - st.viewDistance) * (1 + env.storm * 1.2);
+    const fogC = under ? new THREE.Color(0.02, 0.2, 0.28).multiplyScalar(0.4 + 0.6 * env.night * 0 + 0.6) : env.fogColor;
+    if (!this.scene.fog) this.scene.fog = new THREE.FogExp2(fogC.getHex(), fogD);
+    const fog = this.scene.fog as THREE.FogExp2;
+    fog.color.copy(fogC);
+    fog.density = under ? 0.075 : fogD;
+    this.scene.background = null;
+    this.ocean.apply(env, fog.density, st.waveHeight);
+    this.ocean.update(cam.position, this.time, this.shipInv(), !this.sim.sunk, under);
+    this.sky.update(cam.position, this.time);
+    // Lampen-Pool
+    const lamps = this.ship.lamps;
+    const el = this.eyeLocal();
+    const power = this.sim.sinking ? Math.max(0.0, 1 - this.sim.sinkT * 0.05) : 1;
+    const flick = this.sim.sinking || this.alarm ? 0.6 + 0.4 * Math.sin(this.time * 17 + Math.sin(this.time * 5) * 3) : 1;
+    const pool = this.lampPool;
+    if (pool.length) {
+      const picked: number[] = [];
+      const dists: number[] = [];
+      for (let i = 0; i < lamps.length; i++) {
+        const l = lamps[i];
+        const d = (l.pos.x - el.x) ** 2 + (l.pos.y - el.y) ** 2 * 1.5 + (l.pos.z - el.z) ** 2;
+        if (picked.length < pool.length) {
+          picked.push(i);
+          dists.push(d);
+        } else {
+          let wi = 0;
+          for (let k = 1; k < dists.length; k++) if (dists[k] > dists[wi]) wi = k;
+          if (d < dists[wi]) {
+            dists[wi] = d;
+            picked[wi] = i;
+          }
+        }
+      }
+      const redMix = this.alarm ? 0.5 + 0.5 * Math.sin(this.time * 6) : 0;
+      for (let k = 0; k < pool.length; k++) {
+        const L = pool[k];
+        if (k < picked.length) {
+          const lp = lamps[picked[k]];
+          L.position.copy(lp.pos);
+          const outdoor = lp.zone === -1 && lp.pos.y > 4 && this.indoor < 0.5;
+          const nightBoost = outdoor ? (0.2 + env.night * 1.2) : 1;
+          L.intensity = 38 * power * flick * nightBoost * (under ? 0.5 : 1);
+          L.color.setRGB(1, 0.94 - redMix * 0.5, 0.8 - redMix * 0.6);
+        } else L.intensity = 0;
+      }
+    }
+    // Lampenmaterial dimmen
+    this.ship.lampMat.color.setRGB(1, 0.95, 0.8).multiplyScalar(Math.max(0.15, power * (0.7 + 0.3 * flick)));
+    // Taschenlampe
+    this.flashlight.intensity += ((this.flashOn && !this.dead ? 140 : 0) - this.flashlight.intensity) * Math.min(1, dt * 20);
+    this.headLight = p.alive ? 1 : 0;
+    this.camera.far = 4000;
+  }
+
+  private _inv = new THREE.Matrix4();
+  private shipInv(): THREE.Matrix4 {
+    return this._inv.copy(this.ship.group.matrixWorld).invert();
+  }
+
+  private cameraUnderwater(): boolean {
+    if (this.escapeState) {
+      const h = this.ocean.height(this.camera.position.x, this.camera.position.z, this.time);
+      return this.camera.position.y < h - 0.05;
+    }
+    const e = this.eyeLocal();
+    const lvl = this.waterAt(e.x, e.y + (this.dead ? -1.2 : 0), e.z);
+    return e.y < lvl;
+  }
+
+  private updateAudio(dt: number) {
+    const env = this.env;
+    const under = this.waterOverlay;
+    const engPos = V(0, -3, -50);
+    const dist = this.eyeLocal().distanceTo(engPos);
+    const eng = this.ship.compartments[0];
+    const engineRun = eng.fill < 0.6 && !this.sim.sunk ? 1 : 0;
+    const engineVol = engineRun * Math.max(0.1, Math.min(1, 1.2 - dist / 45));
+    this.audio.update(dt, {
+      engine: engineVol * (this.indoor > 0.5 ? 1 : 0.5),
+      wind: env.windMul,
+      waves: Math.min(1, this.ocean.amp / 1.5),
+      underwater: under,
+      inside: this.indoor > 0.5,
+      rush: this.rushLevel,
+      alarm: this.alarm && !this.dead && !this.escapeState,
+      heart: this.player.health < 30 && this.player.alive ? 1 - this.player.health / 30 : 0,
+      tension: this.guards.some((g) => g.state === "chase" && !g.dead) ? 1 : this.sim.sinking ? 0.8 : 0,
+      musicOn: !this.dead,
+    });
+  }
+
+  // ------------------------------------------------------------------ Render
+  private render() {
+    const r = this.renderer;
+    r.clear();
+    r.render(this.scene, this.camera);
+    if (!this.dead && !this.escapeState && this.vm.root.visible) {
+      const pb = this.player;
+      const [ldx, ldy] = [this.input.lookX, this.input.lookY];
+      this.vm.update(this.paused ? 0 : 0.016, { speed: pb.speed * (pb.sprinting ? 1.2 : 1), onGround: pb.body.onGround, lookDX: ldx, lookDY: ldy, reloading: this.reloading }, this.dyns.length > 0);
+      r.clearDepth();
+      r.render(this.vmScene, this.vmCam);
+    }
+  }
+
+  // ------------------------------------------------------------------ HUD
+  private pushHud() {
+    const p = this.player;
+    const w = WEAPONS[this.cur];
+    const a = this.cur === "tnt" ? { mag: 0, res: 0 } : this.ammo[this.cur];
+    const dir = this.lookDirLocal();
+    const heading = ((Math.atan2(dir.x, dir.z) * 180) / Math.PI + 360) % 360;
+    const now = this.time;
+    this.msgs = this.msgs.filter((m) => m.t > now);
+    const chase = this.guards.some((g) => g.state === "chase" && !g.dead);
+    const m = this.ship.group.matrixWorld.elements;
+    void m;
+    const hud: HudState = {
+      hp: p.health,
+      armor: p.armor,
+      weapon: this.cur,
+      weaponName: w.name,
+      mag: a.mag,
+      reserve: a.res,
+      tnt: this.tnt,
+      owned: { ...this.owned },
+      oxygen: p.oxygen,
+      underwater: this.waterOverlay,
+      wading: p.wading,
+      prompt: this.prompt,
+      promptKind: this.promptKind,
+      objectives: this.objectives(),
+      messages: this.msgs.map((x) => ({ id: x.id, text: x.text, kind: x.kind })),
+      flood: this.ship.compartments.map((c) => ({ name: c.name, fill: c.fill, flow: c.flow })),
+      F: this.sim.F,
+      sinking: this.sim.sinking,
+      tilt: this.sim.tiltDeg,
+      pitchDeg: (this.sim.pitch * 180) / Math.PI,
+      rollDeg: (this.sim.roll * 180) / Math.PI,
+      alarm: this.alarm,
+      fps: Math.round(this.fps),
+      hit: this.hitMarker,
+      dmg: this.dmgFlash,
+      keys: { ...this.hasKey },
+      armedMarkers: this.armedCount,
+      planted: this.dyns.length,
+      mode: this.mode,
+      time: this.time,
+      kills: this.kills,
+      reloading: this.reloading,
+      chase,
+      heading,
+      escape: !!this.escapeState,
+      detonatable: this.dyns.length > 0,
+      sprint: p.sprinting,
+      crouch: p.crouch > 0.5,
+      locked: this.lockOk,
+      dragMode: this.dragMode,
+      sunk: this.sim.sunk,
+      guardsAlive: this.guards.filter((g) => !g.dead).length,
+    };
+    this.cb.onHud(hud);
+  }
+
+  // ------------------------------------------------------------------ Aufräumen
+  dispose() {
+    this.disposed = true;
+    this.running = false;
+    cancelAnimationFrame(this.raf);
+    document.removeEventListener("pointerlockchange", this.onLockChange);
+    document.removeEventListener("pointerlockerror", this.onLockError);
+    document.removeEventListener("visibilitychange", this.onVis);
+    window.removeEventListener("resize", this.onResize);
+    window.removeEventListener("pointerdown", this.onFirstGesture);
+    window.removeEventListener("keydown", this.onFirstGesture);
+    this.resizeObs?.disconnect();
+    this.input.detach();
+    try {
+      if (document.pointerLockElement) document.exitPointerLock();
+    } catch {
+      /* ignore */
+    }
+    this.audio.dispose();
+    try {
+      this.effects.forEach((e) => e.dispose?.());
+      this.pn?.dispose();
+      this.pa?.dispose();
+      this.ship?.dispose();
+      this.renderer?.domElement.removeEventListener("webglcontextlost", this.lostHandler);
+      this.renderer?.dispose();
+      this.renderer?.forceContextLoss();
+      this.renderer?.domElement.remove();
+    } catch {
+      /* ignore */
+    }
+  }
+}

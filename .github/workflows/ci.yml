@@ -1,0 +1,43 @@
+name: Continuous Integration & Physics Verification
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  validate:
+    name: Build & Verify Simulation Integrity
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js Environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Python for CI Check
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Node Dependencies
+        run: npm ci
+
+      - name: Run Typecheck (Root & Sonnet)
+        run: |
+          npx tsc --noEmit
+          npx tsc --project detailed-3d-sinking-freighter-game_sonnet/tsconfig.json --noEmit
+
+      - name: Run Python CI Integrity Suite
+        run: python tools/ci_check.py
+
+      - name: Build Root Distribution
+        run: npx vite build
+
+      - name: Build Sonnet Distribution
+        run: npx vite build detailed-3d-sinking-freighter-game_sonnet
