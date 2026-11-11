@@ -7,6 +7,9 @@ dist/
 dist-ssr/
 *.local
 
+# Generated layout verification screenshots
+artifacts/
+
 # Logs
 npm-debug.log*
 yarn-debug.log*

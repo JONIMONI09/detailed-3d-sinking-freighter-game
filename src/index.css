@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Compact HUD layout for short viewports (phone landscape, split screen). */
+@custom-variant short (@media (max-height: 560px));
+
 @layer base {
   :root {
     --font-display: 'Chakra Petch', sans-serif;
@@ -104,6 +107,17 @@ input[type="range"].naval-slider::-webkit-slider-thumb {
   background: #f59e0b;
 }
 
+/* Horizontal strips (weapon dock) scroll without a visible scrollbar. */
+.naval-scroll-x {
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.naval-scroll-x::-webkit-scrollbar {
+  display: none;
+}
+
 @keyframes pulse-danger {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.45; }
@@ -111,4 +125,30 @@ input[type="range"].naval-slider::-webkit-slider-thumb {
 
 .animate-pulse-danger {
   animation: pulse-danger 1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Keep every HUD control inside the safe area (notch, Dynamic Island, home bar). */
+.hud-safe {
+  padding-top: max(0.625rem, env(safe-area-inset-top));
+  padding-right: max(0.625rem, env(safe-area-inset-right));
+  padding-bottom: max(0.625rem, env(safe-area-inset-bottom));
+  padding-left: max(0.625rem, env(safe-area-inset-left));
+}
+
+@media (min-width: 640px) {
+  .hud-safe {
+    padding-top: max(1rem, env(safe-area-inset-top));
+    padding-right: max(1rem, env(safe-area-inset-right));
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+    padding-left: max(1rem, env(safe-area-inset-left));
+  }
+}
+
+@media (max-height: 560px) {
+  .hud-safe {
+    padding-top: max(0.375rem, env(safe-area-inset-top));
+    padding-right: max(0.375rem, env(safe-area-inset-right));
+    padding-bottom: max(0.375rem, env(safe-area-inset-bottom));
+    padding-left: max(0.375rem, env(safe-area-inset-left));
+  }
 }

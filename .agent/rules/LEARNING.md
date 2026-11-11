@@ -2,6 +2,30 @@
 
 ## Completed Triages & Resolutions (v2.0)
 
+### [RESOLVED] HUD Overflow in Phone Landscape
+- **Issue:** In phone landscape the schematic panel overlapped the virtual thumbstick, the interaction popup was covered by the event ticker and weapon dock, and the weapon dock showed a native scrollbar.
+- **Root Cause:** Fixed pixel HUD sizes tuned for desktop, an expanded-by-default telemetry panel, and no height-based breakpoint — while landscape phones only expose ~300–430 px CSS height.
+- **Fix:** Height variant `short` (`max-height: 560px`), panel collapsed by default with `max-h-[46vh]` and internal scrolling, icon-only top bar, compact interaction popup, 88 px thumbstick, scaled action cluster and a hidden dock scrollbar. Verified at 844x390 and 740x360 with zero overlaps; the settings modal fits at 768x351 in a 390 px viewport. See `RESPONSIVE_UI.md`.
+
+### [RESOLVED] Touch Look Zone Blocked HUD Buttons
+- **Issue:** On touch viewports the camera, flashlight, bulkhead and sound buttons in the wrapped top bar did not react; at 390 px width the interaction popup also covered the telemetry panel's action buttons.
+- **Root Cause:** The look zone was a child of the `z-20` touch overlay and therefore painted above the entire `z-10` HUD; the telemetry panel only collapsed on short heights, not on narrow widths; the event ticker used a 576 px max width.
+- **Fix:** Extracted the look zone to a sibling at `z-[5]` so the HUD stays above it, while joystick/action buttons remain at `z-20`; the panel auto-collapses below 640 px width; the ticker is capped at `92vw`; `.hud-safe` respects `env(safe-area-inset-*)` and `index.html` uses `viewport-fit=cover`.
+- **Verified:** 844×390 and 390×844 each show 21 HUD buttons with 0 clipped and 0 covered; Settings 768×351 / 374×810; analyzer 374×810; both modals report 0 clipped buttons.
+- **Lesson:** A `pointer-events` overlay can make a layout look correct while silently eating taps. Audit with `elementFromPoint`, not only bounding boxes — and reload the frame before measuring, because a modal left open by a timed-out probe reports the whole HUD as covered.
+
+### [RESOLVED] German UI Text in an English Codebase
+- **Issue:** Every player-facing label, tooltip, event message and modal narrative was German, while the repository standard is English.
+- **Root Cause:** Strings were authored directly in JSX/literals without a locale layer.
+- **Fix:** 331 exact literal replacements across `index.html`, `src/App.tsx`, `src/types/game.ts`, `src/game/CargoShipBuilder.ts`, `MaritimeViewport3D`, `NavalHudOverlay`, `SettingsModal`, `PhotoTxtAnalyzerModal`, `TouchControlsOverlay` and `CrashBoundary`. Status tokens, weapon names, deck/door names and both blackbox presets are English now; ship geometry, physics and gameplay were not touched.
+- **Verified:** `npx vite build` plus a bundle scan for German markers (`UNTER WASSER`, `TÜREN`, `SCHOTTEN`, `KIEL SPRENGEN`, …) returns no hits; both typechecks and all tests stay green.
+
+### [RESOLVED] GitHub Pages Deploy Never Created a Site
+- **Issue:** The Pages workflow never published a site; the project URL stayed blank or 404.
+- **Root Cause:** `actions/configure-pages` ran without `enablement`, so the job aborted whenever no Pages site existed; no `github-pages` environment was declared; and a branch-based Pages source would serve the raw `index.html`, which references `/src/main.tsx` and has no compiled CSS.
+- **Fix:** Added `enablement: true`, the `github-pages` environment with `page_url`, and a "Verify Pages artifact" gate to `.github/workflows/deploy-pages.yml` (commit `410a321`). Local CI — install, both typechecks, physics tests, Python integrity suite and both Vite builds — verified green; see `CI_DEPLOYMENT.md`.
+- **Remaining:** GitHub Pages for private repositories requires Pro/Team/Enterprise; otherwise the repository must be public or hosted elsewhere. Pages source must be `GitHub Actions`, not a branch.
+
 ### [RESOLVED] Engine Room Mid-Aft Stairway Collision Block
 - **Issue:** Player was blocked from descending into the engine room.
 - **Root Cause:** `diesel_engine_core` at `Z = 13.5m` occupied the exact footprint of Stairwell 2 (`Z = 7.2m..13.8m`).

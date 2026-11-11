@@ -50,22 +50,28 @@ export const NavalHudOverlay: React.FC<NavalHudOverlayProps> = ({
   onOpenPhotoAnalyzer,
   commandRef,
 }) => {
-  const [leftPanelCollapsed, setLeftPanelCollapsed] = useState<boolean>(false);
+  // Phone landscape / split screen: the schematic starts collapsed so it cannot
+  // overlap the thumbstick and the weapon dock.
+  const [leftPanelCollapsed, setLeftPanelCollapsed] = useState<boolean>(
+    () =>
+      typeof window !== 'undefined' &&
+      (window.innerHeight <= 560 || window.innerWidth < 640)
+  );
 
   const statusColor =
     telemetry.shipStatus === 'NOMINAL'
       ? 'text-emerald-400 border-emerald-500/40 bg-emerald-500/10'
-      : telemetry.shipStatus === 'WASSEREINBRUCH'
+      : telemetry.shipStatus === 'FLOODING'
       ? 'text-amber-400 border-amber-500/50 bg-amber-500/15'
       : 'text-red-400 border-red-500/70 bg-red-500/20 animate-pulse';
 
   return (
-    <div className="fixed inset-0 pointer-events-none z-10 flex flex-col justify-between p-2.5 sm:p-4">
+    <div className="fixed inset-0 pointer-events-none z-10 flex flex-col justify-between hud-safe">
       {/* Underwater Submersion Tint Overlay */}
       {telemetry.playerUnderwater && (
-        <div className="fixed inset-0 pointer-events-none bg-sky-900/35 backdrop-blur-[2px] border-4 border-sky-400/30 z-0 flex items-start justify-center pt-20">
+        <div className="fixed inset-0 pointer-events-none bg-sky-900/35 backdrop-blur-[2px] border-4 border-sky-400/30 z-0 flex items-start justify-center pt-20 short:pt-10">
           <div className="px-4 py-1.5 rounded-full bg-sky-950/90 border border-sky-400 text-sky-200 font-mono-tech text-xs font-bold tracking-wider">
-            UNTER WASSER // DRÜCKE [LEERTASTE] ZUM AUFTAUCHEN
+            UNDERWATER // PRESS [SPACE] TO SURFACE
           </div>
         </div>
       )}
@@ -73,12 +79,12 @@ export const NavalHudOverlay: React.FC<NavalHudOverlayProps> = ({
       {/* =====================================================================
           1. TOP TACTICAL BAR (SHIP STATUS, DECK LOCATION, PHOTO->TXT & SETTINGS)
       ===================================================================== */}
-      <div className="relative z-10 flex flex-wrap items-center justify-between gap-2 pointer-events-auto">
+      <div className="relative z-10 flex flex-wrap items-center justify-between gap-2 short:gap-1 pointer-events-auto">
         {/* Left Brand & Current Deck Badge */}
-        <div className="naval-panel rounded-xl px-3.5 py-2 flex items-center gap-3">
+        <div className="naval-panel rounded-xl px-3.5 py-2 short:px-2 short:py-1 flex items-center gap-3 short:gap-2">
           <div className="flex items-center gap-2">
             <div className="w-2.5 h-2.5 rounded-full bg-amber-400 shadow-[0_0_8px_#f59e0b]" />
-            <span className="font-display font-bold text-sm sm:text-base tracking-wider text-white">
+            <span className="font-display font-bold text-sm sm:text-base short:text-[11px] tracking-wider text-white">
               MS POSEIDON VII
             </span>
           </div>
@@ -91,24 +97,24 @@ export const NavalHudOverlay: React.FC<NavalHudOverlayProps> = ({
           </div>
 
           <div
-            className={`px-2 py-0.5 rounded border text-[11px] font-mono-tech font-bold ${statusColor}`}
+            className={`px-2 py-0.5 short:px-1.5 short:py-0 rounded border text-[11px] short:text-[9px] font-mono-tech font-bold ${statusColor}`}
           >
             {telemetry.shipStatus}
           </div>
 
           <div
             className="hidden lg:flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-[10px] font-mono-tech font-bold"
-            title="Schiff-lokale OBB/AABB Kollision verhindert jegliches Durchlaufen von Wänden & geschlossenen Türen"
+            title="Ship-local OBB/AABB collision blocks any clipping through walls & closed doors"
           >
             <ShieldCheck className="w-3.5 h-3.5" />
-            <span>KEIN NO-CLIP AKTIV</span>
+            <span>NO-CLIP GUARD ACTIVE</span>
           </div>
         </div>
 
         {/* Right Utility & Modal Triggers */}
-        <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+        <div className="flex items-center gap-1.5 sm:gap-2 short:gap-1 flex-wrap">
           {graphics.showFps && (
-            <div className="naval-panel rounded-lg px-2.5 py-1.5 font-mono-tech text-xs hidden sm:flex items-center gap-2">
+            <div className="naval-panel rounded-lg px-2.5 py-1.5 font-mono-tech text-xs hidden sm:flex short:hidden items-center gap-2">
               <span
                 className={
                   telemetry.fps >= 45
@@ -122,7 +128,7 @@ export const NavalHudOverlay: React.FC<NavalHudOverlayProps> = ({
               </span>
               <span className="text-slate-500">|</span>
               <span className="text-slate-300">
-                TÜREN: {telemetry.doorsCount.open}/{telemetry.doorsCount.total}
+                DOORS: {telemetry.doorsCount.open}/{telemetry.doorsCount.total}
               </span>
             </div>
           )}
@@ -133,32 +139,32 @@ export const NavalHudOverlay: React.FC<NavalHudOverlayProps> = ({
               soundEngine.playUiClick();
               onOpenPhotoAnalyzer();
             }}
-            className="px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-display font-bold text-xs tracking-wider flex items-center gap-1.5 shadow-lg shadow-amber-500/20 cursor-pointer transition"
-            title="Geheimfoto in .txt umbenennen & versteckten Inhalt analysieren"
+            className="px-3 py-2 short:px-2 short:py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-display font-bold text-xs tracking-wider flex items-center gap-1.5 shadow-lg shadow-amber-500/20 cursor-pointer transition"
+            title="Rename the secret photo to .txt & analyze the hidden content"
           >
             <FileText className="w-4 h-4 shrink-0" />
-            <span>FOTO ➔ .TXT ANALYSE</span>
+            <span className="short:hidden">PHOTO ➔ .TXT ANALYZER</span>
           </button>
 
           {/* Camera Mode Toggle [V] */}
           <button
             onClick={() => commandRef.current?.triggerToggleCamera()}
-            className="naval-panel hover:border-amber-400/60 rounded-xl px-2.5 py-2 text-xs font-mono-tech text-slate-200 flex items-center gap-1.5 cursor-pointer transition"
-            title="Kamera wechseln: Ego-Perspektive / 3D-Außenkamera [V]"
+            className="naval-panel hover:border-amber-400/60 rounded-xl px-2.5 py-2 short:px-2 short:py-1.5 text-xs font-mono-tech text-slate-200 flex items-center gap-1.5 cursor-pointer transition"
+            title="Switch camera: first person / 3D exterior [V]"
           >
             <Camera className="w-4 h-4 text-amber-400" />
-            <span className="hidden sm:inline">
-              {telemetry.cameraMode === 'fpv' ? 'EGO-ANSICHT [V]' : 'AUSSEN-KAMERA [V]'}
+            <span className="hidden sm:inline short:hidden">
+              {telemetry.cameraMode === 'fpv' ? 'FIRST PERSON [V]' : 'EXTERIOR CAM [V]'}
             </span>
           </button>
 
           {/* Flashlight [F] */}
           <button
             onClick={() => commandRef.current?.triggerToggleFlashlight()}
-            className={`naval-panel rounded-xl p-2 cursor-pointer transition ${
+            className={`naval-panel rounded-xl p-2 short:p-1.5 cursor-pointer transition ${
               telemetry.flashlightOn ? 'border-sky-400 text-sky-300' : 'text-slate-400'
             }`}
-            title="Taschenlampe umschalten [F]"
+            title="Toggle flashlight [F]"
           >
             <Flashlight className="w-4 h-4" />
           </button>
@@ -168,11 +174,11 @@ export const NavalHudOverlay: React.FC<NavalHudOverlayProps> = ({
             onClick={() => {
               window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB' }));
             }}
-            className="naval-panel hover:border-red-500/80 rounded-xl px-2.5 py-2 text-xs font-mono-tech text-red-300 flex items-center gap-1 cursor-pointer transition"
-            title="Brücken-Sperre: Alle wasserdichten Schotten sperren/entsperren [B]"
+            className="naval-panel hover:border-red-500/80 rounded-xl px-2.5 py-2 short:px-2 short:py-1.5 text-xs font-mono-tech text-red-300 flex items-center gap-1 cursor-pointer transition"
+            title="Bridge lockdown: lock/unlock all watertight bulkheads [B]"
           >
             <ShieldAlert className="w-4 h-4 text-red-400" />
-            <span className="hidden lg:inline">SCHOTTEN [B]</span>
+            <span className="hidden lg:inline short:hidden">BULKHEADS [B]</span>
           </button>
 
           {/* Mute Toggle */}
@@ -180,8 +186,8 @@ export const NavalHudOverlay: React.FC<NavalHudOverlayProps> = ({
             onClick={() => {
               onToggleMute();
             }}
-            className="naval-panel rounded-xl p-2 text-slate-300 hover:text-white cursor-pointer transition"
-            title="Ton Ein/Aus"
+            className="naval-panel rounded-xl p-2 short:p-1.5 text-slate-300 hover:text-white cursor-pointer transition"
+            title="Toggle sound"
           >
             {audio.muted ? (
               <VolumeX className="w-4 h-4 text-red-400" />
@@ -193,11 +199,11 @@ export const NavalHudOverlay: React.FC<NavalHudOverlayProps> = ({
           {/* Reset Ship */}
           <button
             onClick={() => commandRef.current?.triggerResetShip()}
-            className="naval-panel hover:border-emerald-400/60 rounded-xl px-2.5 py-2 text-xs font-mono-tech text-emerald-300 flex items-center gap-1 cursor-pointer transition"
-            title="Schiff sofort reparieren & zurücksetzen"
+            className="naval-panel hover:border-emerald-400/60 rounded-xl px-2.5 py-2 short:px-2 short:py-1.5 text-xs font-mono-tech text-emerald-300 flex items-center gap-1 cursor-pointer transition"
+            title="Repair & reset the ship"
           >
             <RotateCcw className="w-4 h-4" />
-            <span className="hidden md:inline">RESET</span>
+            <span className="hidden md:inline short:hidden">RESET</span>
           </button>
 
           {/* Settings Modal Button */}
@@ -206,10 +212,10 @@ export const NavalHudOverlay: React.FC<NavalHudOverlayProps> = ({
               soundEngine.playUiClick();
               onOpenSettings();
             }}
-            className="naval-panel hover:border-amber-400 rounded-xl px-3 py-2 text-xs font-display font-bold text-white flex items-center gap-1.5 cursor-pointer transition"
+            className="naval-panel hover:border-amber-400 rounded-xl px-3 py-2 short:px-2 short:py-1.5 text-xs font-display font-bold text-white flex items-center gap-1.5 cursor-pointer transition"
           >
             <Settings className="w-4 h-4 text-amber-400" />
-            <span className="hidden sm:inline">GRAFIK & OPTIONEN</span>
+            <span className="hidden sm:inline short:hidden">GRAPHICS & OPTIONS</span>
           </button>
         </div>
       </div>
@@ -219,14 +225,14 @@ export const NavalHudOverlay: React.FC<NavalHudOverlayProps> = ({
       ===================================================================== */}
       <div className="relative flex-1 flex items-start justify-between my-2 pointer-events-none">
         {/* Left Collapsible Hydrodynamic Sinking & Compartment Panel */}
-        <div className="naval-panel rounded-xl w-72 sm:w-80 overflow-hidden pointer-events-auto transition-all shadow-2xl">
+        <div className="naval-panel rounded-xl w-72 sm:w-80 short:w-52 overflow-hidden pointer-events-auto transition-all shadow-2xl max-h-[calc(100dvh-10.5rem)] short:max-h-[46vh] flex flex-col">
           <button
             onClick={() => setLeftPanelCollapsed(!leftPanelCollapsed)}
-            className="w-full px-3.5 py-2.5 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between text-xs font-display font-bold tracking-wider text-amber-400 cursor-pointer"
+            className="w-full shrink-0 px-3.5 py-2.5 short:px-2 short:py-1.5 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between text-xs short:text-[10px] font-display font-bold tracking-wider text-amber-400 cursor-pointer"
           >
             <div className="flex items-center gap-2">
               <Droplets className="w-4 h-4 text-sky-400" />
-              <span>HYDRODYNAMIK & SCHOTTEN-TELEMETRIE</span>
+              <span>HYDRODYNAMICS & BULKHEAD TELEMETRY</span>
             </div>
             {leftPanelCollapsed ? (
               <ChevronDown className="w-4 h-4" />
@@ -236,23 +242,23 @@ export const NavalHudOverlay: React.FC<NavalHudOverlayProps> = ({
           </button>
 
           {!leftPanelCollapsed && (
-            <div className="p-3 space-y-3 text-xs font-mono-tech">
+            <div className="p-3 space-y-3 short:p-2 short:space-y-2 text-xs font-mono-tech overflow-y-auto naval-scroll min-h-0">
               {/* Primary Metrics Grid */}
               <div className="grid grid-cols-2 gap-2">
                 <div className="p-2 rounded bg-slate-900/90 border border-slate-800">
-                  <div className="text-[10px] text-slate-400">FLUTUNG GESAMT</div>
+                  <div className="text-[10px] text-slate-400">TOTAL FLOODING</div>
                   <div className="text-base font-bold text-sky-400">
                     {telemetry.totalFloodPercent}%
                   </div>
                 </div>
                 <div className="p-2 rounded bg-slate-900/90 border border-slate-800">
-                  <div className="text-[10px] text-slate-400">TIEFGANG / SINKTIEFE</div>
+                  <div className="text-[10px] text-slate-400">DRAFT / SINK DEPTH</div>
                   <div className="text-base font-bold text-white">
                     -{telemetry.sinkDepthMeters} m
                   </div>
                 </div>
                 <div className="p-2 rounded bg-slate-900/90 border border-slate-800">
-                  <div className="text-[10px] text-slate-400">KRÄNGUNG (ROLL)</div>
+                  <div className="text-[10px] text-slate-400">LIST (ROLL)</div>
                   <div
                     className={`text-sm font-bold ${
                       Math.abs(telemetry.rollDeg) > 12 ? 'text-red-400' : 'text-amber-300'
@@ -262,7 +268,7 @@ export const NavalHudOverlay: React.FC<NavalHudOverlayProps> = ({
                   </div>
                 </div>
                 <div className="p-2 rounded bg-slate-900/90 border border-slate-800">
-                  <div className="text-[10px] text-slate-400">TRIMMUNG (PITCH)</div>
+                  <div className="text-[10px] text-slate-400">TRIM (PITCH)</div>
                   <div className="text-sm font-bold text-amber-300">{telemetry.pitchDeg}°</div>
                 </div>
               </div>
@@ -270,11 +276,11 @@ export const NavalHudOverlay: React.FC<NavalHudOverlayProps> = ({
               {/* Live 2D Cross-Sectional Ship Schematic with 4 Compartments */}
               <div className="p-2.5 rounded-lg bg-[#060A10] border border-slate-800">
                 <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1.5">
-                  <span>BUG (VORNE)</span>
+                  <span>BOW (FRONT)</span>
                   <span className="text-sky-400">
-                    LECKS: {telemetry.activeBreaches} ({telemetry.waterIngressRate} m³/s)
+                    LEAKS: {telemetry.activeBreaches} ({telemetry.waterIngressRate} m³/s)
                   </span>
-                  <span>HECK</span>
+                  <span>STERN</span>
                 </div>
 
                 {/* Tilting Ship Hull Diagram */}
@@ -295,7 +301,7 @@ export const NavalHudOverlay: React.FC<NavalHudOverlayProps> = ({
                             Math.random() > 0.5 ? 'port' : 'starboard'
                           )
                         }
-                        title={`Klicken um Test-Leck in ${comp.name} zu sprengen`}
+                        title={`Click to blast a test leak in ${comp.name}`}
                         className="relative bg-slate-950 border border-slate-700/80 rounded-sm overflow-hidden flex flex-col justify-between p-1 cursor-pointer hover:border-red-400"
                       >
                         <div
@@ -314,8 +320,8 @@ export const NavalHudOverlay: React.FC<NavalHudOverlayProps> = ({
                 </div>
 
                 <div className="mt-1.5 flex items-center justify-between text-[10px] text-slate-400">
-                  <span>Klicke auf Sektion = Direkt-Lecktest</span>
-                  <span className="text-emerald-400">Rumpf: {telemetry.hullIntegrity}%</span>
+                  <span>Click a section = instant leak test</span>
+                  <span className="text-emerald-400">Hull: {telemetry.hullIntegrity}%</span>
                 </div>
               </div>
 
@@ -331,7 +337,7 @@ export const NavalHudOverlay: React.FC<NavalHudOverlayProps> = ({
                 >
                   <DoorOpen className="w-3.5 h-3.5 shrink-0" />
                   <span>
-                    SCHOTTEN: {telemetry.bulkheadDoorsOpen.some(Boolean) ? 'OFFEN' : 'DICHT'}
+                    BULKHEADS: {telemetry.bulkheadDoorsOpen.some(Boolean) ? 'OPEN' : 'SEALED'}
                   </span>
                 </button>
 
@@ -344,7 +350,7 @@ export const NavalHudOverlay: React.FC<NavalHudOverlayProps> = ({
                   }`}
                 >
                   <Droplets className="w-3.5 h-3.5 shrink-0" />
-                  <span>PUMPEN: {telemetry.bilgePumpsOn ? 'EIN' : 'AUS'}</span>
+                  <span>PUMPS: {telemetry.bilgePumpsOn ? 'ON' : 'OFF'}</span>
                 </button>
 
                 <button
@@ -352,7 +358,7 @@ export const NavalHudOverlay: React.FC<NavalHudOverlayProps> = ({
                   className="py-1.5 px-2 rounded bg-emerald-950/60 hover:bg-emerald-900/70 border border-emerald-500/50 text-emerald-300 text-[11px] font-bold cursor-pointer transition flex items-center justify-center gap-1"
                 >
                   <Wrench className="w-3.5 h-3.5" />
-                  <span>NOT-REPARATUR</span>
+                  <span>EMERGENCY REPAIR</span>
                 </button>
 
                 <button
@@ -360,22 +366,22 @@ export const NavalHudOverlay: React.FC<NavalHudOverlayProps> = ({
                   className="py-1.5 px-2 rounded bg-red-950/70 hover:bg-red-900/80 border border-red-500/60 text-red-300 text-[11px] font-bold cursor-pointer transition flex items-center justify-center gap-1"
                 >
                   <Flame className="w-3.5 h-3.5" />
-                  <span>KIEL SPRENGEN</span>
+                  <span>BLAST KEEL</span>
                 </button>
               </div>
 
               {/* Deck Quick-Teleport Bar (Walk via stairs OR jump directly to any station) */}
               <div>
                 <div className="text-[10px] text-slate-400 uppercase mb-1">
-                  SCHNELL-STATION WECHSELN (ODER ÜBER TREPPEN LAUFEN):
+                  QUICK STATION SWITCH (OR WALK VIA STAIRS):
                 </div>
                 <div className="grid grid-cols-4 gap-1">
                   {(
                     [
-                      { id: 'bridge', label: 'Brücke' },
+                      { id: 'bridge', label: 'Bridge' },
                       { id: 'main', label: 'Deck' },
-                      { id: 'hold', label: 'Fracht' },
-                      { id: 'engine', label: 'Motor' },
+                      { id: 'hold', label: 'Cargo' },
+                      { id: 'engine', label: 'Engine' },
                     ] as const
                   ).map((st) => (
                     <button
@@ -424,9 +430,9 @@ export const NavalHudOverlay: React.FC<NavalHudOverlayProps> = ({
 
           {/* Interactive Door / Bulkhead / Terminal Prompt */}
           {telemetry.nearbyInteractable && (
-            <div className="mt-12 naval-panel-amber rounded-xl px-4 py-3 max-w-md text-center pointer-events-auto shadow-2xl">
-              <div className="text-[10px] font-mono-tech uppercase text-amber-300 font-bold">
-                INTERAKTIVES SCHIFFS-OBJEKT IN REICHWEITE
+            <div className="mt-12 short:mt-2 naval-panel-amber rounded-xl px-4 py-3 short:px-3 short:py-2 max-w-md short:max-w-[17rem] short:max-h-[44vh] short:overflow-y-auto naval-scroll text-center pointer-events-auto shadow-2xl">
+              <div className="text-[10px] font-mono-tech uppercase text-amber-300 font-bold short:hidden">
+                INTERACTIVE SHIP OBJECT IN RANGE
               </div>
 
               {/* Status Badge for Doors & Bulkheads */}
@@ -435,44 +441,44 @@ export const NavalHudOverlay: React.FC<NavalHudOverlayProps> = ({
                   {telemetry.nearbyInteractable.isLocked ? (
                     <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono-tech font-bold bg-red-950/80 border border-red-500/60 text-red-300 flex items-center gap-1 shadow-sm">
                       <ShieldCheck className="w-3.5 h-3.5 text-red-400" />
-                      WASSERDICHT VERRIEGELT
+                      WATERTIGHT LOCKED
                     </span>
                   ) : telemetry.nearbyInteractable.isOpen ? (
                     <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono-tech font-bold bg-emerald-950/80 border border-emerald-500/60 text-emerald-300 flex items-center gap-1">
                       <DoorOpen className="w-3.5 h-3.5 text-emerald-400" />
-                      TÜR GEÖFFNET
+                      DOOR OPEN
                     </span>
                   ) : (
                     <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono-tech font-bold bg-amber-950/80 border border-amber-500/60 text-amber-300 flex items-center gap-1">
                       <DoorOpen className="w-3.5 h-3.5 text-amber-400" />
-                      GESCHLOSSEN (UNVERRIEGELT)
+                      CLOSED (UNLOCKED)
                     </span>
                   )}
                 </div>
               )}
 
-              <div className="font-display font-bold text-sm sm:text-base text-white mt-0.5">
+              <div className="font-display font-bold text-sm sm:text-base short:text-xs text-white mt-0.5">
                 {telemetry.nearbyInteractable.title}
               </div>
-              <div className="text-xs text-slate-300 mt-0.5">
+              <div className="text-xs short:hidden text-slate-300 mt-0.5">
                 {telemetry.nearbyInteractable.subtitle}
               </div>
 
               {(telemetry.nearbyInteractable.type === 'door' || telemetry.nearbyInteractable.type === 'bulkhead') ? (
-                <div className="grid grid-cols-2 gap-2 mt-3">
+                <div className="grid grid-cols-2 gap-2 mt-3 short:gap-1.5 short:mt-1.5">
                   {/* Quick [E] Open/Close Toggle Button */}
                   <button
                     onClick={() => commandRef.current?.triggerInteract()}
                     disabled={telemetry.nearbyInteractable.isLocked}
-                    className={`px-3 py-2 rounded-lg font-display font-bold text-xs tracking-wider inline-flex items-center justify-center gap-1.5 transition ${
+                    className={`px-3 py-2 short:px-2 short:py-1.5 rounded-lg font-display font-bold text-xs short:text-[10px] tracking-wider inline-flex items-center justify-center gap-1.5 transition ${
                       telemetry.nearbyInteractable.isLocked
                         ? 'bg-slate-900/80 border border-red-900/50 text-slate-500 cursor-not-allowed opacity-60'
                         : 'bg-amber-500 hover:bg-amber-400 text-slate-950 cursor-pointer shadow-md active:scale-95'
                     }`}
                     title={
                       telemetry.nearbyInteractable.isLocked
-                        ? 'Tür ist verriegelt! Zuerst mit [L] entriegeln.'
-                        : 'Tür mit [E] öffnen/schließen'
+                        ? 'Door is locked! Unlock it with [L] first.'
+                        : 'Open/close the door with [E]'
                     }
                   >
                     {telemetry.nearbyInteractable.isLocked ? (
@@ -501,12 +507,12 @@ export const NavalHudOverlay: React.FC<NavalHudOverlayProps> = ({
                         }}
                         onPointerUp={() => commandRef.current?.triggerLockHold?.(false)}
                         onPointerLeave={() => commandRef.current?.triggerLockHold?.(false)}
-                        className={`relative px-3 py-2 rounded-lg border font-display font-bold text-xs tracking-wider inline-flex items-center justify-center gap-2 cursor-pointer transition select-none overflow-hidden active:scale-95 ${
+                        className={`relative px-3 py-2 short:px-2 short:py-1.5 rounded-lg border font-display font-bold text-xs short:text-[10px] tracking-wider inline-flex items-center justify-center gap-2 cursor-pointer transition select-none overflow-hidden active:scale-95 ${
                           isLocked
                             ? 'bg-emerald-950/70 hover:bg-emerald-900/80 border-emerald-500/60 text-emerald-200'
                             : 'bg-red-950/70 hover:bg-red-900/80 border-red-500/60 text-red-200'
                         } ${progress > 0 ? 'ring-2 ring-amber-400' : ''}`}
-                        title="[L] auf der Tastatur gedrückt halten oder diesen Button gedrückt halten"
+                        title="Hold [L] on the keyboard or hold this button"
                       >
                         {/* Circular SVG Progress Ring */}
                         <div className="relative w-7 h-7 flex items-center justify-center shrink-0">
@@ -544,11 +550,11 @@ export const NavalHudOverlay: React.FC<NavalHudOverlayProps> = ({
                         <div className="text-left flex-1 min-w-0">
                           <div className="text-[9px] font-mono-tech uppercase text-slate-300 leading-tight">
                             {progress > 0
-                              ? `HALTEN (${Math.round(progress * 100)}%)`
-                              : '[L] HALTEN'}
+                              ? `HOLD (${Math.round(progress * 100)}%)`
+                              : '[L] HOLD'}
                           </div>
                           <div className="text-[11px] font-display font-bold truncate">
-                            {isLocked ? 'ENTRIEGELN' : 'VERRIEGELN'}
+                            {isLocked ? 'UNLOCK' : 'LOCK'}
                           </div>
                         </div>
                       </button>
@@ -558,7 +564,7 @@ export const NavalHudOverlay: React.FC<NavalHudOverlayProps> = ({
               ) : (
                 <button
                   onClick={() => commandRef.current?.triggerInteract()}
-                  className="mt-2.5 px-4 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-display font-bold text-xs tracking-wider inline-flex items-center gap-1.5 cursor-pointer transition shadow-md"
+                  className="mt-2.5 short:mt-1.5 px-4 short:px-3 py-1.5 short:py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-display font-bold text-xs short:text-[10px] tracking-wider inline-flex items-center gap-1.5 cursor-pointer transition shadow-md"
                 >
                   <DoorOpen className="w-4 h-4" />
                   <span>{telemetry.nearbyInteractable.actionLabel}</span>
@@ -618,7 +624,7 @@ export const NavalHudOverlay: React.FC<NavalHudOverlayProps> = ({
                   </div>
                 </div>
                 <div className="mt-2 px-3 py-1 rounded-full bg-slate-950/90 border border-slate-700/80 text-[11px] font-mono-tech text-amber-300 tracking-wider font-bold shadow-lg">
-                  {isLocked ? 'ENTRIEGELUNG LÄUFT...' : 'WASSERDICHTES VERRIEGELN...'}
+                  {isLocked ? 'UNLOCKING...' : 'WATERTIGHT LOCKING...'}
                 </div>
               </div>
             );
@@ -632,13 +638,13 @@ export const NavalHudOverlay: React.FC<NavalHudOverlayProps> = ({
       <div className="relative z-10 flex flex-col items-center gap-2 pointer-events-none">
         {/* Live Ship Event Ticker + Active C4 Detonate Button */}
         <div className="flex flex-wrap items-center justify-center gap-2 pointer-events-auto">
-          <div className="naval-panel rounded-full px-4 py-1.5 text-xs font-mono-tech text-slate-200 flex items-center gap-2 max-w-xl truncate">
+          <div className="naval-panel rounded-full px-4 py-1.5 short:px-2.5 short:py-1 text-xs font-mono-tech text-slate-200 flex items-center gap-2 max-w-[92vw] sm:max-w-xl short:max-w-[52vw] truncate">
             {telemetry.shipStatus !== 'NOMINAL' ? (
               <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
             ) : (
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
             )}
-            <span className="truncate">{telemetry.lastEventMessage}</span>
+            <span className="truncate min-w-0">{telemetry.lastEventMessage}</span>
           </div>
 
           {telemetry.c4Count > 0 && (
@@ -647,34 +653,34 @@ export const NavalHudOverlay: React.FC<NavalHudOverlayProps> = ({
               className="px-4 py-1.5 rounded-full bg-red-600 hover:bg-red-500 border border-red-300 text-white font-display font-bold text-xs tracking-wider flex items-center gap-1.5 shadow-lg shadow-red-600/30 animate-bounce cursor-pointer"
             >
               <Radio className="w-4 h-4" />
-              <span>ALLE {telemetry.c4Count} C4-LADUNGEN ZÜNDEN [G]</span>
+              <span>DETONATE ALL {telemetry.c4Count} C4 CHARGES [G]</span>
             </button>
           )}
         </div>
 
         {/* 5-Slot Demolition & Weapon Bar */}
-        <div className="naval-panel rounded-2xl p-1.5 flex items-center gap-1.5 sm:gap-2 pointer-events-auto overflow-x-auto max-w-full">
+        <div className="naval-panel rounded-2xl p-1.5 short:p-1 flex items-center gap-1.5 sm:gap-2 short:gap-1 pointer-events-auto overflow-x-auto naval-scroll-x max-w-full">
           {WEAPONS_LIST.map((w) => {
             const active = telemetry.activeWeapon === w.id;
             return (
               <button
                 key={w.id}
                 onClick={() => commandRef.current?.triggerSelectWeapon(w.id)}
-                className={`px-3 py-2 rounded-xl border text-left transition cursor-pointer flex items-center gap-2.5 shrink-0 ${
+                className={`px-3 py-2 short:px-2 short:py-1 rounded-xl border text-left transition cursor-pointer flex items-center gap-2.5 short:gap-1.5 shrink-0 ${
                   active
                     ? 'bg-amber-500/20 border-amber-400 text-white shadow-lg shadow-amber-500/15'
                     : 'bg-slate-900/75 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-600'
                 }`}
               >
                 <span
-                  className={`w-6 h-6 rounded-lg font-mono-tech text-xs font-bold flex items-center justify-center ${
+                  className={`w-6 h-6 short:w-5 short:h-5 rounded-lg font-mono-tech text-xs font-bold flex items-center justify-center ${
                     active ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-400'
                   }`}
                 >
                   {w.key}
                 </span>
-                <div>
-                  <div className="font-display font-bold text-xs tracking-wide leading-tight">
+                <div className="hidden min-[480px]:block">
+                  <div className="font-display font-bold text-xs short:text-[10px] tracking-wide leading-tight">
                     {w.shortName}
                   </div>
                   <div className="text-[10px] font-mono-tech text-slate-400 hidden md:block">

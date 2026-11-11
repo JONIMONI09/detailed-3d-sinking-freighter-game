@@ -400,7 +400,7 @@ export const MaritimeViewport3D: React.FC<MaritimeViewport3DProps> = ({
     let engineRunning = true;
     let shipBrokenInHalf = false;
     let totalExplosions = 0;
-    let lastEventMessage = 'MS POSEIDON VII bereit. Alle Türen & Schotten mit [E] bedienbar (Kein No-Clip!).';
+    let lastEventMessage = 'MS POSEIDON VII ready. All doors & bulkheads operable with [E] (no clipping!).';
 
     const activeCharges: ActiveCharge[] = [];
     const activeProjectiles: ActiveProjectile[] = [];
@@ -470,18 +470,18 @@ export const MaritimeViewport3D: React.FC<MaritimeViewport3DProps> = ({
     const getDeckNameAtPos = (pos: THREE.Vector3): string => {
       if (pos.y < 1.2) {
         const comp = getCompartmentAtZ(pos.z);
-        if (comp === 'bow') return 'Unterdeck // Sektion A (Bug-Laderaum)';
-        if (comp === 'midFwd') return 'Unterdeck // Sektion B (Haupt-Frachtraum)';
-        if (comp === 'midAft') return 'Unterdeck // Sektion C (Maschinenraum)';
-        return 'Unterdeck // Sektion D (Heck-Wellentunnel)';
+        if (comp === 'bow') return 'Lower Deck // Section A (Bow Cargo Hold)';
+        if (comp === 'midFwd') return 'Lower Deck // Section B (Main Cargo Hold)';
+        if (comp === 'midAft') return 'Lower Deck // Section C (Engine Room)';
+        return 'Lower Deck // Section D (Stern Shaft Tunnel)';
       }
       if (pos.y < 5.2) {
-        if (pos.z < -20) return 'Hauptdeck // Vorschiff (Bug)';
-        if (pos.z < 18) return 'Hauptdeck // Container-Frachtdeck';
-        return 'Hauptdeck // Heck-Aufbauten';
+        if (pos.z < -20) return 'Main Deck // Foredeck (Bow)';
+        if (pos.z < 18) return 'Main Deck // Container Cargo Deck';
+        return 'Main Deck // Stern Superstructure';
       }
       if (pos.y < 9.2) return 'Mannschaftsdeck (+6m // Quartiere & Rettungsboote)';
-      return 'Kommandobrücke (+10m // Navigation & Schotten-Zentrale)';
+      return 'Bridge (+10m // Navigation & Bulkhead Control)';
     };
 
     const triggerDetonationAtLocalPos = (
@@ -608,7 +608,7 @@ export const MaritimeViewport3D: React.FC<MaritimeViewport3DProps> = ({
 
     const plantExplosiveCharge = (type: 'tnt' | 'c4') => {
       if (type === 'c4' && activeCharges.filter((c) => c.type === 'c4').length >= 15) {
-        lastEventMessage = 'Maximal 15 C4-Ladungen platziert! Drücke [G] oder Rechtsklick zum Zünden!';
+        lastEventMessage = 'Maximum 15 C4 charges placed! Press [G] or right-click to detonate!';
         return;
       }
 
@@ -653,7 +653,7 @@ export const MaritimeViewport3D: React.FC<MaritimeViewport3DProps> = ({
       lastEventMessage =
         type === 'tnt'
           ? 'TNT-Ladung scharf! Detonation in 5.0 Sekunden!'
-          : 'C4-Haftladung platziert! Zünden mit [G] oder Rechtsklick!';
+          : 'C4 charge placed! Detonate with [G] or right-click!';
     };
 
     const detonateAllC4 = () => {
@@ -673,7 +673,7 @@ export const MaritimeViewport3D: React.FC<MaritimeViewport3DProps> = ({
 
         setTimeout(() => {
           ship.shipGroup.remove(charge.mesh);
-          triggerDetonationAtLocalPos(charge.localPos, 7.2, `C4-Fernzündung #${idx + 1}`);
+          triggerDetonationAtLocalPos(charge.localPos, 7.2, `C4 Remote Detonation #${idx + 1}`);
         }, idx * 130);
       });
     };
@@ -780,9 +780,9 @@ export const MaritimeViewport3D: React.FC<MaritimeViewport3DProps> = ({
         });
 
         if (repairedAny) {
-          lastEventMessage = 'Rumpfleck mit Plasma-Schweißbrenner abgedichtet! Wassereinbruch reduziert!';
+          lastEventMessage = 'Hull leak sealed with the plasma welder! Water ingress reduced!';
         } else {
-          lastEventMessage = 'Schweißbrenner aktiv – gehe nah an ein Rumpfleck im Unterdeck zum Abdichten!';
+          lastEventMessage = 'Welder active — move close to a hull leak on the lower deck to seal it!';
         }
       }
     };
@@ -822,7 +822,7 @@ export const MaritimeViewport3D: React.FC<MaritimeViewport3DProps> = ({
         const door = nearbyDoorRef;
         if (door.locked || door.watertight) {
           soundEngine.playDoorSound('locked', false);
-          lastEventMessage = `"${door.name}" ist WASSERDICHT VERRIEGELT! Halte [L] gedrückt zum Entriegeln.`;
+          lastEventMessage = `"${door.name}" is WATERTIGHT LOCKED! Hold [L] to unlock.`;
           return;
         }
 
@@ -831,7 +831,7 @@ export const MaritimeViewport3D: React.FC<MaritimeViewport3DProps> = ({
           door.type === 'bulkhead' ? 'bulkhead' : 'hinged',
           door.isOpen
         );
-        lastEventMessage = `${door.name} ${door.isOpen ? 'GEÖFFNET' : 'GESCHLOSSEN'}.`;
+        lastEventMessage = `${door.name} ${door.isOpen ? 'OPEN' : 'CLOSED'}.`;
         return;
       }
 
@@ -849,8 +849,8 @@ export const MaritimeViewport3D: React.FC<MaritimeViewport3DProps> = ({
           });
           soundEngine.playDoorSound('bulkhead', !anyOpen);
           lastEventMessage = !anyOpen
-            ? 'ZENTRALE: Alle 3 wasserdichten Schotten im Unterdeck GEÖFFNET!'
-            : 'ZENTRALE: Alle 3 wasserdichten Schotten im Unterdeck VERRIEGELT!';
+            ? 'CENTRAL: All 3 watertight bulkheads on the lower deck OPENED!'
+            : 'CENTRAL: All 3 watertight bulkheads on the lower deck LOCKED!';
           return;
         }
         if (nearbyTerminalId === 'term_bridge_alarm') {
@@ -864,12 +864,12 @@ export const MaritimeViewport3D: React.FC<MaritimeViewport3DProps> = ({
         if (nearbyTerminalId === 'term_engine_bilge') {
           bilgePumpsOn = !bilgePumpsOn;
           lastEventMessage = bilgePumpsOn
-            ? 'HOCHLEISTUNGS-LENZPUMPEN AKTIV! Seewasser wird abgepumpt!'
+            ? 'HIGH-CAPACITY BILGE PUMPS ACTIVE! Seawater is being pumped out!'
             : 'Lenzpumpen deaktiviert.';
           return;
         }
         if (nearbyTerminalId === 'term_armory_crate') {
-          lastEventMessage = 'Munitions-Depot: Alle TNT-, C4- & Granatwerfer-Ladungen voll aufgerüstet!';
+          lastEventMessage = 'Ammunition depot: all TNT, C4 & grenade launcher ammo fully restocked!';
           soundEngine.playPlantCharge();
           return;
         }
@@ -877,8 +877,8 @@ export const MaritimeViewport3D: React.FC<MaritimeViewport3DProps> = ({
           cameraMode = cameraMode === 'fpv' ? 'orbit' : 'fpv';
           lastEventMessage =
             cameraMode === 'orbit'
-              ? 'Außenkamera (Rettungsboot-Perspektive) aktiviert!'
-              : 'Zurück in der Ego-Perspektive an Deck.';
+              ? 'Exterior camera (lifeboat view) activated!'
+              : 'Back to the first-person deck view.';
           return;
         }
       }
@@ -938,7 +938,7 @@ export const MaritimeViewport3D: React.FC<MaritimeViewport3DProps> = ({
       playerLocalVel.set(0, 0, 0);
       playerYaw = 0;
       playerPitch = -0.05;
-      lastEventMessage = 'Schiff MS POSEIDON VII vollständig wiederhergestellt & überholt!';
+      lastEventMessage = 'MS POSEIDON VII fully restored & refitted!';
     };
 
     commandRef.current = {
@@ -986,19 +986,19 @@ export const MaritimeViewport3D: React.FC<MaritimeViewport3DProps> = ({
         if (deck === 'bridge') {
           playerLocalPos.set(0, 10.25, 24.5);
           playerYaw = 0;
-          lastEventMessage = 'Position: Kommandobrücke (+10m) – Schotten-Zentrale & Foto-.TXT-Computer.';
+          lastEventMessage = 'Position: Bridge (+10m) – bulkhead control & photo-.TXT computer.';
         } else if (deck === 'main') {
           playerLocalPos.set(0, 2.25, 17.5);
           playerYaw = 0;
-          lastEventMessage = 'Position: Hauptdeck (+2m) – Container-Bucht & Niedergänge.';
+          lastEventMessage = 'Position: Main Deck (+2m) – container bay & stairwells.';
         } else if (deck === 'hold') {
           playerLocalPos.set(0, -2.15, -8.0);
           playerYaw = 0;
-          lastEventMessage = 'Position: Unterer Frachtraum (Sektion B, -2.2m) – Wasserschotten & Rumpfwände.';
+          lastEventMessage = 'Position: Lower Cargo Hold (Section B, -2.2m) – bulkheads & hull walls.';
         } else if (deck === 'engine') {
           playerLocalPos.set(0, -2.15, 7.5);
           playerYaw = Math.PI;
-          lastEventMessage = 'Position: Haupt-Maschinenraum (Sektion C, -2.2m) – 12-Zylinder Diesel & Lenzpumpen.';
+          lastEventMessage = 'Position: Main Engine Room (Section C, -2.2m) – 12-cylinder diesel & bilge pumps.';
         } else if (deck === 'bow') {
           playerLocalPos.set(0, 2.25, -34.0);
           playerYaw = Math.PI;
@@ -1025,14 +1025,14 @@ export const MaritimeViewport3D: React.FC<MaritimeViewport3DProps> = ({
         });
         soundEngine.playDoorSound('bulkhead', !anyOpen);
         lastEventMessage = !anyOpen
-          ? 'Alle 3 wasserdichten Schotten im Unterdeck GEÖFFNET!'
-          : 'Alle 3 wasserdichten Schotten im Unterdeck GESCHLOSSEN!';
+          ? 'All 3 watertight bulkheads on the lower deck OPENED!'
+          : 'All 3 watertight bulkheads on the lower deck CLOSED!';
       },
       triggerToggleBilgePumps: () => {
         bilgePumpsOn = !bilgePumpsOn;
         soundEngine.playUiClick();
         lastEventMessage = bilgePumpsOn
-          ? 'Lenzpumpen AKTIVIERT – Wasser wird aus den Abteilungen gepumpt!'
+          ? 'Bilge pumps ACTIVATED – water is being pumped out of the compartments!'
           : 'Lenzpumpen ausgeschaltet.';
       },
       triggerToggleAlarm: () => {
@@ -1056,7 +1056,7 @@ export const MaritimeViewport3D: React.FC<MaritimeViewport3DProps> = ({
         bilgePumpsOn = true;
         engineRunning = true;
         shipBrokenInHalf = false;
-        lastEventMessage = 'Notfall-Reparaturtrupp: Alle Rumpflecks verschweißt & Lenzpumpen auf 100%!';
+        lastEventMessage = 'Emergency repair crew: all hull leaks sealed & bilge pumps at 100%!';
       },
       triggerResetShip: resetEntireShip,
       triggerInstantKeelBreach: () => {
@@ -1141,8 +1141,8 @@ export const MaritimeViewport3D: React.FC<MaritimeViewport3DProps> = ({
         soundEngine.playAlarmKlaxon();
         soundEngine.playDoorSound('bulkhead', false);
         lastEventMessage = shouldLock
-          ? '🚨 BRÜCKEN-SPERRE AKTIVIERT // Alle wasserdichten Schotten hermetisch verriegelt!'
-          : '🔓 BRÜCKEN-SPERRE AUFGEHOBEN // Schotten freigegeben';
+          ? '🚨 BRIDGE LOCKDOWN ENGAGED // all watertight bulkheads hermetically sealed!'
+          : '🔓 BRIDGE LOCKDOWN RELEASED // bulkheads unlocked';
       } else if (code === 'KeyF') {
         flashlightOn = !flashlightOn;
         flashlight.intensity = flashlightOn ? 18 : 0;
@@ -1912,16 +1912,16 @@ export const MaritimeViewport3D: React.FC<MaritimeViewport3DProps> = ({
           id: door.id,
           title: door.name,
           subtitle: isDoorLocked
-            ? 'WASSERDICHT VERRIEGELT // [L] gedrückt halten zum Entriegeln'
-            : `${door.deckName} // [E] Öffnen/Schließen · [L] halten: Wasserdicht verriegeln`,
+            ? 'WATERTIGHT LOCKED // hold [L] to unlock'
+            : `${door.deckName} // [E] open/close · hold [L]: watertight lock`,
           actionLabel: isDoorLocked
-            ? 'VERRIEGELT'
+            ? 'LOCKED'
             : door.isOpen
-            ? '[E] TÜR SCHLIESSEN'
-            : '[E] TÜR ÖFFNEN',
+            ? '[E] CLOSE DOOR'
+            : '[E] OPEN DOOR',
           lockActionLabel: isDoorLocked
-            ? '[L] GEDRÜCKT HALTEN: ENTRIEGELN'
-            : '[L] GEDRÜCKT HALTEN: WASSERDICHT VERRIEGELN',
+            ? '[L] HOLD: UNLOCK'
+            : '[L] HOLD: WATERTIGHT LOCK',
           type: door.type === 'bulkhead' ? 'bulkhead' : 'door',
           isLocked: isDoorLocked,
           isOpen: door.isOpen,
@@ -1973,12 +1973,12 @@ export const MaritimeViewport3D: React.FC<MaritimeViewport3DProps> = ({
         const rollDeg = Number(THREE.MathUtils.radToDeg(currentRollRad).toFixed(1));
 
         let shipStatus: ShipTelemetry['shipStatus'] = 'NOMINAL';
-        if (currentSinkDepth > 18 || totalFloodPercent > 94) shipStatus = 'GESUNKEN';
-        else if (shipBrokenInHalf) shipStatus = 'KIELBRUCH';
-        else if (totalFloodPercent > 55) shipStatus = 'SINKT SCHNELL';
+        if (currentSinkDepth > 18 || totalFloodPercent > 94) shipStatus = 'SUNK';
+        else if (shipBrokenInHalf) shipStatus = 'KEEL BREAK';
+        else if (totalFloodPercent > 55) shipStatus = 'SINKING FAST';
         else if (Math.abs(rollDeg) > 14 || Math.abs(pitchDeg) > 12)
-          shipStatus = 'KRITISCHE KRÄNGUNG';
-        else if (activeBreachCount > 0 || totalFloodPercent > 4) shipStatus = 'WASSEREINBRUCH';
+          shipStatus = 'CRITICAL LIST';
+        else if (activeBreachCount > 0 || totalFloodPercent > 4) shipStatus = 'FLOODING';
 
         onUpdateTelemetry({
           fps: Math.round(fpsSmooth),
@@ -2020,7 +2020,7 @@ export const MaritimeViewport3D: React.FC<MaritimeViewport3DProps> = ({
           compartments: {
             bow: {
               id: 'bow',
-              name: 'Abteilung A // Bug-Laderaum',
+              name: 'Section A // Bow Cargo Hold',
               shortCode: 'SEK-A (BUG)',
               floodPercent: Math.round(compFlood.bow),
               breachCount: ship.hullNodes.filter((n) => n.compartment === 'bow' && n.breached).length,
@@ -2029,7 +2029,7 @@ export const MaritimeViewport3D: React.FC<MaritimeViewport3DProps> = ({
             },
             midFwd: {
               id: 'midFwd',
-              name: 'Abteilung B // Mittschiffs-Frachtraum',
+              name: 'Section B // Midship Cargo Hold',
               shortCode: 'SEK-B (FRACHT)',
               floodPercent: Math.round(compFlood.midFwd),
               breachCount: ship.hullNodes.filter((n) => n.compartment === 'midFwd' && n.breached).length,
@@ -2038,7 +2038,7 @@ export const MaritimeViewport3D: React.FC<MaritimeViewport3DProps> = ({
             },
             midAft: {
               id: 'midAft',
-              name: 'Abteilung C // Haupt-Maschinenraum',
+              name: 'Section C // Main Engine Room',
               shortCode: 'SEK-C (MOTOR)',
               floodPercent: Math.round(compFlood.midAft),
               breachCount: ship.hullNodes.filter((n) => n.compartment === 'midAft' && n.breached).length,
@@ -2047,7 +2047,7 @@ export const MaritimeViewport3D: React.FC<MaritimeViewport3DProps> = ({
             },
             stern: {
               id: 'stern',
-              name: 'Abteilung D // Heck & Wellentunnel',
+              name: 'Section D // Stern & Shaft Tunnel',
               shortCode: 'SEK-D (HECK)',
               floodPercent: Math.round(compFlood.stern),
               breachCount: ship.hullNodes.filter((n) => n.compartment === 'stern' && n.breached).length,
@@ -2085,7 +2085,7 @@ export const MaritimeViewport3D: React.FC<MaritimeViewport3DProps> = ({
     <div
       ref={containerRef}
       className="fixed inset-0 w-full h-full z-0 cursor-crosshair"
-      title="Klicken für 3D-Maussteuerung (WASD = Bewegen, E = Türen/Schotten, Linksklick = TNT/Feuer, G/Rechtsklick = C4 Zünden)"
+      title="Click for 3D mouse control (WASD = move, E = doors/bulkheads, left click = TNT/fire, G/right-click = detonate C4)"
     />
   );
 };

@@ -33,7 +33,7 @@ const INITIAL_TELEMETRY: ShipTelemetry = {
   engineRunning: true,
   shipBrokenInHalf: false,
   shipStatus: 'NOMINAL',
-  playerDeckName: 'Hauptdeck // Container-Frachtdeck',
+  playerDeckName: 'Main Deck // Container Cargo Deck',
   playerLocalPos: { x: 0, y: 2.2, z: 17.5 },
   playerUnderwater: false,
   flashlightOn: false,
@@ -47,8 +47,8 @@ const INITIAL_TELEMETRY: ShipTelemetry = {
   compartments: {
     bow: {
       id: 'bow',
-      name: 'Abteilung A // Bug-Laderaum',
-      shortCode: 'SEK-A (BUG)',
+      name: 'Section A // Bow Cargo Hold',
+      shortCode: 'SEC-A (BOW)',
       floodPercent: 0,
       breachCount: 0,
       hullIntegrity: 100,
@@ -56,8 +56,8 @@ const INITIAL_TELEMETRY: ShipTelemetry = {
     },
     midFwd: {
       id: 'midFwd',
-      name: 'Abteilung B // Mittschiffs-Frachtraum',
-      shortCode: 'SEK-B (FRACHT)',
+      name: 'Section B // Midship Cargo Hold',
+      shortCode: 'SEC-B (CARGO)',
       floodPercent: 0,
       breachCount: 0,
       hullIntegrity: 100,
@@ -65,8 +65,8 @@ const INITIAL_TELEMETRY: ShipTelemetry = {
     },
     midAft: {
       id: 'midAft',
-      name: 'Abteilung C // Haupt-Maschinenraum',
-      shortCode: 'SEK-C (MOTOR)',
+      name: 'Section C // Main Engine Room',
+      shortCode: 'SEC-C (ENGINE)',
       floodPercent: 0,
       breachCount: 0,
       hullIntegrity: 100,
@@ -74,8 +74,8 @@ const INITIAL_TELEMETRY: ShipTelemetry = {
     },
     stern: {
       id: 'stern',
-      name: 'Abteilung D // Heck & Wellentunnel',
-      shortCode: 'SEK-D (HECK)',
+      name: 'Section D // Stern & Shaft Tunnel',
+      shortCode: 'SEC-D (STERN)',
       floodPercent: 0,
       breachCount: 0,
       hullIntegrity: 100,
@@ -85,7 +85,7 @@ const INITIAL_TELEMETRY: ShipTelemetry = {
   bulkheadDoorsOpen: [false, false, false],
   overchargedAmmoUnlocked: false,
   lastEventMessage:
-    'MS POSEIDON VII bereit. Alle 12 Türen & Schotten mit [E] bedienbar (Kein No-Clip!).',
+    'MS POSEIDON VII ready. All 12 doors & bulkheads operable with [E] (no clipping!).',
 };
 
 export function App() {
@@ -170,7 +170,7 @@ export function App() {
           onChangeControls={setControls}
           onTriggerSimulatedCrash={() =>
             setSimulatedCrashMessage(
-              'Manueller Diagnose-Test: Absturz-Abfangsystem (Crash-Guard) erfolgreich ausgelöst. Klicke unten auf "SIMULATION FORTSETZEN", um nahtlos weiterzuspielen!'
+              'Manual diagnostic test: crash guard triggered successfully. Click "RESUME SIMULATION" below to continue seamlessly!'
             )
           }
         />

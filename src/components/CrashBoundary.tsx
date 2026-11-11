@@ -35,8 +35,8 @@ export class CrashBoundary extends Component<CrashBoundaryProps, CrashBoundarySt
     return {
       hasError: true,
       errorTitle: error.name || 'CRITICAL RUNTIME EXCEPTION',
-      errorMessage: error.message || 'Unbekannter Laufzeitfehler in der 3D-Engine.',
-      errorStack: error.stack || 'Kein Stacktrace verfügbar.',
+      errorMessage: error.message || 'Unknown 3D engine runtime error.',
+      errorStack: error.stack || 'No stack trace available.',
       timestamp: new Date().toISOString(),
       isSimulated: false,
     };
@@ -66,7 +66,7 @@ export class CrashBoundary extends Component<CrashBoundaryProps, CrashBoundarySt
     this.setState({
       hasError: true,
       errorTitle: 'GLOBAL WINDOW EXCEPTION INTERCEPTED',
-      errorMessage: event.message || 'Ein globaler Skriptfehler wurde abgefangen.',
+      errorMessage: event.message || 'A global script error was intercepted.',
       errorStack: event.error?.stack || `File: ${event.filename}:${event.lineno}:${event.colno}`,
       timestamp: new Date().toISOString(),
       isSimulated: false,
@@ -90,7 +90,7 @@ export class CrashBoundary extends Component<CrashBoundaryProps, CrashBoundarySt
     this.setState({
       hasError: true,
       errorTitle: 'UNHANDLED ASYNC PROMISE REJECTION',
-      errorMessage: reasonStr || 'Asynchroner Prozessfehler abgefangen.',
+      errorMessage: reasonStr || 'Async process error intercepted.',
       errorStack: event.reason?.stack || 'Async Promise Stack Guard.',
       timestamp: new Date().toISOString(),
       isSimulated: false,
@@ -129,14 +129,14 @@ export class CrashBoundary extends Component<CrashBoundaryProps, CrashBoundarySt
     const activeMessage = this.props.simulatedCrashMessage || this.state.errorMessage;
     const report = [
       '=== MS POSEIDON VII // BLACKBOX CRASH DIAGNOSTIC LOG ===',
-      `ZEITSTEMPEL: ${this.state.timestamp || new Date().toISOString()}`,
-      `STATUS: ABGEFANGEN DURCH NAVAL CRASH-GUARD v4.2`,
-      `TYP: ${this.props.simulatedCrashMessage ? 'DIAGNOSE-TESTLAUF (SIMULIERT)' : this.state.errorTitle}`,
-      `FEHLERMELDUNG: ${activeMessage}`,
+      `TIMESTAMP: ${this.state.timestamp || new Date().toISOString()}`,
+      `STATUS: INTERCEPTED BY NAVAL CRASH-GUARD v4.2`,
+      `TYP: ${this.props.simulatedCrashMessage ? 'DIAGNOSTIC TEST RUN (SIMULATED)' : this.state.errorTitle}`,
+      `ERROR MESSAGE: ${activeMessage}`,
       `USER AGENT: ${navigator.userAgent}`,
       `VIEWPORT: ${window.innerWidth}x${window.innerHeight} (DPR ${window.devicePixelRatio})`,
       '--- STACK TRACE ---',
-      this.state.errorStack || 'Simulierter Test-Absturz zur Verifizierung des Crash-Screens (Kein echter Fehler).',
+      this.state.errorStack || 'Simulated test crash to verify the crash screen (not a real error).',
       '========================================================',
     ].join('\n');
 
@@ -158,13 +158,13 @@ export class CrashBoundary extends Component<CrashBoundaryProps, CrashBoundarySt
     }
 
     const title = isSimulated
-      ? 'BLACKBOX CRASH-SYSTEM VERIFIZIERUNG (TEST-MODUS)'
-      : this.state.errorTitle || 'KRITISCHER SYSTEMFEHLER ABGEFANGEN';
+      ? 'BLACKBOX CRASH-SYSTEM VERIFICATION (TEST MODE)'
+      : this.state.errorTitle || 'CRITICAL SYSTEM FAULT INTERCEPTED';
     const message = isSimulated
       ? this.props.simulatedCrashMessage
       : this.state.errorMessage;
     const stack = isSimulated
-      ? `SimulatedCrashException: Manuell ausgelöster Test des Absturz-Abfangsystems.\n  at NavalEngineCore.verifyCrashGuard (MS_Poseidon_Engine.ts:412:18)\n  at TelemetryWatchdog.intercept (CrashBoundary.tsx:108:9)\n  at WebGLContextSafeGuard.recoverState (RendererPipeline.ts:88:4)`
+      ? `SimulatedCrashException: manually triggered crash-guard test.\n  at NavalEngineCore.verifyCrashGuard (MS_Poseidon_Engine.ts:412:18)\n  at TelemetryWatchdog.intercept (CrashBoundary.tsx:108:9)\n  at WebGLContextSafeGuard.recoverState (RendererPipeline.ts:88:4)`
       : this.state.errorStack;
 
     return (
@@ -188,7 +188,7 @@ export class CrashBoundary extends Component<CrashBoundaryProps, CrashBoundarySt
               <div>
                 <div className="flex items-center gap-2">
                   <span className="px-2 py-0.5 text-[11px] font-mono-tech font-bold uppercase bg-red-500 text-black rounded">
-                    CRASH-GUARD AKTIV
+                    CRASH-GUARD ACTIVE
                   </span>
                   <span className="text-xs font-mono-tech text-red-300">
                     ERR_CODE // 0xPOSEIDON_SAFE_INTERCEPT
@@ -200,8 +200,8 @@ export class CrashBoundary extends Component<CrashBoundaryProps, CrashBoundarySt
               </div>
             </div>
             <div className="text-right font-mono-tech text-xs text-slate-400">
-              <div>SCHIFF: MS POSEIDON VII</div>
-              <div>STATUS: SICHERHEITS-STOPP</div>
+              <div>SHIP: MS POSEIDON VII</div>
+              <div>STATUS: SAFETY STOP</div>
             </div>
           </div>
 
@@ -209,7 +209,7 @@ export class CrashBoundary extends Component<CrashBoundaryProps, CrashBoundarySt
           <div className="mt-5 space-y-4">
             <div className="p-4 rounded-lg bg-red-950/40 border border-red-500/40">
               <div className="text-xs font-mono-tech uppercase text-red-300 font-semibold mb-1">
-                Abgefangene Fehlerursache:
+                Intercepted error cause:
               </div>
               <p className="text-sm md:text-base font-medium text-white break-words">
                 {message}
@@ -220,14 +220,14 @@ export class CrashBoundary extends Component<CrashBoundaryProps, CrashBoundarySt
               <div className="p-3 rounded bg-slate-900/90 border border-slate-700/70 flex items-center gap-2.5">
                 <Cpu className="w-4 h-4 text-amber-400 shrink-0" />
                 <div>
-                  <div className="text-slate-400">SPEICHER-SCHUTZ</div>
-                  <div className="text-emerald-400 font-semibold">DATEN GESICHERT</div>
+                  <div className="text-slate-400">MEMORY GUARD</div>
+                  <div className="text-emerald-400 font-semibold">DATA SECURED</div>
                 </div>
               </div>
               <div className="p-3 rounded bg-slate-900/90 border border-slate-700/70 flex items-center gap-2.5">
                 <Terminal className="w-4 h-4 text-sky-400 shrink-0" />
                 <div>
-                  <div className="text-slate-400">AUFLÖSUNG / GERÄT</div>
+                  <div className="text-slate-400">RESOLUTION / DEVICE</div>
                   <div className="text-slate-200 font-semibold">
                     {typeof window !== 'undefined' ? `${window.innerWidth}×${window.innerHeight}` : 'AUTO'}
                   </div>
@@ -236,8 +236,8 @@ export class CrashBoundary extends Component<CrashBoundaryProps, CrashBoundarySt
               <div className="p-3 rounded bg-slate-900/90 border border-slate-700/70 flex items-center gap-2.5">
                 <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
                 <div>
-                  <div className="text-slate-400">WIEDERHERSTELLUNG</div>
-                  <div className="text-amber-300 font-semibold">SOFORT BEREIT</div>
+                  <div className="text-slate-400">RECOVERY</div>
+                  <div className="text-amber-300 font-semibold">READY INSTANTLY</div>
                 </div>
               </div>
             </div>
@@ -245,7 +245,7 @@ export class CrashBoundary extends Component<CrashBoundaryProps, CrashBoundarySt
             {/* Stack Trace Box */}
             <div>
               <div className="text-xs font-mono-tech text-slate-400 uppercase mb-1.5 flex items-center justify-between">
-                <span>Diagnose-Stacktrace (Blackbox Dump):</span>
+                <span>Diagnostic stack trace (blackbox dump):</span>
                 <span>UTF-8 // RAW</span>
               </div>
               <pre className="p-3.5 rounded-lg bg-black/80 border border-slate-800 text-xs font-mono-tech text-amber-300/90 overflow-x-auto max-h-40 naval-scroll whitespace-pre-wrap">
@@ -262,7 +262,7 @@ export class CrashBoundary extends Component<CrashBoundaryProps, CrashBoundarySt
                 className="px-5 py-3 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-display font-bold text-sm tracking-wide flex items-center justify-center gap-2 shadow-lg shadow-amber-500/25 cursor-pointer transition"
               >
                 <ShieldCheck className="w-5 h-5" />
-                SIMULATION FORTSETZEN (SAFE-MODE)
+                RESUME SIMULATION (SAFE MODE)
               </button>
 
               <button
@@ -270,7 +270,7 @@ export class CrashBoundary extends Component<CrashBoundaryProps, CrashBoundarySt
                 className="px-4 py-3 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-white font-display font-semibold text-sm flex items-center justify-center gap-2 cursor-pointer transition"
               >
                 <RefreshCw className="w-4 h-4" />
-                SCHIFF KOMPLETT ZURÜCKSETZEN
+                FULL SHIP RESET
               </button>
             </div>
 
@@ -279,7 +279,7 @@ export class CrashBoundary extends Component<CrashBoundaryProps, CrashBoundarySt
               className="px-4 py-3 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 font-mono-tech text-xs flex items-center justify-center gap-2 cursor-pointer transition"
             >
               <Download className="w-4 h-4 text-sky-400" />
-              LOG ALS .TXT SPEICHERN
+              SAVE LOG AS .TXT
             </button>
           </div>
         </div>

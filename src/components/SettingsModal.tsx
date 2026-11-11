@@ -98,16 +98,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-3 md:p-6">
-      <div className="w-full max-w-3xl max-h-[90vh] naval-panel rounded-xl flex flex-col overflow-hidden border border-slate-600/70 shadow-2xl">
+    <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-2 sm:p-3 md:p-6">
+      <div className="w-full max-w-3xl max-h-[96dvh] sm:max-h-[90dvh] naval-panel rounded-xl flex flex-col overflow-hidden border border-slate-600/70 shadow-2xl">
         {/* Header */}
-        <div className="px-5 py-4 bg-slate-900/95 border-b border-slate-700/80 flex items-center justify-between">
-          <div>
+        <div className="px-4 sm:px-5 py-3 sm:py-4 bg-slate-900/95 border-b border-slate-700/80 flex items-center justify-between gap-3">
+          <div className="min-w-0">
             <div className="text-[11px] font-mono-tech uppercase text-amber-400 font-semibold">
-              SYSTEM-KONFIGURATION // FÜR ALLE GERÄTE OPTIMIERT
+              SYSTEM CONFIGURATION // OPTIMIZED FOR ALL DEVICES
             </div>
             <h2 className="font-display text-lg md:text-xl font-bold text-white tracking-wide">
-              GRAFIK, AUDIO, STEUERUNG & SYSTEM-PRÜFUNG
+              GRAPHICS, AUDIO, CONTROLS & SYSTEM CHECK
             </h2>
           </div>
 
@@ -116,7 +116,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               soundEngine.playUiClick();
               onClose();
             }}
-            className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer transition"
+            className="p-2 shrink-0 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer transition"
           >
             <X className="w-5 h-5" />
           </button>
@@ -125,10 +125,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         {/* Navigation Tabs */}
         <div className="grid grid-cols-2 sm:grid-cols-4 bg-slate-950/90 border-b border-slate-800 p-1.5 gap-1.5">
           {[
-            { id: 'graphics', label: 'Grafik & Wetter', icon: Sliders },
-            { id: 'audio', label: 'Sound & Alarme', icon: Volume2 },
-            { id: 'controls', label: 'Steuerung & Touch', icon: Gamepad2 },
-            { id: 'diagnostics', label: 'Crash-Guard & Test', icon: ShieldAlert },
+            { id: 'graphics', label: 'Graphics & Weather', icon: Sliders },
+            { id: 'audio', label: 'Sound & Alarms', icon: Volume2 },
+            { id: 'controls', label: 'Controls & Touch', icon: Gamepad2 },
+            { id: 'diagnostics', label: 'Crash Guard & Test', icon: ShieldAlert },
           ].map((tab) => {
             const Icon = tab.icon;
             const active = activeTab === tab.id;
@@ -159,14 +159,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               {/* Quick Presets */}
               <div>
                 <label className="block text-xs font-mono-tech uppercase text-slate-400 mb-2">
-                  Schnell-Qualitätsprofile (Für Smartphone, Tablet, Laptop & High-End PC):
+                  Quick quality presets (phone, tablet, laptop & high-end PC):
                 </label>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                   {(
                     [
-                      { id: 'low', label: 'NIEDRIG (MOBIL)' },
-                      { id: 'medium', label: 'MITTEL' },
-                      { id: 'high', label: 'HOCH (STANDARD)' },
+                      { id: 'low', label: 'LOW (MOBILE)' },
+                      { id: 'medium', label: 'MEDIUM' },
+                      { id: 'high', label: 'HIGH (DEFAULT)' },
                       { id: 'ultra', label: 'ULTRA (MAX 3D)' },
                     ] as const
                   ).map((p) => (
@@ -189,15 +189,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               {/* Weather & Time of Day */}
               <div>
                 <label className="block text-xs font-mono-tech uppercase text-slate-400 mb-2">
-                  Wetter, Seegang & Tageszeit:
+                  Weather, sea state & time of day:
                 </label>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                   {(
                     [
-                      { id: 'day', label: 'Klare See (Tag)', icon: Sun },
-                      { id: 'sunset', label: 'Abendrot', icon: Sunset },
-                      { id: 'storm', label: 'Schwerer Sturm', icon: CloudLightning },
-                      { id: 'fog', label: 'Dichter Nebel', icon: CloudFog },
+                      { id: 'day', label: 'Clear Sea (Day)', icon: Sun },
+                      { id: 'sunset', label: 'Sunset', icon: Sunset },
+                      { id: 'storm', label: 'Heavy Storm', icon: CloudLightning },
+                      { id: 'fog', label: 'Dense Fog', icon: CloudFog },
                     ] as { id: WeatherMode; label: string; icon: typeof Sun }[]
                   ).map((w) => {
                     const WIcon = w.icon;
@@ -226,7 +226,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="p-3.5 rounded-lg bg-slate-900/80 border border-slate-800">
                   <div className="flex justify-between text-xs font-mono-tech mb-2">
-                    <span className="text-slate-300">AUFLÖSUNGS-SKALIERUNG</span>
+                    <span className="text-slate-300">RESOLUTION SCALE</span>
                     <span className="text-amber-400 font-bold">
                       {Math.round(graphics.resolutionScale * 100)}%
                     </span>
@@ -249,7 +249,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                 <div className="p-3.5 rounded-lg bg-slate-900/80 border border-slate-800">
                   <div className="flex justify-between text-xs font-mono-tech mb-2">
-                    <span className="text-slate-300">SICHTFELD (FOV)</span>
+                    <span className="text-slate-300">FIELD OF VIEW (FOV)</span>
                     <span className="text-amber-400 font-bold">{graphics.fov}°</span>
                   </div>
                   <input
@@ -270,7 +270,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                 <div className="p-3.5 rounded-lg bg-slate-900/80 border border-slate-800">
                   <div className="flex justify-between text-xs font-mono-tech mb-2">
-                    <span className="text-slate-300">PARTIKEL-DICHTE (FEUER & GISCHT)</span>
+                    <span className="text-slate-300">PARTICLE DENSITY (FIRE & SPRAY)</span>
                     <span className="text-amber-400 font-bold">
                       {Math.round(graphics.particleDensity * 100)}%
                     </span>
@@ -293,7 +293,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                 <div className="p-3.5 rounded-lg bg-slate-900/80 border border-slate-800">
                   <div className="flex justify-between text-xs font-mono-tech mb-2">
-                    <span className="text-slate-300">GERSTNER-WELLEN QUALITÄT</span>
+                    <span className="text-slate-300">GERSTNER WAVE QUALITY</span>
                     <span className="text-sky-400 font-bold uppercase">{graphics.waterQuality}</span>
                   </div>
                   <div className="grid grid-cols-4 gap-1.5">
@@ -326,8 +326,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       : 'bg-slate-900 border-slate-800 text-slate-400'
                   }`}
                 >
-                  <div className="font-bold">FPS & TELEMETRIE: {graphics.showFps ? 'AN' : 'AUS'}</div>
-                  <div className="text-[11px] opacity-80 mt-0.5">Echtzeit-Performance im HUD</div>
+                  <div className="font-bold">FPS & TELEMETRY: {graphics.showFps ? 'ON' : 'OFF'}</div>
+                  <div className="text-[11px] opacity-80 mt-0.5">Real-time performance in the HUD</div>
                 </button>
 
                 <button
@@ -340,8 +340,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       : 'bg-slate-900 border-slate-800 text-slate-400'
                   }`}
                 >
-                  <div className="font-bold">KAMERA-BEBEN: {graphics.cameraShake ? 'AN' : 'AUS'}</div>
-                  <div className="text-[11px] opacity-80 mt-0.5">Erschütterung bei TNT-Detonation</div>
+                  <div className="font-bold">CAMERA SHAKE: {graphics.cameraShake ? 'ON' : 'OFF'}</div>
+                  <div className="text-[11px] opacity-80 mt-0.5">Shake on TNT detonation</div>
                 </button>
 
                 <button
@@ -359,9 +359,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 >
                   <div className="font-bold flex items-center gap-1.5">
                     <Eye className="w-3.5 h-3.5" />
-                    <span>NO-CLIP KOLLISIONS-BOXEN: {graphics.showCollisionDebug ? 'SICHTBAR' : 'AUS'}</span>
+                    <span>NO-CLIP COLLISION BOXES: {graphics.showCollisionDebug ? 'VISIBLE' : 'OFF'}</span>
                   </div>
-                  <div className="text-[11px] opacity-80 mt-0.5">Zeigt 3D-Wände & Tür-Blocker live</div>
+                  <div className="text-[11px] opacity-80 mt-0.5">Shows 3D walls & door blockers live</div>
                 </button>
               </div>
             </>
@@ -372,10 +372,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="flex items-center justify-between p-4 rounded-lg bg-slate-900 border border-slate-800">
                 <div>
                   <div className="font-display font-bold text-sm text-white">
-                    PROZEDURALER WEB-AUDIO SYNTHESIZER
+                    PROCEDURAL WEB-AUDIO SYNTHESIZER
                   </div>
                   <div className="text-xs text-slate-400">
-                    Explosionen, Schiffssirenen, Hydraulik-Schotten, Dieselmotor & Meeresrauschen
+                    Explosions, ship sirens, hydraulic bulkheads, diesel engine & ocean ambience
                   </div>
                 </div>
                 <button
@@ -388,15 +388,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       : 'bg-emerald-500 text-slate-950'
                   }`}
                 >
-                  {audio.muted ? 'TON STUMMGESCHALTET' : 'TON AKTIV'}
+                  {audio.muted ? 'SOUND MUTED' : 'SOUND ON'}
                 </button>
               </div>
 
               {[
-                { key: 'masterVolume', label: 'GESAMTLAUTSTÄRKE (MASTER)', val: audio.masterVolume },
-                { key: 'sfxVolume', label: 'WAFFEN, TNT-TIMER, TÜREN & EXPLOSIONEN', val: audio.sfxVolume },
-                { key: 'alarmVolume', label: 'SCHIFFS-NOTSIRENE & KLAXON-ALARM', val: audio.alarmVolume },
-                { key: 'ambientVolume', label: 'OZEAN, DIESELMOTOR & WASSEREINBRUCH', val: audio.ambientVolume },
+                { key: 'masterVolume', label: 'MASTER VOLUME', val: audio.masterVolume },
+                { key: 'sfxVolume', label: 'WEAPONS, TNT TIMERS, DOORS & EXPLOSIONS', val: audio.sfxVolume },
+                { key: 'alarmVolume', label: 'SHIP EMERGENCY SIREN & KLAXON ALARM', val: audio.alarmVolume },
+                { key: 'ambientVolume', label: 'OCEAN, DIESEL ENGINE & WATER INGRESS', val: audio.ambientVolume },
               ].map((item) => (
                 <div key={item.key} className="p-3.5 rounded-lg bg-slate-900/80 border border-slate-800">
                   <div className="flex justify-between text-xs font-mono-tech mb-2">
@@ -427,7 +427,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="p-3.5 rounded-lg bg-slate-900/80 border border-slate-800">
                   <div className="flex justify-between text-xs font-mono-tech mb-2">
-                    <span className="text-slate-300">MAUS- & TOUCH-EMPFINDLICHKEIT</span>
+                    <span className="text-slate-300">MOUSE & TOUCH SENSITIVITY</span>
                     <span className="text-amber-400 font-bold">
                       {controls.mouseSensitivity.toFixed(1)}x
                     </span>
@@ -450,7 +450,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                 <div className="p-3.5 rounded-lg bg-slate-900/80 border border-slate-800">
                   <div className="flex justify-between text-xs font-mono-tech mb-2">
-                    <span className="text-slate-300">GRÖSSE DER TOUCH-BUTTONS</span>
+                    <span className="text-slate-300">TOUCH BUTTON SIZE</span>
                     <span className="text-amber-400 font-bold">
                       {Math.round(controls.touchScale * 100)}%
                     </span>
@@ -475,13 +475,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="p-3.5 rounded-lg bg-slate-900/80 border border-slate-800">
                   <div className="text-xs font-mono-tech text-slate-300 mb-2">
-                    TOUCH-JOYSTICK & BILDSCHIRM-TASTEN (MOBIL / TABLET / PC):
+                    TOUCH JOYSTICK & ON-SCREEN BUTTONS (MOBILE / TABLET / PC):
                   </div>
                   <div className="grid grid-cols-3 gap-2">
                     {(
                       [
                         { id: 'auto', label: 'AUTO' },
-                        { id: 'on', label: 'IMMER AN' },
+                        { id: 'on', label: 'ALWAYS ON' },
                         { id: 'off', label: 'AUS' },
                       ] as const
                     ).map((m) => (
@@ -510,9 +510,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       : 'bg-slate-900/80 border-slate-800 text-slate-300'
                   }`}
                 >
-                  <div className="font-bold">Y-ACHSE INVERTIEREN: {controls.invertY ? 'JA' : 'NEIN'}</div>
+                  <div className="font-bold">INVERT Y AXIS: {controls.invertY ? 'YES' : 'NO'}</div>
                   <div className="text-[11px] text-slate-400 mt-1">
-                    Vertikale Kamera-Blickrichtung umkehren
+                    Invert the vertical camera look direction
                   </div>
                 </button>
               </div>
@@ -520,17 +520,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               {/* Complete Keyboard Reference Table */}
               <div className="p-4 rounded-lg bg-slate-950 border border-slate-800 text-xs font-mono-tech space-y-1.5">
                 <div className="text-amber-400 font-bold uppercase mb-2">
-                  TASTATUR- & MAUS-BELEGUNG (ÜBERSICHT):
+                  KEYBOARD & MOUSE BINDINGS (OVERVIEW):
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-slate-300">
-                  <div className="flex justify-between"><span>Bewegen / Laufen:</span><strong className="text-white">W, A, S, D / Pfeiltasten</strong></div>
-                  <div className="flex justify-between"><span>Türen / Schotten / Computer:</span><strong className="text-amber-400">Taste [E]</strong></div>
-                  <div className="flex justify-between"><span>TNT / C4 platzieren / Schießen:</span><strong className="text-red-400">Linksklick</strong></div>
-                  <div className="flex justify-between"><span>Alle C4-Ladungen zünden:</span><strong className="text-amber-400">Taste [G] / Rechtsklick</strong></div>
-                  <div className="flex justify-between"><span>Waffen wechseln:</span><strong className="text-white">Tasten [1] bis [5]</strong></div>
-                  <div className="flex justify-between"><span>Springen / Auftauchen:</span><strong className="text-white">Leertaste [Space]</strong></div>
-                  <div className="flex justify-between"><span>Sprinten / Ducken:</span><strong className="text-white">[Shift] / [C]</strong></div>
-                  <div className="flex justify-between"><span>Taschenlampe / Außenkamera:</span><strong className="text-sky-400">[F] / [V]</strong></div>
+                  <div className="flex justify-between"><span>Move / walk:</span><strong className="text-white">W, A, S, D / Pfeiltasten</strong></div>
+                  <div className="flex justify-between"><span>Doors / bulkheads / computers:</span><strong className="text-amber-400">Key [E]</strong></div>
+                  <div className="flex justify-between"><span>Plant TNT / C4 / shoot:</span><strong className="text-red-400">Left click</strong></div>
+                  <div className="flex justify-between"><span>Detonate all C4 charges:</span><strong className="text-amber-400">Key [G] / right-click</strong></div>
+                  <div className="flex justify-between"><span>Switch weapons:</span><strong className="text-white">Keys [1] to [5]</strong></div>
+                  <div className="flex justify-between"><span>Jump / surface:</span><strong className="text-white">Leertaste [Space]</strong></div>
+                  <div className="flex justify-between"><span>Sprint / crouch:</span><strong className="text-white">[Shift] / [C]</strong></div>
+                  <div className="flex justify-between"><span>Flashlight / exterior camera:</span><strong className="text-sky-400">[F] / [V]</strong></div>
                 </div>
               </div>
             </div>
@@ -541,13 +541,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="p-4 rounded-lg bg-red-950/35 border border-red-500/50 space-y-3">
                 <div className="flex items-center gap-2.5 text-red-400 font-display font-bold text-base">
                   <ShieldAlert className="w-5 h-5 shrink-0" />
-                  <span>CRASH-SCREEN & FEHLER-ABFANGSYSTEM PRÜFEN</span>
+                  <span>CHECK CRASH SCREEN & ERROR HANDLING</span>
                 </div>
                 <p className="text-xs text-slate-300 leading-relaxed">
-                  Alle Laufzeitfehler, WebGL-Kontextverluste und React-Ausnahmen werden automatisch
-                  vom <strong>Naval Blackbox Crash-Guard</strong> abgefangen. Klicke auf den Button unten,
-                  um einen <strong>simulierten Test-Absturz</strong> auszulösen und den Crash-Screen
-                  sowie die 1-Klick-Wiederherstellung direkt zu prüfen!
+                  All runtime errors, WebGL context losses and React exceptions are automatically
+                  intercepted by the <strong>Naval Blackbox Crash-Guard</strong>. Click the button below
+                  to trigger a <strong>simulated test crash</strong> and verify the crash screen
+                  and the one-click recovery directly!
                 </p>
                 <button
                   onClick={() => {
@@ -557,16 +557,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   }}
                   className="px-4 py-2.5 rounded-lg bg-red-600 hover:bg-red-500 text-white font-display font-bold text-xs tracking-wider cursor-pointer transition shadow-lg shadow-red-600/25"
                 >
-                  TEST-CRASH AUSLÖSEN (CRASH-SCREEN VERIFIZIEREN)
+                  TRIGGER TEST CRASH (VERIFY CRASH SCREEN)
                 </button>
               </div>
 
               <div className="p-4 rounded-lg bg-slate-900 border border-slate-800 space-y-2 text-xs font-mono-tech">
-                <div className="text-emerald-400 font-bold">SYSTEM-STATUS CHECKLISTE:</div>
-                <div className="text-slate-300">✓ 12 Funktionsfähige Schiffs-Türen & Hydraulische Wasserschotten [E]</div>
-                <div className="text-slate-300">✓ Striktes Schiff-Lokales OBB/AABB Kollisionssystem (Kein No-Clip!)</div>
-                <div className="text-slate-300">✓ 4 Flutbare Abteilungen mit Echtzeit-Krängung, Trimmung & Kielbruch</div>
-                <div className="text-slate-300">✓ 5 Animierte 3D-Werkzeuge/Waffen (TNT, C4, Granatwerfer, Breacher, Schweißbrenner)</div>
+                <div className="text-emerald-400 font-bold">SYSTEM STATUS CHECKLIST:</div>
+                <div className="text-slate-300">✓ 12 functional ship doors & hydraulic watertight bulkheads [E]</div>
+                <div className="text-slate-300">✓ Strict ship-local OBB/AABB collision system (no clipping!)</div>
+                <div className="text-slate-300">✓ 4 floodable compartments with real-time list, trim & keel break</div>
+                <div className="text-slate-300">✓ 5 animated 3D tools/weapons (TNT, C4, grenade launcher, breacher, welder)</div>
                 <div className="text-slate-300">✓ Integrierter Foto ➔ .TXT Forensik-Decoder & Eigener Datei-Konverter</div>
               </div>
             </div>
@@ -574,7 +574,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3.5 bg-slate-900/95 border-t border-slate-800 flex items-center justify-between">
+        <div className="px-4 sm:px-5 py-3 bg-slate-900/95 border-t border-slate-800 flex flex-wrap items-center justify-between gap-2">
           <button
             onClick={() => {
               soundEngine.playUiClick();
@@ -585,7 +585,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             className="px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-mono-tech text-xs flex items-center gap-1.5 cursor-pointer transition"
           >
             <RotateCcw className="w-3.5 h-3.5" />
-            <span>Standardwerte wiederherstellen</span>
+            <span>Restore defaults</span>
           </button>
 
           <button
@@ -595,7 +595,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             }}
             className="px-5 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-display font-bold text-xs tracking-wider cursor-pointer transition"
           >
-            ÜBERNEHMEN & ZURÜCK ZUM SCHIFF
+            APPLY & RETURN TO SHIP
           </button>
         </div>
       </div>

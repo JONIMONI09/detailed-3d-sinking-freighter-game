@@ -61,6 +61,8 @@ An advanced interactive maritime simulation built with **Vite**, **React 19**, *
 
 ```text
 ├── .agent/                             # Antigravity Rules, Workflows & LEARNING.md
+├── CI_DEPLOYMENT.md                    # CI & GitHub Pages verification record
+├── RESPONSIVE_UI.md                    # Responsive HUD & landscape layout record
 ├── detailed-3d-sinking-freighter-game_sonnet/ # Alternative / Sub-workspace Edition
 ├── src/
 │   ├── audio/
@@ -85,7 +87,7 @@ An advanced interactive maritime simulation built with **Vite**, **React 19**, *
 ## 🛠️ Getting Started
 
 ### Prerequisites
-- Node.js 18+ (tested on Node.js 25)
+- Node.js 22.12+ (Vite 7; Node 20.19.x also works — verified on Node.js 26)
 - npm or pnpm
 
 ### Installation
@@ -107,6 +109,61 @@ npm run dev
 ```bash
 npm run build
 ```
+
+---
+
+## 📱 Responsive Layout
+
+Viewports shorter than 560 px (phone landscape) switch the HUD into a compact
+mode: the telemetry panel starts collapsed and scrolls internally, the top bar
+shows icon-only actions, the thumbstick shrinks to 88 px and the interaction
+popup is capped and scrollable. The weapon dock keeps all five slots visible
+without a scrollbar.
+
+Narrow viewports (< 640 px width) also collapse the telemetry panel, the event
+ticker is capped at `92vw`, and the HUD respects `env(safe-area-inset-*)` with
+`viewport-fit=cover`. The touch look zone sits below the HUD so every top-bar
+button stays tappable.
+
+All player-facing text is English (HUD, weapon bar, prompts, settings, blackbox
+analyzer, crash screen); German survives only in internal code comments.
+
+Layout harness (dev server): `/tools/hud-preview.html?w=844&h=390`.
+Details and measurements: [RESPONSIVE_UI.md](RESPONSIVE_UI.md).
+
+---
+
+## 🚀 CI & GitHub Pages Deployment
+
+Both editions are verified on every push to `main`:
+
+```bash
+npm ci
+npm run typecheck
+npx tsc -p detailed-3d-sinking-freighter-game_sonnet/tsconfig.json --noEmit
+npm test
+npm run build
+npx vite build detailed-3d-sinking-freighter-game_sonnet --outDir ../dist/sonnet --base ./
+```
+
+Two independent targets are built and type-checked: the root app (`package.json`,
+`tsconfig.json`, `vite.config.ts`) and the Sonnet sub-site
+(`detailed-3d-sinking-freighter-game_sonnet/` with its own package.json, tsconfig
+and Vite config).
+
+Before installing, both workflow files are parsed and asserted with Python
+(`yaml.SafeLoader` with duplicate-key detection: triggers, jobs, Node 22,
+`npm ci`, both typechecks and builds, Pages permissions, `enablement: true`,
+artifact paths, no `--force`), and `python tools/ci_check.py` verifies the
+workflow and physics contracts.
+
+The root app is published as a single-file bundle (`dist/index.html`), the Sonnet
+edition as a sub-site under `/sonnet/`. The deploy workflow requires
+**Settings → Pages → Source: GitHub Actions**; a private repository additionally
+needs a plan that includes GitHub Pages.
+
+Full verification record, measured results and known limitations:
+[CI_DEPLOYMENT.md](CI_DEPLOYMENT.md).
 
 ---
 

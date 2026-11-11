@@ -1,0 +1,242 @@
+# CI & Deployment Verification Record
+
+Status: **green** — locally reproduced on 2026-11-11. The GitHub Pages deployment
+failure was a workflow configuration problem, not an application defect.
+
+Related commit: `410a321` — *Enable GitHub Pages provisioning in the deploy workflow*
+(pushed as a fast-forward `02fc1b2..410a321` to `main`).
+
+---
+
+## 1. Summary
+
+| Item | Result |
+| :--- | :--- |
+| Dependency install (`npm ci`) | Exit 0, 104 packages |
+| Root TypeScript check | Exit 0, 0 errors |
+| Sonnet edition TypeScript check | Exit 0, 0 errors |
+| Physics unit tests | Exit 0, 5/5 passed |
+| Python CI integrity suite | Exit 0, 7/7 passed |
+| Root production build | Exit 0, `dist/index.html` 953.59 kB (gzip 250.56 kB) |
+| Sonnet production build | Exit 0, `dist/sonnet/index.html` 1,001.18 kB (gzip 276.57 kB) |
+| GitHub Pages sub-path simulation | HTTP 200 for `/` and `/sonnet/` |
+
+No application, type or test defect was found. The deploy job could never
+publish because the Pages site was not provisioned (see section 5).
+
+---
+
+## 2. Environment
+
+| Tool | Value |
+| :--- | :--- |
+| Node.js | v26.13.0 (`node -v`) |
+| npm | 11.20.0 |
+| Python | 3.12.3 |
+| Vite | 7.3.2 |
+| TypeScript | 5.9.3 |
+| OS | Linux cloud sandbox (CI runner uses `ubuntu-latest`, Node 22) |
+
+Vite 7 declares `engines.node: ^20.19.0 || >=22.12.0`, so the CI's Node 22
+satisfies it. The local runs used Node 26; a Node-version specific difference
+has not been observed but was not exhaustively excluded.
+
+---
+
+## 2.1 Two independent TypeScript/Vite targets
+
+The repository contains two complete, separately configured targets. There is
+no `tsconfig.app.json` / `tsconfig.node.json` split and no second config inside
+the root project:
+
+| Target | package.json | tsconfig | Vite config | Typecheck | Build |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| Root app | `package.json` | `tsconfig.json` | `vite.config.ts` | `npm run typecheck` | `npx vite build` |
+| Sonnet sub-site | `detailed-3d-sinking-freighter-game_sonnet/package.json` | `…/tsconfig.json` | `…/vite.config.ts` | `npx tsc -p …/tsconfig.json --noEmit` | `npx vite build detailed-3d-sinking-freighter-game_sonnet` |
+
+Both targets are built in CI (`ci.yml`) and in the Pages deploy
+(`deploy-pages.yml`); the deploy additionally writes the Sonnet build to
+`dist/sonnet` via `--outDir ../dist/sonnet --base ./`.
+
+---
+
+## 3. Local CI run — exact commands and results
+
+```bash
+npm ci
+npx tsc --noEmit
+npx tsc -p detailed-3d-sinking-freighter-game_sonnet/tsconfig.json --noEmit
+node tests/physics.test.mjs
+python tools/ci_check.py
+npx vite build
+mkdir -p dist/sonnet
+npx vite build detailed-3d-sinking-freighter-game_sonnet --outDir ../dist/sonnet --base ./
+```
+
+| Step | Exit | Duration | Output |
+| :--- | :---: | :--- | :--- |
+| `npm ci` | 0 | ~5 s | `added 104 packages`, 2 advisories (1 low, 1 high) |
+| Root `tsc --noEmit` | 0 | 4 s | no diagnostics |
+| Sonnet `tsc --noEmit` | 0 | 4 s | no diagnostics |
+| `node tests/physics.test.mjs` | 0 | <1 s | 5/5 tests, `ALL 5 SIMULATION PHYSICS TESTS PASSED` |
+| `python tools/ci_check.py` | 0 | <1 s | 7/7 checks, `All 7 CI checks passed successfully` |
+| Root `vite build` | 0 | 3.96 s | 2106 modules; `dist/index.html 953.59 kB │ gzip: 250.56 kB` |
+| Sonnet `vite build` | 0 | 3.02 s | 53 modules; `../dist/sonnet/index.html 1,001.18 kB │ gzip: 276.57 kB` |
+
+Artifact hashes of the verified run:
+
+```
+2e69b066375e726eb59bb7aa49952056780ce1cdaf9a31f3ff3cfade46ecab85  dist/index.html
+a0ff5b7e6671785a2f2ed3ff63d14cd62a319bc8803a459a1f7845a140951eaa  dist/sonnet/index.html
+```
+
+Both builds use `vite-plugin-singlefile`, so every script and stylesheet is
+inlined. The only external requests are the Google Fonts links from
+`index.html`; there are no `assets/`, texture, model or audio files to fetch.
+
+---
+
+## 4. GitHub Pages sub-path simulation
+
+A project site is served from `https://<user>.github.io/<repo>/`, not from the
+domain root. To verify the relative `base: "./"` configuration, the built
+artifacts were served under a nested directory:
+
+```bash
+mkdir -p /tmp/pages-sim/detailed-3d-sinking-freighter-game
+cp -r dist/. /tmp/pages-sim/detailed-3d-sinking-freighter-game/
+cd /tmp/pages-sim && python3 -m http.server 4199
+```
+
+| URL | Status |
+| :--- | :--- |
+| `http://127.0.0.1:4199/detailed-3d-sinking-freighter-game/` | 200 |
+| `http://127.0.0.1:4199/detailed-3d-sinking-freighter-game/sonnet/` | 200 |
+
+This proves the deployment works from a sub-path. It does not prove that WebGL
+renders — that still requires a real browser check.
+
+---
+
+## 5. Deployment fix
+
+File: `.github/workflows/deploy-pages.yml`
+
+**Before:** `actions/configure-pages@v4` ran without `enablement`, so the job
+failed whenever the repository had no Pages site yet. The job also declared no
+`environment`, so the deployment URL was never surfaced, and nothing validated
+the build output before upload.
+
+**After:**
+
+1. `configure-pages@v4` with `with: enablement: true` — the job can create the
+   Pages site itself instead of failing with
+   *"Get Pages site failed … configured to build using GitHub Actions"*.
+2. Job-level `environment: github-pages` with
+   `url: ${{ steps.deployment.outputs.page_url }}` — the deployment appears in
+   GitHub and exposes its URL.
+3. New step **Verify Pages artifact** — fails fast if `dist/index.html` or
+   `dist/sonnet/index.html` is missing.
+
+Verification of the change: the workflow YAML parses (11 steps in order,
+`enablement: True`), and `python tools/ci_check.py` still passes 7/7 afterwards.
+
+---
+
+## 6. Why the page could still appear blank
+
+If **Settings → Pages → Source** is set to *Deploy from a branch*, GitHub serves
+the repository's raw `index.html`. That file references `/src/main.tsx`
+(TypeScript/TSX source, not built JavaScript) and the repository contains no
+compiled CSS, because `dist/` is git-ignored. The result is a blank page with a
+404 on `/src/main.tsx`. The Pages source must be **GitHub Actions**.
+
+---
+
+## 7. Known limitations and open risks
+
+| Topic | Status |
+| :--- | :--- |
+| Live GitHub Actions run | **Not observed.** The repository is private, the GitHub API returns 404 anonymously and `gh` is not authenticated here. Only the remote ref (`main` → `410a321`) was verified. |
+| Private repository on GitHub Free | GitHub Pages for private repositories requires Pro/Team/Enterprise. If the account is on Free, `enablement: true` cannot succeed; the repository must be made public, the plan upgraded, or another host used. |
+| CI integrity suite depth | `check_watertight_dogging` greps for the strings `door.locked` and `0.85` anywhere in the file — `0.85` also matches `HemisphereLight(..., 0.85)`, so the check can pass even if the dogging timing regresses. `check_engine_room_collision_clearance` depends on the exact `addWallBox('diesel_engine_core', x, y, z)` formatting. Both are formatting checks, not behavioural tests. |
+| Sonnet dependency isolation | `detailed-3d-sinking-freighter-game_sonnet/` ships its own `package.json` and `package-lock.json`, but CI installs only the root dependencies. The build works because every Sonnet dependency also exists at the root; adding a Sonnet-only dependency will break CI. |
+| Node parity | CI uses Node 22, verification ran on Node 26. |
+| Visual verification | The built pages were checked by HTTP status and HTML content only; WebGL rendering and console output were not inspected in a browser. |
+
+---
+
+## 8. Reproduce / regression check
+
+```bash
+npm ci
+npm run typecheck
+npx tsc -p detailed-3d-sinking-freighter-game_sonnet/tsconfig.json --noEmit
+npm test
+npm run build
+npx vite build detailed-3d-sinking-freighter-game_sonnet --outDir ../dist/sonnet --base ./
+```
+
+Expected: every command exits 0, `dist/index.html` and `dist/sonnet/index.html`
+exist, and neither file references an external `/assets/…` bundle.
+
+---
+
+## 9. Rollback
+
+The deployment change is limited to `.github/workflows/deploy-pages.yml`:
+
+```bash
+git revert 410a321
+```
+
+Reverting restores the previous workflow (no `enablement`, no `environment`,
+no artifact check). The application code and build configuration are unchanged
+by this record.
+
+---
+
+## 10. Clean-room re-verification (2026-11-11, after the responsive HUD + English UI change)
+
+The whole chain was re-run from a fresh install state: `node_modules`, `dist`
+and `detailed-3d-sinking-freighter-game_sonnet/dist` were removed first, then
+`npm ci` restored the tree from `package-lock.json` only (no `npm install`, no
+`--force`, no `--legacy-peer-deps`). The lockfile stayed untouched — `git
+status` shows no change to `package-lock.json`.
+
+| # | Command | Exit | Key output |
+| :-: | :--- | :-: | :--- |
+| 1 | `npm ci` | 0 | `added 104 packages`, 2 advisories (1 low, 1 high); only the esbuild postinstall warning |
+| 2 | `npm run typecheck` (→ `tsc --noEmit`) | 0 | no diagnostics |
+| 3 | `npx tsc -p detailed-3d-sinking-freighter-game_sonnet/tsconfig.json --noEmit` | 0 | no diagnostics |
+| 4 | `npm test` | 0 | 5/5 physics tests, 7/7 Python integrity checks |
+| 5 | `npx vite build` | 0 | 2106 modules, `dist/index.html` 953.59 kB (gzip 250.56 kB), 3.96 s |
+| 6 | `npx vite build detailed-3d-sinking-freighter-game_sonnet --outDir ../dist/sonnet --base ./` | 0 | 53 modules, `../dist/sonnet/index.html` 1,001.18 kB (gzip 276.57 kB), 3.02 s |
+| 7 | `npx vite build detailed-3d-sinking-freighter-game_sonnet` (ci.yml path) | 0 | 53 modules, `…/dist/index.html` 1,001.18 kB, 2.94 s |
+
+Both Sonnet invocations produced the **same** artifact hash (`a0ff5b7e…`), so CI
+and the Pages deploy build an identical file. The root artifact hash is
+`2e69b066…`.
+
+The responsive HUD rules survive the single-file build: `dist/index.html`
+contains the `max-height:560px` media query (2 occurrences) and the
+`naval-scroll-x` helper (3 occurrences). No typecheck or test broke because of
+the landscape changes.
+
+---
+
+## 11. English UI pass and YAML gate (2026-11-11)
+
+All player-facing German strings in the root app were replaced with English
+(331 literal replacements across `index.html`, `src/App.tsx`, `src/types/game.ts`,
+`src/game/CargoShipBuilder.ts` and the HUD/modal components). Only code comments
+and the binary-string regex keep umlauts; `dist/index.html` contains no German UI
+marker (`UNTER WASSER`, `TÜREN`, `SCHOTTEN`, `KIEL SPRENGEN`, …).
+
+Before the clean install, both workflows were parsed and asserted with Python
+(33 checks: duplicate-key detection through a custom `yaml.SafeLoader`, trigger
+and job presence, Node 22, `npm ci`, both typechecks, both builds, Pages
+permissions, `enablement: true`, artifact paths, no `--force` or
+`--legacy-peer-deps`). `python tools/ci_check.py` passed 7/7, including its own
+workflow integrity check. The clean-room chain then passed with the numbers in
+§10; the root bundle is 953.59 kB and hashes to `2e69b066…`.

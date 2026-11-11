@@ -36,10 +36,10 @@ interface PresetPhotoFile {
 const PRESET_BLACKBOX_PHOTOS: PresetPhotoFile[] = [
   {
     id: 'manifest_photo',
-    originalName: 'frachter_geheimfoto_sektion_B.jpg',
-    renamedTxt: 'frachter_geheimfoto_sektion_B.txt',
-    sizeBytes: '48.320 Bytes',
-    summary: 'Abgefangenes Überwachungsfoto aus dem unteren Frachtraum (Sektion B). Enthält versteckten Klartext nach dem JPEG-EOI-Marker (FF D9).',
+    originalName: 'freighter_secret_photo_section_B.jpg',
+    renamedTxt: 'freighter_secret_photo_section_B.txt',
+    sizeBytes: '48,320 bytes',
+    summary: 'Intercepted surveillance photo from the lower cargo hold (Section B). Contains hidden plaintext after the JPEG EOI marker (FF D9).',
     rawHeaderHex:
       'FF D8 FF E0 00 10 4A 46 49 46 00 01 02 01 00 60 00 60 00 00 FF FE 00 3B 43 4F 4E 46 49 44 45 4E 54 49 41 4C ... FF D9',
     decodedTextContent: `JFIF;CREATOR: NAVAL BLACKBOX CAM #04 (MS POSEIDON VII)
@@ -47,50 +47,50 @@ const PRESET_BLACKBOX_PHOTOS: PresetPhotoFile[] = [
 ...‰PNG/JPEG_END_MARKER_FFD9...
 
 ====================================================================
->>> VERSTECKTER KLARTEXT IM FOTO GEFUNDEN (NACH .TXT UMBENENNUNG) <<<
+>>> HIDDEN PLAINTEXT FOUND IN THE PHOTO (AFTER RENAMING TO .TXT) <<<
 ====================================================================
-SCHIFFS-KENNUNG   : MS POSEIDON VII (IMO 9482710)
-GEHEIM-PROTOKOLL  : PROJEKT TIEFSEE-BRECHER
-STRUKTUR-ANALYSE  :
-  1. KRITISCHER KIEL-SCHWACHPUNKT:
-     Unterdeck Sektion B & C (Maschinenraum-Schottwand bei Y = -2.2m).
-     Wenn die wasserdichten Schotten (Bulkhead Doors) OFFEN stehen
-     und 2x TNT oder C4 am Rumpf gezündet werden, bricht der Kiel!
-  2. ALLE TÜREN & EINGÄNGE:
-     - Kommandobrücke (Deck +10m): Backbord & Steuerbord Flügeltüren [E]
-     - Mannschaftsdeck (Deck +6m): Kabinen- & Messetüren [E]
-     - Hauptdeck (Deck +2m): Bug-Zugangshaus & Mittschiffs-Niedergang [E]
-     - Unterdeck (Deck -2.2m): 3 Hydraulische Wasserschutztüren [E]
-     - KEIN NO-CLIP: Solide OBB-Schiffskollision auf allen Decks aktiv!
-  3. OVERCHARGE-FREISCHALTCODE:
+SHIP ID           : MS POSEIDON VII (IMO 9482710)
+CLASSIFIED LOG    : PROJECT DEEP-SEA BREACHER
+STRUCTURAL ANALYSIS:
+  1. CRITICAL KEEL WEAK POINT:
+     Lower deck sections B & C (engine-room bulkhead at Y = -2.2m).
+     If the watertight bulkheads (bulkhead doors) are OPEN
+     and 2x TNT or C4 are detonated on the hull, the keel breaks!
+  2. ALL DOORS & ENTRANCES:
+     - Bridge (deck +10m): port & starboard wing doors [E]
+     - Crew deck (deck +6m): cabin & mess doors [E]
+     - Main deck (deck +2m): bow access house & midship stairwell [E]
+     - Lower deck (deck -2.2m): 3 hydraulic watertight doors [E]
+     - NO CLIP: solid ship-local OBB collision active on every deck!
+  3. OVERCHARGE UNLOCK CODE:
      [ CODE: ARGON-SONNET-OMEGA-TNT ]
-     -> Aktiviert 250% Sprengkraft & unbegrenzte Spezial-Munition!
+     -> Enables 250% blast power & unlimited special ammo!
 ====================================================================`,
-    secretFound: 'SCHWACHPUNKT & OVERCHARGE-CODE GEFUNDEN: [ARGON-SONNET-OMEGA-TNT]',
+    secretFound: 'WEAK POINT & OVERCHARGE CODE FOUND: [ARGON-SONNET-OMEGA-TNT]',
   },
   {
     id: 'hull_blueprint',
-    originalName: 'bauplan_rumpf_schotten_scan.png',
-    renamedTxt: 'bauplan_rumpf_schotten_scan.txt',
-    sizeBytes: '72.910 Bytes',
-    summary: 'Technischer Scan der 4 wasserdichten Abteilungen mit eingebetteten tEXt-Metadaten zur Sink-Physik.',
+    originalName: 'hull_bulkhead_blueprint_scan.png',
+    renamedTxt: 'hull_bulkhead_blueprint_scan.txt',
+    sizeBytes: '72,910 bytes',
+    summary: 'Technical scan of the 4 watertight compartments with embedded tEXt metadata for sinking physics.',
     rawHeaderHex:
       '89 50 4E 47 0D 0A 1A 0A 00 00 00 0D 49 48 44 52 00 00 07 80 00 00 04 38 ... 74 45 58 74',
     decodedTextContent: `‰PNG
 IHDR8tEXtSoftwareNavalCAD HydroSim v5.5
 ====================================================================
->>> EXTRAHIERTER .TXT CHUNK AUS PNG-BILDSTRUKTUR <<<
+>>> EXTRACTED .TXT CHUNK FROM PNG IMAGE STRUCTURE <<<
 ====================================================================
-HYDRODYNAMISCHE SINK-SIMULATION (ECHTZEIT-ARCHIMEDES-MODELL):
-- ABTEILUNG A (BUG / BOW)        : Flutung erzeugt starke Kopflastigkeit (Pitch bis -28°).
-- ABTEILUNG B (MITTSCHIFFS)      : Erhöht den Tiefgang massiv; rote Fässer verstärken Explosion.
-- ABTEILUNG C (MASCHINENRAUM)    : Enthält 12-Zylinder Dieselmotor & Lenzpumpen-Konsole.
-- ABTEILUNG D (HECK / PROPELLER) : Flutung drückt das Heck unter Wasser.
+HYDRODYNAMIC SINKING SIMULATION (REAL-TIME ARCHIMEDES MODEL):
+- SECTION A (BOW)               : flooding creates strong bow-heavy trim (pitch up to -28°).
+- SECTION B (MIDSHIP)           : massively increases draft; red barrels amplify explosions.
+- SECTION C (ENGINE ROOM)       : contains the 12-cylinder diesel engine & bilge pump console.
+- SECTION D (STERN / PROPELLER) : flooding pushes the stern underwater.
 
-TIPP FÜR SCHADENSABWEHR:
-Mit Taste [5] (Plasma-Schweißbrenner) können Rumpf-Lecks unter Wasser
-oder im Frachtraum wieder zugeschweißt werden! Lenzpumpen im
-Maschinenraum mit [E] aktivieren, um Wasser abzupumpen!
+DAMAGE CONTROL TIP:
+With key [5] (plasma welder) hull leaks can be sealed underwater
+or in the cargo hold! Activate the bilge pumps in the
+engine room with [E] to pump water out!
 ====================================================================`,
     secretFound: 'HYDRO-DATENSATZ: KIELBRUCH BEI >70% FLUTUNG IN SEKTION B & C',
   },
@@ -146,19 +146,19 @@ export const PhotoTxtAnalyzerModal: React.FC<PhotoTxtAnalyzerModalProps> = ({
 
       setCustomAsciiStrings(cleanedMatches);
       setCustomTxtOutput(
-        `=== DATEI UMBENANNT: ${file.name} -> ${renamed} ===\n` +
-          `DATEIGRÖSSE: ${file.size.toLocaleString('de-DE')} Bytes | TYP: ${file.type || 'Binary/Image'}\n` +
-          `HEX-HEADER (ERSTE 96 BYTES):\n${hexPreview}\n\n` +
-          `=== GEFUNDENE LESBARE TEXT-KETTEN (STRINGS) IN DER BILD-DATEI ===\n` +
+        `=== FILE RENAMED: ${file.name} -> ${renamed} ===\n` +
+          `FILE SIZE: ${file.size.toLocaleString('en-US')} bytes | TYPE: ${file.type || 'Binary/Image'}\n` +
+          `HEX HEADER (FIRST 96 BYTES):\n${hexPreview}\n\n` +
+          `=== READABLE TEXT STRINGS FOUND IN THE IMAGE FILE ===\n` +
           (cleanedMatches.length > 0
             ? cleanedMatches.map((s, idx) => `[${String(idx + 1).padStart(3, '0')}] ${s}`).join('\n')
-            : 'Keine langen ASCII-Textblöcke im Header gefunden.') +
-          `\n\n=== ROHDATEN-TEXTANSICHT (.TXT STREAM) ===\n` +
+            : 'No long ASCII text blocks found in the header.') +
+          `\n\n=== RAW DATA TEXT VIEW (.TXT STREAM) ===\n` +
           rawText.slice(0, 6000)
       );
       setIsRenamedToTxt(true);
     } catch (err) {
-      setCustomTxtOutput(`Fehler beim Lesen der Datei: ${String(err)}`);
+      setCustomTxtOutput(`Error reading file: ${String(err)}`);
     }
   };
 
@@ -166,7 +166,7 @@ export const PhotoTxtAnalyzerModal: React.FC<PhotoTxtAnalyzerModalProps> = ({
     soundEngine.playUiClick();
     const content = customTxtOutput || activePreset.decodedTextContent;
     const filename = customFileName
-      ? customFileName.split('➔')[1]?.trim() || 'foto_analyse.txt'
+      ? customFileName.split('➔')[1]?.trim() || 'photo_analysis.txt'
       : activePreset.renamedTxt;
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -182,29 +182,29 @@ export const PhotoTxtAnalyzerModal: React.FC<PhotoTxtAnalyzerModalProps> = ({
     ? displayedText
         .split('\n')
         .filter((line) => line.toLowerCase().includes(searchFilter.toLowerCase()))
-        .join('\n') || 'Keine Zeilen entsprechen dem Suchbegriff.'
+        .join('\n') || 'No lines match the search term.'
     : displayedText;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 md:p-6">
-      <div className="w-full max-w-4xl max-h-[92vh] naval-panel-amber rounded-xl flex flex-col overflow-hidden border border-amber-500/50 shadow-2xl">
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-3 md:p-6">
+      <div className="w-full max-w-4xl max-h-[96dvh] sm:max-h-[92dvh] naval-panel-amber rounded-xl flex flex-col overflow-hidden border border-amber-500/50 shadow-2xl">
         {/* Top Bar */}
-        <div className="px-5 py-4 bg-slate-900/95 border-b border-slate-700/80 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
+        <div className="px-4 sm:px-5 py-3 sm:py-4 bg-slate-900/95 border-b border-slate-700/80 flex items-center justify-between gap-2 sm:gap-4">
+          <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-lg bg-amber-500/20 border border-amber-500/60 flex items-center justify-center text-amber-400 shrink-0">
               <Terminal className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <span className="px-2 py-0.5 text-[10px] font-mono-tech font-bold uppercase bg-amber-500 text-slate-950 rounded">
-                  BLACKBOX FORENSIK-LABOR
+                  BLACKBOX FORENSICS LAB
                 </span>
                 <span className="text-xs font-mono-tech text-amber-300/80 hidden sm:inline">
-                  FOTO ➔ .TXT DECODER & HEX-ANALYSATOR
+                  PHOTO ➔ .TXT DECODER & HEX ANALYZER
                 </span>
               </div>
               <h2 className="font-display text-lg md:text-xl font-bold text-white tracking-wide">
-                BILD-DATEI IN .TXT UMBENENNEN & INHALT ANALYSIEREN
+                RENAME IMAGE FILE TO .TXT & ANALYZE ITS CONTENT
               </h2>
             </div>
           </div>
@@ -214,8 +214,8 @@ export const PhotoTxtAnalyzerModal: React.FC<PhotoTxtAnalyzerModalProps> = ({
               soundEngine.playUiClick();
               onClose();
             }}
-            className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer transition"
-            title="Schließen"
+            className="p-2 shrink-0 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer transition"
+            title="Close"
           >
             <X className="w-5 h-5" />
           </button>
@@ -245,7 +245,7 @@ export const PhotoTxtAnalyzerModal: React.FC<PhotoTxtAnalyzerModalProps> = ({
                 >
                   <div>
                     <div className="flex items-center justify-between text-xs font-mono-tech text-amber-400 mb-1">
-                      <span>SCHIFFS-BLACKBOX</span>
+                      <span>SHIP BLACKBOX</span>
                       <span>{preset.sizeBytes}</span>
                     </div>
                     <div className="font-mono-tech text-xs font-semibold text-white truncate flex items-center gap-1.5">
@@ -267,21 +267,21 @@ export const PhotoTxtAnalyzerModal: React.FC<PhotoTxtAnalyzerModalProps> = ({
             <label className="p-3.5 rounded-lg border border-dashed border-sky-400/60 bg-sky-950/20 hover:bg-sky-950/35 text-left transition cursor-pointer flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between text-xs font-mono-tech text-sky-400 mb-1">
-                  <span>EIGENES FOTO PRÜFEN</span>
+                  <span>CHECK YOUR OWN PHOTO</span>
                   <span>LIVE DECODER</span>
                 </div>
                 <div className="font-display font-bold text-sm text-white flex items-center gap-2">
                   <Upload className="w-4 h-4 text-sky-400 shrink-0" />
-                  <span>Foto hochladen ➔ in .TXT umwandeln</span>
+                  <span>Upload photo ➔ convert to .TXT</span>
                 </div>
                 <p className="text-[11px] text-slate-300 mt-1.5">
-                  Wähle ein beliebiges Bild (.jpg, .png, etc.) von deinem Gerät, um es direkt als{' '}
-                  <code className="text-amber-300">.txt</code> auszulesen und versteckten Text zu finden!
+                  Choose any image (.jpg, .png, etc.) from your device to read it directly as{' '}
+                  <code className="text-amber-300">.txt</code> and find hidden text!
                 </p>
               </div>
               <input type="file" accept="*/*" onChange={handleFileUpload} className="hidden" />
               <div className="mt-2 text-[11px] font-mono-tech text-sky-300 underline">
-                {customFileName ? `Geladen: ${customFileName}` : 'Hier klicken zum Datei auswählen...'}
+                {customFileName ? `Loaded: ${customFileName}` : 'Click here to choose a file...'}
               </div>
             </label>
           </div>
@@ -289,7 +289,7 @@ export const PhotoTxtAnalyzerModal: React.FC<PhotoTxtAnalyzerModalProps> = ({
           {/* Interactive Rename Toggle Banner */}
           <div className="p-3.5 rounded-lg bg-slate-900/95 border border-slate-700 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <div className="flex items-center gap-2.5 flex-wrap">
-              <span className="text-xs font-mono-tech uppercase text-slate-400">DATEINAME:</span>
+              <span className="text-xs font-mono-tech uppercase text-slate-400">FILENAME:</span>
               <span
                 className={`px-2.5 py-1 rounded text-xs font-mono-tech font-bold ${
                   !isRenamedToTxt
@@ -319,14 +319,14 @@ export const PhotoTxtAnalyzerModal: React.FC<PhotoTxtAnalyzerModalProps> = ({
                 }}
                 className="px-3 py-1.5 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 font-mono-tech font-bold text-xs cursor-pointer transition"
               >
-                {isRenamedToTxt ? 'ALS .TXT GEÖFFNET (AKTIV)' : 'JETZT IN .TXT UMBENENNEN'}
+                {isRenamedToTxt ? 'OPENED AS .TXT (ACTIVE)' : 'RENAME TO .TXT NOW'}
               </button>
               <button
                 onClick={handleDownloadTxt}
                 className="px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 font-mono-tech text-xs flex items-center gap-1.5 cursor-pointer transition"
               >
                 <Download className="w-3.5 h-3.5 text-sky-400" />
-                <span>.TXT Speichern</span>
+                <span>Save .TXT</span>
               </button>
             </div>
           </div>
@@ -338,7 +338,7 @@ export const PhotoTxtAnalyzerModal: React.FC<PhotoTxtAnalyzerModalProps> = ({
                 <CheckCircle2 className="w-4 h-4" />
                 <span>
                   {customTxtOutput
-                    ? `EIGENE DATEI ANALYSIERT (${customAsciiStrings.length} Text-Sequenzen extrahiert)`
+                    ? `OWN FILE ANALYZED (${customAsciiStrings.length} text sequences extracted)`
                     : activePreset.secretFound}
                 </span>
               </div>
@@ -348,21 +348,21 @@ export const PhotoTxtAnalyzerModal: React.FC<PhotoTxtAnalyzerModalProps> = ({
                   type="text"
                   value={searchFilter}
                   onChange={(e) => setSearchFilter(e.target.value)}
-                  placeholder="Im .txt Inhalt suchen..."
+                  placeholder="Search the .txt content..."
                   className="pl-8 pr-3 py-1 rounded bg-slate-950 border border-slate-700 text-xs font-mono-tech text-white focus:outline-none focus:border-amber-400"
                 />
               </div>
             </div>
 
             {isRenamedToTxt ? (
-              <pre className="p-4 rounded-lg bg-[#05080C] border border-emerald-500/40 text-xs md:text-sm font-mono-tech text-emerald-300 overflow-x-auto max-h-64 naval-scroll whitespace-pre-wrap leading-relaxed shadow-inner">
+              <pre className="p-4 rounded-lg bg-[#05080C] border border-emerald-500/40 text-xs md:text-sm font-mono-tech text-emerald-300 overflow-x-auto max-h-[38dvh] sm:max-h-64 naval-scroll whitespace-pre-wrap leading-relaxed shadow-inner">
                 {filteredText}
               </pre>
             ) : (
               <div className="p-6 rounded-lg bg-slate-950 border border-slate-800 text-center space-y-3">
                 <ImageIcon className="w-10 h-10 text-sky-400 mx-auto opacity-80" />
                 <div className="text-sm font-mono-tech text-slate-300">
-                  Datei ist aktuell noch als Binär-Bild (<code>.jpg/.png</code>) markiert.
+                  File is still marked as a binary image (<code>.jpg/.png</code>).
                 </div>
                 <div className="text-xs font-mono-tech text-slate-500 max-w-lg mx-auto">
                   HEX-STREAM: {activePreset.rawHeaderHex}
@@ -374,7 +374,7 @@ export const PhotoTxtAnalyzerModal: React.FC<PhotoTxtAnalyzerModalProps> = ({
                   }}
                   className="px-4 py-2 rounded-lg bg-amber-500 text-slate-950 font-display font-bold text-xs tracking-wider cursor-pointer"
                 >
-                  ENDUNG AUF .TXT ÄNDERN & TEXT DECODIEREN
+                  CHANGE EXTENSION TO .TXT & DECODE TEXT
                 </button>
               </div>
             )}
@@ -385,10 +385,10 @@ export const PhotoTxtAnalyzerModal: React.FC<PhotoTxtAnalyzerModalProps> = ({
             <div>
               <div className="text-xs font-mono-tech uppercase text-amber-300 font-bold flex items-center gap-1.5">
                 <Sparkles className="w-4 h-4" />
-                <span>GEHEIMCODE AUS .TXT DATEI ANWENDEN:</span>
+                <span>APPLY SECRET CODE FROM THE .TXT FILE:</span>
               </div>
               <p className="text-xs text-slate-300 mt-0.5">
-                Aktiviert den im Foto versteckten Code <code>ARGON-SONNET-OMEGA-TNT</code> (250% Sprengradius & Kielbrecher-Ladungen).
+                Activates the code hidden in the photo <code>ARGON-SONNET-OMEGA-TNT</code> (250% blast radius & keel-breaker charges).
               </p>
             </div>
 
@@ -405,7 +405,7 @@ export const PhotoTxtAnalyzerModal: React.FC<PhotoTxtAnalyzerModalProps> = ({
                 }`}
               >
                 <Unlock className="w-4 h-4" />
-                {overchargedUnlocked ? 'OVERCHARGE-TNT AKTIV!' : 'CODE AKTIVIEREN (MEGA-TNT)'}
+                {overchargedUnlocked ? 'OVERCHARGE TNT ACTIVE!' : 'ACTIVATE CODE (MEGA TNT)'}
               </button>
 
               <button
@@ -415,7 +415,7 @@ export const PhotoTxtAnalyzerModal: React.FC<PhotoTxtAnalyzerModalProps> = ({
                 }}
                 className="px-3.5 py-2.5 rounded-lg bg-red-600 hover:bg-red-500 text-white font-display font-bold text-xs tracking-wider cursor-pointer transition"
               >
-                SCHWACHPUNKT SOFORT SPRENGEN!
+                BLAST THE WEAK POINT NOW!
               </button>
             </div>
           </div>

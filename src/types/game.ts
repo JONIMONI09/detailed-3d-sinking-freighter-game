@@ -89,7 +89,7 @@ export interface ShipTelemetry {
   generalAlarmOn: boolean;
   engineRunning: boolean;
   shipBrokenInHalf: boolean;
-  shipStatus: 'NOMINAL' | 'WASSEREINBRUCH' | 'KRITISCHE KRÄNGUNG' | 'SINKT SCHNELL' | 'KIELBRUCH' | 'GESUNKEN';
+  shipStatus: 'NOMINAL' | 'FLOODING' | 'CRITICAL LIST' | 'SINKING FAST' | 'KEEL BREAK' | 'SUNK';
   playerDeckName: string;
   playerLocalPos: { x: number; y: number; z: number };
   playerUnderwater: boolean;
@@ -113,46 +113,46 @@ export const WEAPONS_LIST: WeaponInfo[] = [
   {
     id: 'tnt',
     key: '1',
-    name: 'Zeit-Dynamitladung (TNT 5s)',
-    shortName: 'TNT-PAKET',
-    description: 'Schwere Sprengladung mit 5-Sekunden-Timer. Ideal für Schiffsrumpf, Schotten & Türen.',
-    damage: 'EXTREM (Rumpfbruch)',
+    name: 'Timed Dynamite Charge (TNT 5s)',
+    shortName: 'TNT PACK',
+    description: 'Heavy explosive charge with a 5-second timer. Ideal for hulls, bulkheads & doors.',
+    damage: 'EXTREME (HULL BREACH)',
     color: '#EF4444',
   },
   {
     id: 'c4',
     key: '2',
-    name: 'C4 Fernzünd-Sprengstoff',
-    shortName: 'C4 + ZÜNDER',
-    description: 'Haftladung mit Funkzünder. Platziere bis zu 15 Ladungen und zünde alle gleichzeitig mit [G] / Rechtsklick!',
-    damage: 'KETTENREAKTION',
+    name: 'C4 Remote Detonation Charge',
+    shortName: 'C4 + DETONATOR',
+    description: 'Sticky charge with a radio detonator. Place up to 15 charges and detonate them all with [G] / right-click!',
+    damage: 'CHAIN REACTION',
     color: '#F59E0B',
   },
   {
     id: 'rpg',
     key: '3',
-    name: 'Schwerer Marine-Granatwerfer',
-    shortName: 'M32 GRANATWERFER',
-    description: 'Feuert hochexplosive Hohlladungs-Geschosse auf Distanz gegen Rumpf, Container & Fässer.',
-    damage: 'HOCH (Distanz)',
+    name: 'Heavy Naval Grenade Launcher',
+    shortName: 'M32 GRENADE LAUNCHER',
+    description: 'Fires high-explosive shaped charges at range against hulls, containers & barrels.',
+    damage: 'HIGH (RANGED)',
     color: '#F97316',
   },
   {
     id: 'shotgun',
     key: '4',
-    name: 'Taktische Breacher-Schrotflinte',
+    name: 'Tactical Breacher Shotgun',
     shortName: 'MK-18 BREACHER',
-    description: 'Sprengt Türschlösser, Kisten und rote Treibstofffässer präzise auf.',
-    damage: 'MITTEL (Kinetisch)',
+    description: 'Blasts door locks, crates and red fuel barrels open with precision.',
+    damage: 'MEDIUM (KINETIC)',
     color: '#38BDF8',
   },
   {
     id: 'welder',
     key: '5',
-    name: 'Plasma-Schweißbrenner & Reparatur',
-    shortName: 'SCHWEISSBRENNER',
-    description: 'Schweißt Lecks im Schiffsrumpf wieder zu (Schadensabwehr!) oder schneidet blockierte Türen auf.',
-    damage: 'REPARATUR / SCHNITT',
+    name: 'Plasma Welder & Repair',
+    shortName: 'WELDER',
+    description: 'Seals hull leaks (damage control!) or cuts open blocked doors.',
+    damage: 'REPAIR / CUT',
     color: '#10B981',
   },
 ];

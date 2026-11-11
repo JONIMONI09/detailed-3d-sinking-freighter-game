@@ -554,8 +554,8 @@ export function buildCargoShip(): BuiltCargoShip {
   // Compartment D (Stern Shaft): Z = +22 to +35
   // ============================================================================
   const bulkheadZPositions: { z: number; id: string; name: string; index: 0 | 1 | 2 }[] = [
-    { z: -16.0, id: 'bulkhead_ab', name: 'Wasserschott A/B (Bug ➔ Frachtraum)', index: 0 },
-    { z: 3.0, id: 'bulkhead_bc', name: 'Wasserschott B/C (Frachtraum ➔ Maschinenraum)', index: 1 },
+    { z: -16.0, id: 'bulkhead_ab', name: 'Watertight Bulkhead A/B (Bow ➔ Cargo Hold)', index: 0 },
+    { z: 3.0, id: 'bulkhead_bc', name: 'Watertight Bulkhead B/C (Cargo Hold ➔ Engine Room)', index: 1 },
     { z: 22.0, id: 'bulkhead_cd', name: 'Wasserschott C/D (Maschinenraum ➔ Wellentunnel)', index: 2 },
   ];
 
@@ -598,7 +598,7 @@ export function buildCargoShip(): BuiltCargoShip {
     doors.push({
       id,
       name,
-      deckName: 'Unterdeck (Schotten-Korridor)',
+      deckName: 'Lower Deck (Bulkhead Corridor)',
       type: 'bulkhead',
       isOpen: false,
       openProgress: 0,
@@ -631,8 +631,8 @@ export function buildCargoShip(): BuiltCargoShip {
 
   createHingedDoor({
     id: 'door_fwd_deckhouse',
-    name: 'Bug-Niedergangstür (Zum Unterdeck Sektion A)',
-    deckName: 'Hauptdeck (Bug)',
+    name: 'Bow Stairwell Door (to Lower Deck Section A)',
+    deckName: 'Main Deck (Bow)',
     doorCenterX: 0,
     doorBottomY: 2.2,
     doorCenterZ: -20.6,
@@ -653,8 +653,8 @@ export function buildCargoShip(): BuiltCargoShip {
 
   createHingedDoor({
     id: 'door_mid_deckhouse',
-    name: 'Maschinenraum-Niedergang (Zum Unterdeck Sektion B/C)',
-    deckName: 'Hauptdeck (Mittschiffs)',
+    name: 'Engine Room Stairwell (to Lower Deck Sections B/C)',
+    deckName: 'Main Deck (Midship)',
     doorCenterX: 0,
     doorBottomY: 2.2,
     doorCenterZ: 15.4,
@@ -678,8 +678,8 @@ export function buildCargoShip(): BuiltCargoShip {
 
   createHingedDoor({
     id: 'door_super_main',
-    name: 'Aufbauten-Haupteingang (Waffenkammer & Lobby)',
-    deckName: 'Hauptdeck (Heck-Aufbauten)',
+    name: 'Superstructure Main Entrance (Armory & Lobby)',
+    deckName: 'Main Deck (Stern Superstructure)',
     doorCenterX: 0,
     doorBottomY: 2.2,
     doorCenterZ: 19.2,
@@ -737,7 +737,7 @@ export function buildCargoShip(): BuiltCargoShip {
 
   createHingedDoor({
     id: 'door_crew_port',
-    name: 'Mannschaftsmesse Backbord-Tür',
+    name: 'Crew Mess Port Door',
     deckName: 'Mannschaftsdeck (+6m)',
     doorCenterX: -6.2,
     doorBottomY: 6.2,
@@ -749,7 +749,7 @@ export function buildCargoShip(): BuiltCargoShip {
 
   createHingedDoor({
     id: 'door_crew_stbd',
-    name: 'Mannschaftsmesse Steuerbord-Tür',
+    name: 'Crew Mess Starboard Door',
     deckName: 'Mannschaftsdeck (+6m)',
     doorCenterX: 6.2,
     doorBottomY: 6.2,
@@ -766,7 +766,7 @@ export function buildCargoShip(): BuiltCargoShip {
 
   createHingedDoor({
     id: 'door_captain_cabin',
-    name: 'Kapitänskabine (Tresor & Spezial-C4 Lager)',
+    name: "Captain's Cabin (Safe & Special C4 Storage)",
     deckName: 'Mannschaftsdeck (Innen)',
     doorCenterX: 0,
     doorBottomY: 6.2,
@@ -832,8 +832,8 @@ export function buildCargoShip(): BuiltCargoShip {
 
   createHingedDoor({
     id: 'door_bridge_port',
-    name: 'Kommandobrücke Backbord-Schott',
-    deckName: 'Kommandobrücke (+10m)',
+    name: 'Bridge Port Bulkhead',
+    deckName: 'Bridge (+10m)',
     doorCenterX: -5.8,
     doorBottomY: 10.2,
     doorCenterZ: 25.0,
@@ -844,8 +844,8 @@ export function buildCargoShip(): BuiltCargoShip {
 
   createHingedDoor({
     id: 'door_bridge_stbd',
-    name: 'Kommandobrücke Steuerbord-Schott',
-    deckName: 'Kommandobrücke (+10m)',
+    name: 'Bridge Starboard Bulkhead',
+    deckName: 'Bridge (+10m)',
     doorCenterX: 5.8,
     doorBottomY: 10.2,
     doorCenterZ: 25.0,
@@ -883,7 +883,7 @@ export function buildCargoShip(): BuiltCargoShip {
   createHingedDoor({
     id: 'door_secret_container',
     name: 'Gefahrgut-Container #07 Tor (Sprengstoff-Depot)',
-    deckName: 'Hauptdeck (Frachtsektion)',
+    deckName: 'Main Deck (Cargo Section)',
     doorCenterX: 0,
     doorBottomY: 2.2,
     doorCenterZ: -3.0,
@@ -1184,23 +1184,23 @@ export function buildCargoShip(): BuiltCargoShip {
     {
       id: 'term_photo_txt_analyzer',
       title: 'Blackbox Forensik-Computer (.JPG ➔ .TXT)',
-      subtitle: 'Kommandobrücke // Geheimfoto in .txt umbenennen & Schwachstellen auslesen',
-      actionLabel: '[E] FOTO ➔ .TXT ANALYSATOR ÖFFNEN',
+      subtitle: 'Bridge // Rename the secret photo to .txt & read structural weaknesses',
+      actionLabel: '[E] OPEN PHOTO ➔ .TXT ANALYZER',
       type: 'analyzer',
       localPos: new THREE.Vector3(-2.4, 11.4, 21.2),
     },
     {
       id: 'term_bridge_bulkheads',
-      title: 'Zentrale Schotten-Steuerung (Master Control)',
-      subtitle: 'Kommandobrücke // Alle 3 hydraulischen Wasserschutz-Türen im Unterdeck umschalten',
-      actionLabel: '[E] ALLE WASSERSCHOTTEN ÖFFNEN / SCHLIESSEN',
+      title: 'Central Bulkhead Control (Master Control)',
+      subtitle: 'Bridge // Toggle all 3 hydraulic watertight doors on the lower deck',
+      actionLabel: '[E] OPEN / CLOSE ALL WATERTIGHT BULKHEADS',
       type: 'terminal',
       localPos: new THREE.Vector3(2.4, 11.4, 21.2),
     },
     {
       id: 'term_bridge_alarm',
-      title: 'Schiffs-Hauptalarm & Notsirene',
-      subtitle: 'Kommandobrücke // Akustischer Generalalarm & Rundumleuchten',
+      title: 'Ship General Alarm & Emergency Siren',
+      subtitle: 'Bridge // Audible general alarm & rotating beacons',
       actionLabel: '[E] GENERALALARM EIN / AUS',
       type: 'alarm',
       localPos: new THREE.Vector3(0, 11.4, 21.2),
@@ -1208,15 +1208,15 @@ export function buildCargoShip(): BuiltCargoShip {
     {
       id: 'term_engine_bilge',
       title: 'Hochleistungs-Lenzpumpen & Diesel-Konsole',
-      subtitle: 'Maschinenraum (Sektion C) // Pumpt eingedrungenes Seewasser aus den Abteilungen',
+      subtitle: 'Engine Room (Section C) // Pumps seawater out of the flooded compartments',
       actionLabel: '[E] LENZPUMPEN AKTIVIEREN / DEAKTIVIEREN',
       type: 'bilge',
       localPos: new THREE.Vector3(-3.2, -0.9, 13.5),
     },
     {
       id: 'term_armory_crate',
-      title: 'Sprengstoff- & Munitions-Depot',
-      subtitle: 'Aufbauten-Lobby // Rüstet Spezial-TNT, C4-Ladungen & Granatwerfer auf',
+      title: 'Explosives & Ammunition Depot',
+      subtitle: 'Superstructure Lobby // Restocks special TNT, C4 charges & grenade launcher',
       actionLabel: '[E] VOLLE SPRENGKRAFT & MUNITION AUFLADEN',
       type: 'ammo',
       localPos: new THREE.Vector3(0, 3.0, 23.0),
@@ -1224,7 +1224,7 @@ export function buildCargoShip(): BuiltCargoShip {
     {
       id: 'term_lifeboat_launch',
       title: 'Rettungsboot-Davit Steuerung (Backbord)',
-      subtitle: 'Mannschaftsdeck (+6m) // Notfall-Evakuierungspunkt bei Schiffsuntergang',
+      subtitle: 'Crew Deck (+6m) // Emergency evacuation point during a sinking',
       actionLabel: '[E] RETTUNGSBOOT-AUSSICHTSPUNKT',
       type: 'lifeboat',
       localPos: new THREE.Vector3(-8.0, 6.9, 22.0),
