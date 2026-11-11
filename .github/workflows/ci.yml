@@ -2,7 +2,8 @@ name: Continuous Integration & Physics Verification
 
 on:
   push:
-    branches: [main, master]
+    # Run CI on feature branches too, so a branch can be verified before merge.
+    branches: [main, master, "**"]
   pull_request:
     branches: [main, master]
 

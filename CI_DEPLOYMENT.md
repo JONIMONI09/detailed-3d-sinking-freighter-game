@@ -347,7 +347,8 @@ Changes:
    successful and rejected fullscreen requests, exit, unsupported APIs and both
    edition helper copies. `npm test` now runs physics + browser guards + Python;
    `ci.yml` invokes `npm test` instead of only the Python suite, so these tests
-   run on GitHub.
+   run on GitHub. CI now also triggers on every branch push, so a feature branch
+   can be verified before it is merged.
 
 Browser verification (real Playwright click in the active tab):
 
