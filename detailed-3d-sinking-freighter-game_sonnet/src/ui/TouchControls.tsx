@@ -174,20 +174,20 @@ export default function TouchControls({ game, settings, tnt, detonatable, onPaus
           const rowB = b0 + fire + g;
           return (
             <>
-              <Btn unit={unit} op={op} label="FEUER" size={86} onDown={() => game?.input.setHeld("fire", true)} onUp={() => game?.input.setHeld("fire", false)} style={P(r0, b0 + 10)} active />
-              <Btn unit={unit} op={op} label="SPRUNG" size={58} onDown={() => game?.input.press("jump")} style={P(r0 + fire + g, b0)} small />
-              <Btn unit={unit} op={op} label="DUCKEN" size={48} onDown={() => game?.input.setHeld("crouch", !game.input.held.has("crouch"))} style={P(r0 + fire + g + jump + g, b0)} small />
-              <Btn unit={unit} op={op} label="BENUTZEN" size={62} onDown={() => game?.input.press("interact")} style={P(r0 + 4, rowB + 10)} small />
-              <Btn unit={unit} op={op} label="NACHLADEN" size={54} onDown={() => game?.input.press("reload")} style={P(r0 + 4 + use + g, rowB + 6)} small />
-              <Btn unit={unit} op={op} label="WAFFE ⟳" size={54} onDown={() => game?.input.press("next")} style={P(r0 + 6, rowB + 10 + use + g)} small />
-              {tnt && <Btn unit={unit} op={op} label="ABLEGEN" size={50} onDown={() => game?.input.press("alt")} style={P(r0 + 6 + wpn + g, rowB + 10 + use + g + 2)} small />}
+              <Btn unit={unit} op={op} label="FIRE" size={86} onDown={() => game?.input.setHeld("fire", true)} onUp={() => game?.input.setHeld("fire", false)} style={P(r0, b0 + 10)} active />
+              <Btn unit={unit} op={op} label="JUMP" size={58} onDown={() => game?.input.press("jump")} style={P(r0 + fire + g, b0)} small />
+              <Btn unit={unit} op={op} label="CROUCH" size={48} onDown={() => game?.input.setHeld("crouch", !game.input.held.has("crouch"))} style={P(r0 + fire + g + jump + g, b0)} small />
+              <Btn unit={unit} op={op} label="USE" size={62} onDown={() => game?.input.press("interact")} style={P(r0 + 4, rowB + 10)} small />
+              <Btn unit={unit} op={op} label="RELOAD" size={54} onDown={() => game?.input.press("reload")} style={P(r0 + 4 + use + g, rowB + 6)} small />
+              <Btn unit={unit} op={op} label="WEAPON ⟳" size={54} onDown={() => game?.input.press("next")} style={P(r0 + 6, rowB + 10 + use + g)} small />
+              {tnt && <Btn unit={unit} op={op} label="DROP" size={50} onDown={() => game?.input.press("alt")} style={P(r0 + 6 + wpn + g, rowB + 10 + use + g + 2)} small />}
             </>
           );
         })()}
         {(detonatable || tnt) && (
-          <Btn unit={unit} op={op} label="ZÜNDEN" size={56} onDown={() => game?.input.press("detonate")} active={detonatable} style={{ [side]: m + 6, bottom: m + R * 2 + 30 } as React.CSSProperties} small />
+          <Btn unit={unit} op={op} label="DETONATE" size={56} onDown={() => game?.input.press("detonate")} active={detonatable} style={{ [side]: m + 6, bottom: m + R * 2 + 30 } as React.CSSProperties} small />
         )}
-        <Btn unit={unit} op={op} label="LAMPE" size={44} onDown={() => game?.input.press("flash")} style={{ [side]: m + 6 + btn(66), bottom: m + R * 2 + 30 } as React.CSSProperties} small />
+        <Btn unit={unit} op={op} label="LIGHT" size={44} onDown={() => game?.input.press("flash")} style={{ [side]: m + 6 + btn(66), bottom: m + R * 2 + 30 } as React.CSSProperties} small />
         <Btn unit={unit} op={op} label="II" size={40} onDown={onPause} style={{ right: m, top: m + 4 } as React.CSSProperties} />
       </div>
     </div>

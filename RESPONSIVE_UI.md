@@ -206,3 +206,33 @@ Measured after the fix with `tools/hud-preview.html` in the Cloud browser:
 
 The modal bodies scroll by design, so options below the fold are reachable
 rather than cut off.
+
+---
+
+## 9. Sonnet edition preview (2026-11-11)
+
+The second edition (`detailed-3d-sinking-freighter-game_sonnet/`, served at
+`/sonnet/`) was measured after its English UI pass in an exact-size iframe:
+
+| Viewport | Screen | Fully visible | Clipped | Covered |
+| :--- | :--- | :---: | :---: | :---: |
+| 1280×800 | Menu | 5/5 | 0 | 0 |
+| 1280×800 | Settings | 20 own controls | 0 | 0 (5 background buttons intentionally behind the modal) |
+| 1280×800 | Help | 6/6 | 0 | 0 |
+| 390×844 | Menu / after start | 5/5 | 0 | 0 |
+| 390×844 | Settings | 20 own controls | 0 | 0 |
+| 390×844 | Help | 6/6 | 0 | 0 |
+
+The settings content scrolls (978/652 px at 1280×800, 1,553/701 px at
+390×844), the tab strip scrolls horizontally at 390 px (416/390), and *Done*
+stays visible. After *Start Mission* the mobile ready screen shows Play,
+Settings, Controls, Menu and Fullscreen with the canvas running.
+
+Root spot checks after the Sonnet change: 1280×800 23/23 buttons, 390×844
+21/21, 0 clipped and 0 covered.
+
+The root bundle hash moves from `2e69b066…` (German Sonnet tree) to
+`1c9d3b60…` although no root source changed: Tailwind's project-wide scan
+includes the Sonnet source, so the generated utility CSS changes. Removing the
+Sonnet folder before a root build yields `8ccb0d75…`. The root UI itself was
+re-measured and is unaffected.

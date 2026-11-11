@@ -17,9 +17,9 @@ export interface WeaponDef {
 }
 
 export const WEAPONS: Record<WeaponId, WeaponDef> = {
-  pistol: { id: "pistol", name: "Pistole", auto: false, rpm: 380, mag: 12, damage: 24, pellets: 1, spread: 0.008, range: 120, recoil: 0.7, reload: 1.3 },
-  shotgun: { id: "shotgun", name: "Schrotflinte", auto: false, rpm: 75, mag: 6, damage: 11, pellets: 9, spread: 0.06, range: 40, recoil: 1.6, reload: 0.55 },
-  rifle: { id: "rifle", name: "Sturmgewehr", auto: true, rpm: 620, mag: 30, damage: 18, pellets: 1, spread: 0.014, range: 200, recoil: 0.5, reload: 2.0 },
+  pistol: { id: "pistol", name: "Pistol", auto: false, rpm: 380, mag: 12, damage: 24, pellets: 1, spread: 0.008, range: 120, recoil: 0.7, reload: 1.3 },
+  shotgun: { id: "shotgun", name: "Shotgun", auto: false, rpm: 75, mag: 6, damage: 11, pellets: 9, spread: 0.06, range: 40, recoil: 1.6, reload: 0.55 },
+  rifle: { id: "rifle", name: "Assault Rifle", auto: true, rpm: 620, mag: 30, damage: 18, pellets: 1, spread: 0.014, range: 200, recoil: 0.5, reload: 2.0 },
   tnt: { id: "tnt", name: "TNT", auto: false, rpm: 70, mag: 1, damage: 0, pellets: 0, spread: 0, range: 0, recoil: 0, reload: 0 },
 };
 

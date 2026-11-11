@@ -8,7 +8,7 @@ import CrashScreen, { CrashInfo, toCrashInfo } from "./ui/CrashScreen";
 class Boundary extends Component<{ children: ReactNode }, { info: CrashInfo | null }> {
   state: { info: CrashInfo | null } = { info: null };
   static getDerivedStateFromError(e: unknown) {
-    return { info: toCrashInfo(e, "React-Oberfläche") };
+    return { info: toCrashInfo(e, "React UI") };
   }
   componentDidCatch(e: unknown, i: ErrorInfo) {
     console.error("UI crash", e, i.componentStack);

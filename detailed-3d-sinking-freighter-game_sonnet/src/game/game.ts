@@ -207,7 +207,7 @@ export class Game {
   private onLockError = () => {
     this.dragMode = true;
     this.input.dragLook = true;
-    this.say("Maus-Fang nicht verfügbar – Maus gedrückt halten und ziehen zum Umsehen.", "warn");
+    this.say("Mouse capture unavailable – hold and drag the mouse to look around.", "warn");
   };
   private onVis = () => {
     if (document.hidden && this.running && !this.paused) this.cb.onPause();
@@ -215,7 +215,7 @@ export class Game {
   private onFirstGesture = () => this.audio.resume();
   private lostHandler = (e: Event) => {
     e.preventDefault();
-    this.fail(new Error("WebGL-Kontext verloren (Grafikspeicher/Treiber). Bitte Grafik reduzieren und neu starten."));
+    this.fail(new Error("WebGL context lost (GPU memory/driver). Reduce graphics and restart."));
   };
 
   constructor(host: HTMLElement, settings: Settings, mode: Mode, cb: GameCallbacks) {
@@ -240,7 +240,7 @@ export class Game {
   init() {
     const s = this.settings;
     const prog = (p: number, l: string) => this.cb.onProgress?.(p, l);
-    prog(0.05, "Grafik wird initialisiert …");
+    prog(0.05, "Initializing graphics …");
     const canvas = document.createElement("canvas");
     canvas.style.cssText = "width:100%;height:100%;display:block;touch-action:none;outline:none";
     canvas.tabIndex = 0;
@@ -248,7 +248,7 @@ export class Game {
     try {
       this.renderer = new THREE.WebGLRenderer({ canvas, antialias: s.antialias, powerPreference: "high-performance" });
     } catch (e) {
-      throw new Error("WebGL konnte nicht gestartet werden. Dein Gerät/Browser unterstützt WebGL evtl. nicht oder es ist deaktiviert. (" + (e instanceof Error ? e.message : String(e)) + ")");
+      throw new Error("WebGL could not start. Your device/browser may not support WebGL or it is disabled. (" + (e instanceof Error ? e.message : String(e)) + ")");
     }
     const r = this.renderer;
     r.toneMapping = THREE.ACESFilmicToneMapping;
@@ -261,10 +261,10 @@ export class Game {
     setAnisotropy(Math.min(8, r.capabilities.getMaxAnisotropy()));
     this.resize();
 
-    prog(0.15, "Texturen …");
+    prog(0.15, "Textures …");
     this.tex = createTextures(s.preset === "low" ? 256 : 512);
 
-    prog(0.25, "Himmel & Ozean …");
+    prog(0.25, "Sky & Ocean …");
     this.sky = new Sky();
     this.scene.add(this.sky.mesh);
     this.ocean = new Ocean();
@@ -294,7 +294,7 @@ export class Game {
     this.flashlight.position.set(0.15, -0.12, 0);
     this.flashlight.target.position.set(0, 0, -5);
 
-    prog(0.4, "Frachter wird gebaut …");
+    prog(0.4, "Building freighter …");
     this.ship = buildShip(this.tex, { sandbox: this.mode === "sandbox" });
     this.scene.add(this.ship.group, this.ship.waterGroup);
     this.ship.group.add(this.ship.holeGroup);
@@ -308,7 +308,7 @@ export class Game {
       };
     });
 
-    prog(0.6, "Effekte …");
+    prog(0.6, "Effects …");
     this.pn = new ParticleSystem(4000, false);
     this.pa = new ParticleSystem(3000, true);
     this.scene.add(this.pn.points, this.pa.points);
@@ -318,7 +318,7 @@ export class Game {
     this.buildGulls();
     this.buildDecalPools();
 
-    prog(0.75, "Waffen …");
+    prog(0.75, "Weapons …");
     this.vm = new ViewModel(this.tex.glow);
     this.vm.root.scale.setScalar(0.8);
     this.vmScene.add(this.vm.root);
@@ -371,10 +371,10 @@ export class Game {
     this.ship.group.updateMatrixWorld(true);
 
     if (this.mode === "mission") {
-      this.say("Willkommen an Bord der NORDWIND. Dein Auftrag: Versenke den Frachter und flieh im Rettungsboot!", "info");
-      setTimeout(() => this.say("Tipp: TNT an den orangen Sprengpunkten im Rumpf platzieren (2 Stück), dann mit G zünden.", "info"), 5000);
+      this.say("Welcome aboard the NORDWIND. Your mission: sink the freighter and escape in the lifeboat!", "info");
+      setTimeout(() => this.say("Tip: place TNT on the orange detonation points in the hull (2 charges), then detonate with G.", "info"), 5000);
     } else {
-      this.say("Sandbox-Modus: Alle Waffen, 20 TNT, alle Türen offen. Viel Spaß!", "info");
+      this.say("Sandbox mode: all weapons, 20 TNT, all doors open. Have fun!", "info");
     }
     prog(1, "Bereit");
   }
@@ -467,7 +467,7 @@ export class Game {
     this.sky.apply(this.env);
     this.rain.visible = this.env.rain > 0 && s.particles > 0.1;
     this.rebuildLampPool();
-    if (!first) this.say("Einstellungen angewendet.", "info");
+    if (!first) this.say("Settings applied.", "info");
   }
 
   private rebuildLampPool() {
@@ -673,16 +673,16 @@ export class Game {
     if (ev.jumped) this.audio.step("metal", 0.6);
     if (ev.landed < -4) {
       this.audio.step("metal", 1.4);
-      if (ev.landed < -13) this.damagePlayer((-ev.landed - 13) * 9, "Sturz aus großer Höhe");
+      if (ev.landed < -13) this.damagePlayer((-ev.landed - 13) * 9, "fall from a great height");
     }
     // Sicherheitsnetz: aus der Welt gefallen
     if (b.y < -25 || !isFinite(b.x + b.y + b.z)) {
-      this.damagePlayer(1000, "Aus der Welt gefallen");
+      this.damagePlayer(1000, "fell out of the world");
     }
     // Sicherheitsnetz: Schiff verlassen / außerhalb der Welt -> zurück an Deck
     if (controls && (Math.abs(b.x) > 13.5 || b.z < -72 || b.z > 72 || b.y > 25)) {
       p.teleport(9.8, DECK_Y, -42, Math.PI);
-      this.say("Zurück an Deck gesetzt.", "warn");
+      this.say("Placed back on deck.", "warn");
     }
     // Sauerstoff
     if (p.submerged && p.alive) {
@@ -971,7 +971,7 @@ export class Game {
       for (let i = 0; i < 6; i++) this.pn.emit(...this.pw(hp), (Math.random() - 0.5) * 2, Math.random() * 2, (Math.random() - 0.5) * 2, 0.5, 0.06, 0.2, 0.55, 0.03, 0.03, 0.8, 9, 1);
       if (killed) {
         this.kills++;
-        this.say(head ? "Kopfschuss!" : "Wache ausgeschaltet", "info");
+        this.say(head ? "Headshot!" : "Guard eliminated", "info");
       }
       this.alertGuards(origin, 1);
     } else if (kind === "tnt" && dyn) {
@@ -1066,19 +1066,19 @@ export class Game {
       const t = c.loot;
       if (t === "ammo_pistol") {
         this.ammo.pistol.res += 24;
-        this.say("Kiste: +24 Pistolenmunition", "pickup");
+        this.say("Crate: +24 pistol ammo", "pickup");
       } else if (t === "ammo_shotgun") {
         this.ammo.shotgun.res += 8;
-        this.say("Kiste: +8 Schrotpatronen", "pickup");
+        this.say("Crate: +8 shotgun shells", "pickup");
       } else if (t === "ammo_rifle") {
         this.ammo.rifle.res += 30;
-        this.say("Kiste: +30 Gewehrmunition", "pickup");
+        this.say("Crate: +30 rifle ammo", "pickup");
       } else if (t === "medkit") {
         this.player.health = Math.min(100, this.player.health + 40);
-        this.say("Kiste: Verbandszeug (+40 HP)", "pickup");
+        this.say("Crate: medkit (+40 HP)", "pickup");
       } else if (t === "tnt") {
         this.tnt += 2;
-        this.say("Kiste: +2 TNT", "pickup");
+        this.say("Crate: +2 TNT", "pickup");
       }
       this.audio.pickup();
     }
@@ -1135,7 +1135,7 @@ export class Game {
     if (this.tnt <= 0) {
       this.audio.empty();
       this.cooldown = 0.4;
-      this.say("Kein TNT mehr!", "warn");
+      this.say("No TNT left!", "warn");
       return;
     }
     this.tnt--;
@@ -1149,13 +1149,13 @@ export class Game {
     this.spawnDyn(o, v, this.fuseTime());
     this.noiseT = 0.2;
     this.noisePos.copy(o);
-    if (this.tnt === 0) this.say("Letztes TNT geworfen.", "warn");
+    if (this.tnt === 0) this.say("Last TNT thrown.", "warn");
   }
 
   private placeTnt() {
     if (this.tnt <= 0) {
       this.audio.empty();
-      this.say("Kein TNT mehr!", "warn");
+      this.say("No TNT left!", "warn");
       return;
     }
     const dir = this.lookDirLocal();
@@ -1171,17 +1171,17 @@ export class Game {
     this.vm.throwT = 0.6;
     this.audio.step("metal", 0.5);
     const d = this.spawnDyn(o, fwd.multiplyScalar(0.8).setY(0.2), this.fuseTime() + 4);
-    this.say("TNT platziert. Zünden mit G (Fernzünder) – oder die Zündschnur brennt ab!", "info");
+    this.say("TNT placed. Detonate with G (remote) – or let the fuse burn down!", "info");
     return d;
   }
 
   private detonateAll() {
     if (this.cur !== "tnt" && this.dyns.length === 0) {
-      this.say("Keine Ladung platziert.", "warn");
+      this.say("No charge placed.", "warn");
       return;
     }
     if (this.dyns.length === 0) {
-      this.say("Keine Ladung platziert.", "warn");
+      this.say("No charge placed.", "warn");
       this.audio.empty();
       return;
     }
@@ -1249,7 +1249,7 @@ export class Game {
           const dist = Math.hypot(b.x - m.pos.x, b.z - m.pos.z, (b.y - m.pos.y) * 0.6);
           if (dist < m.radius) {
             m.armed = true;
-            this.say(`Sprengpunkt „${m.name}" ist scharf (${this.ship.markers.filter((q) => q.armed).length} / ${this.ship.markers.length})`, "good");
+            this.say(`Detonation point "${m.name}" is armed (${this.ship.markers.filter((q) => q.armed).length} / ${this.ship.markers.length})`, "good");
             this.audio.unlock();
           }
         }
@@ -1347,7 +1347,7 @@ export class Game {
       const los = this.ship.world.lineClear(p.x, p.y, p.z, pe.x, pe.y, pe.z);
       const dmg = 140 * Math.pow(1 - dp / R, 1.3) * (los ? 1 : 0.3) * (this.settings.difficulty === "hard" ? 1.2 : this.settings.difficulty === "easy" ? 0.7 : 1);
       if (dmg > 1) {
-        this.damagePlayer(dmg, src === "barrel" ? "Von einem explodierenden Fass getötet" : "Von einer Explosion getötet");
+        this.damagePlayer(dmg, src === "barrel" ? "Killed by an exploding barrel" : "Killed by an explosion");
         const kx = pl.x - p.x,
           kz = pl.z - p.z,
           kl = Math.hypot(kx, kz) + 0.1;
@@ -1365,7 +1365,7 @@ export class Game {
         const dmg = 160 * Math.pow(1 - d / R, 1.2) * (los ? 1 : 0.25);
         if (dmg > 1 && g.damage(dmg, false, p.x, p.z)) {
           this.kills++;
-          this.say("Wache durch Explosion ausgeschaltet", "info");
+          this.say("Guard eliminated by explosion", "info");
         }
       }
     }
@@ -1389,7 +1389,7 @@ export class Game {
       const hole = this.sim.addBreach(comp, p, power * (src === "barrel" ? 0.5 : 1));
       if (hole) {
         if (comp.holes.length > before) this.makeHoleVisual(hole);
-        this.say(`HÜLLENBRUCH im ${comp.name}! Wasser dringt ein!`, "alert");
+        this.say(`HULL BREACH in ${comp.name}! Water is flooding in!`, "alert");
         this.audio.creak(1.3);
         this.shake = Math.min(1.8, this.shake + 0.5);
       }
@@ -1491,7 +1491,7 @@ export class Game {
         if (!hit) target.add(V((Math.random() - 0.5) * 2.2, (Math.random() - 0.5) * 1.2, (Math.random() - 0.5) * 2.2));
         const origin = from.clone().add(V(-Math.sin(g.yaw) * 0.6, -0.1, -Math.cos(g.yaw) * 0.6));
         this.tracer(origin, target, 0xffb070);
-        if (hit) this.damagePlayer(7 * diff, "Von einer Wache erschossen");
+        if (hit) this.damagePlayer(7 * diff, "Shot by a guard");
         else {
           const hp = target.clone();
           this.sparks(hp, V(0, 1, 0), 3);
@@ -1530,7 +1530,7 @@ export class Game {
       if (score > best) {
         best = score;
         bestKind = d.locked ? "locked" : "normal";
-        bestText = d.locked ? `${d.name} – verschlossen (${d.locked === "red" ? "rote" : "blaue"} Zugangskarte nötig)` : d.target === 1 ? `${d.name} schließen` : `${d.name} öffnen`;
+        bestText = d.locked ? `${d.name} – locked (${d.locked === "red" ? "red" : "blue"} access card required)` : d.target === 1 ? `Close ${d.name}` : `Open ${d.name}`;
         bestAct = () => this.useDoor(d);
       }
     }
@@ -1542,7 +1542,7 @@ export class Game {
           best = score;
           const ok = this.sim.sinking || this.mode === "sandbox";
           bestKind = ok ? "normal" : "locked";
-          bestText = ok ? "In das Rettungsboot einsteigen" : "Rettungsboot – erst das Schiff versenken!";
+          bestText = ok ? "Board the lifeboat" : "Lifeboat – sink the ship first!";
           bestAct = () => this.boardLifeboat(lb);
         }
       }
@@ -1558,13 +1558,14 @@ export class Game {
   private useDoor(d: Door) {
     if (d.locked) {
       if (this.hasKey[d.locked]) {
+        const card = d.locked === "red" ? "red" : "blue";
         d.unlock();
-        this.say(`${d.name} mit ${d.locked === "red" ? "roter" : "blauer"} Karte entsperrt.`, "good");
+        this.say(`${d.name} unlocked with the ${card} card.`, "good");
         const p = this.player.body;
         d.toggle(p.x, p.z);
       } else {
         this.audio.locked();
-        this.say(`Verschlossen. Du brauchst die ${d.locked === "red" ? "rote" : "blaue"} Zugangskarte.`, "warn");
+        this.say(`Locked. You need the ${d.locked === "red" ? "red" : "blue"} access card.`, "warn");
       }
       return;
     }
@@ -1586,26 +1587,26 @@ export class Game {
       switch (pk.type) {
         case "key_red":
           this.hasKey.red = true;
-          this.say("Rote Zugangskarte gefunden! (Maschinenleitstand)", "good");
+          this.say("Red access card found! (Engine control room)", "good");
           break;
         case "key_blue":
           this.hasKey.blue = true;
-          this.say("Blaue Zugangskarte gefunden! (Gittertor Laderaum 2)", "good");
+          this.say("Blue access card found! (Cargo Hold 2 gate)", "good");
           break;
         case "medkit":
           if (p.health >= 100) {
             ok = false;
-            this.hintOnce("Gesundheit voll – Verbandskasten bleibt liegen.");
+            this.hintOnce("Health full – medkit stays where it is.");
           } else {
             p.health = Math.min(100, p.health + 50);
-            this.say("+50 Gesundheit", "pickup");
+            this.say("+50 health", "pickup");
           }
           break;
         case "armor":
           if (p.armor >= 100) ok = false;
           else {
             p.armor = 100;
-            this.say("Schutzweste angelegt", "pickup");
+            this.say("Body armor equipped", "pickup");
           }
           break;
         case "tnt":
@@ -1614,26 +1615,26 @@ export class Game {
           break;
         case "ammo_pistol":
           this.ammo.pistol.res += pk.amount;
-          this.say(`+${pk.amount} Pistolenmunition`, "pickup");
+          this.say(`+${pk.amount} pistol ammo`, "pickup");
           break;
         case "ammo_shotgun":
           this.ammo.shotgun.res += pk.amount;
-          this.say(`+${pk.amount} Schrotpatronen`, "pickup");
+          this.say(`+${pk.amount} shotgun shells`, "pickup");
           break;
         case "ammo_rifle":
           this.ammo.rifle.res += pk.amount;
-          this.say(`+${pk.amount} Gewehrmunition`, "pickup");
+          this.say(`+${pk.amount} rifle ammo`, "pickup");
           break;
         case "weapon_shotgun":
           this.owned.shotgun = true;
           this.ammo.shotgun.mag = 6;
           this.ammo.shotgun.res += 6;
-          this.say("Schrotflinte aufgenommen (Taste 2)", "good");
+          this.say("Shotgun picked up (key 2)", "good");
           break;
         case "weapon_rifle":
           this.owned.rifle = true;
           this.ammo.rifle.mag = 30;
-          this.say("Sturmgewehr aufgenommen (Taste 3)", "good");
+          this.say("Assault rifle picked up (key 3)", "good");
           break;
       }
       if (ok) {
@@ -1660,37 +1661,37 @@ export class Game {
     if (armed !== this.armedCount) this.armedCount = armed;
     if (this.sim.sinking && !this.objState.sunkMsg) {
       this.objState.sunkMsg = true;
-      this.say("Das Schiff sinkt! Zum Rettungsboot – SCHNELL! (E am Boot)", "alert");
+      this.say("The ship is sinking! Get to the lifeboat – HURRY! (E at the boat)", "alert");
       this.audio.creak(1.5);
     }
     if (!this.sim.sinking) {
       for (const c of this.ship.compartments) {
         if (c.fill > 0.97 && !this.floodedMsg.has(c.id)) {
           this.floodedMsg.add(c.id);
-          this.say(`${c.name} ist vollgelaufen – das Schiff schwimmt noch. Flute ein weiteres Abteil!`, "warn");
+          this.say(`${c.name} has fully flooded – the ship is still afloat. Flood another compartment!`, "warn");
         }
       }
     }
     if (this.armedCount >= 2 && !this.objState.allArmed) {
       this.objState.allArmed = true;
-      this.say("Genug Sprengpunkte scharf. Zünde mit G (Fernzünder) – dann flieh!", "good");
+      this.say("Enough detonation points armed. Detonate with G (remote) – then run!", "good");
     }
   }
 
   private objectives(): { text: string; done: boolean }[] {
     if (this.mode === "sandbox") {
       return [
-        { text: "Sprenge den Frachter nach Belieben", done: false },
-        { text: "Rettungsboot (E) beendet die Sandbox", done: false },
+        { text: "Blow up the freighter as you like", done: false },
+        { text: "Lifeboat (E) ends the sandbox", done: false },
       ];
     }
     const planted = this.ship.markers.filter((m) => m.armed).length;
     return [
-      { text: "Blaue Zugangskarte finden (Kajüten, Deck 1)", done: this.hasKey.blue },
-      { text: "Rote Karte (Brücke) für den Maschinenraum – optional", done: this.hasKey.red },
-      { text: `TNT an 2 orangen Sprengpunkten im Rumpf platzieren (${Math.min(planted, 2)}/2)`, done: planted >= 2 },
-      { text: "Ladungen zünden (G) – Schiff versenken", done: this.sim.sinking },
-      { text: "Zum Rettungsboot flüchten (E)", done: this.escapeState !== null },
+      { text: "Find the blue access card (cabins, deck 1)", done: this.hasKey.blue },
+      { text: "Red card (bridge) for the engine room – optional", done: this.hasKey.red },
+      { text: `Plant TNT on 2 orange detonation points in the hull (${Math.min(planted, 2)}/2)`, done: planted >= 2 },
+      { text: "Detonate charges (G) – sink the ship", done: this.sim.sinking },
+      { text: "Escape to the lifeboat (E)", done: this.escapeState !== null },
     ];
   }
 
@@ -1699,7 +1700,7 @@ export class Game {
     if (this.escapeState) return;
     if (!this.sim.sinking && this.mode !== "sandbox") {
       this.audio.locked();
-      this.say("Das Schiff schwimmt noch! Versenke es zuerst.", "warn");
+      this.say("The ship is still afloat! Sink it first.", "warn");
       return;
     }
     lb.launched = true;
@@ -1708,7 +1709,7 @@ export class Game {
     const dir = V(lb.side, 0, 0);
     this.escapeState = { boat: lb, t: 0, phase: 0, startPos: start, dir, speed: 0 };
     this.vm.root.visible = false;
-    this.say("Rettungsboot wird zu Wasser gelassen …", "good");
+    this.say("Lowering the lifeboat …", "good");
     this.audio.door("hatch");
     if (this.mode === "sandbox") this.sim.forceSink = true;
     this.noiseT = 0;
@@ -1737,7 +1738,7 @@ export class Game {
         this.audio.splash(undefined, true);
         this.audio.door("close");
         for (let i = 0; i < 30; i++) this.pn.emit(boat.position.x + (Math.random() - 0.5) * 3, sea, boat.position.z + (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 3, 3 + Math.random() * 4, (Math.random() - 0.5) * 3, 1.5, 0.4, 1.0, 0.9, 0.95, 1, 0.6, 9, 0.3);
-        this.say("Motor läuft – weg vom sinkenden Schiff!", "good");
+        this.say("Engine running – away from the sinking ship!", "good");
       }
     } else {
       e.speed = Math.min(7, e.speed + dt * 1.8);

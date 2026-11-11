@@ -40,7 +40,7 @@ function GameView(props: {
         game = new Game(host.current, p.current.settings, p.current.mode, {
           onHud: (h) => p.current.onHud(h),
           onEnd: (e) => p.current.onEnd(e),
-          onCrash: (e) => p.current.onCrash(e, "Spielschleife"),
+          onCrash: (e) => p.current.onCrash(e, "game loop"),
           onPause: () => p.current.onPause(),
           onProgress: (a, b) => p.current.onProgress(a, b),
         });
@@ -56,7 +56,7 @@ function GameView(props: {
           /* ignore */
         }
         p.current.gameRef.current = null;
-        p.current.onCrash(e, "Initialisierung");
+        p.current.onCrash(e, "initialization");
       }
     }, 60);
     return () => {
@@ -138,7 +138,7 @@ export default function App() {
     setHud(null);
     setStarted(false);
     setOverlay(null);
-    setLoading({ p: 0.02, label: "Starte …" });
+    setLoading({ p: 0.02, label: "Starting …" });
     setSession((s) => s + 1);
     setScreen("playing");
   };
@@ -249,10 +249,10 @@ export default function App() {
           )}
           {loading && <Loading p={loading.p} label={loading.label} />}
           {overlay === "ready" && (
-            <ReadyPanel title={mode === "mission" ? "Mission bereit" : "Sandbox bereit"} resume={false} touch={touch} onPlay={play} onSettings={openSettings} onHelp={openHelp} onMenu={toMenu} />
+            <ReadyPanel title={mode === "mission" ? "Mission ready" : "Sandbox ready"} resume={false} touch={touch} onPlay={play} onSettings={openSettings} onHelp={openHelp} onMenu={toMenu} />
           )}
           {overlay === "pause" && (
-            <ReadyPanel title="Pausiert" resume touch={touch} onPlay={play} onSettings={openSettings} onHelp={openHelp} onMenu={toMenu} onRestart={() => startGame(mode)} />
+            <ReadyPanel title="Paused" resume touch={touch} onPlay={play} onSettings={openSettings} onHelp={openHelp} onMenu={toMenu} onRestart={() => startGame(mode)} />
           )}
           {overlay === "settings" && <SettingsPanel inGame settings={settings} onChange={setSettings} onClose={closeSub} />}
           {overlay === "help" && <HelpPanel onClose={closeSub} />}

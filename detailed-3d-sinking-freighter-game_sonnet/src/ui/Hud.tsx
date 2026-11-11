@@ -43,8 +43,8 @@ function ShipStatus({ h }: { h: HudState }) {
   return (
     <div className="w-52 rounded-xl border border-white/15 bg-black/55 p-2.5 text-[11px] text-white backdrop-blur-sm">
       <div className="mb-1 flex items-center justify-between font-bold tracking-wide">
-        <span>⚓ SCHIFFSZUSTAND</span>
-        <span className={h.sinking ? "animate-pulse text-red-400" : h.F > 0.02 ? "text-amber-300" : "text-emerald-300"}>{h.sinking ? "SINKT!" : h.F > 0.02 ? "LECK" : "INTAKT"}</span>
+        <span>⚓ SHIP STATUS</span>
+        <span className={h.sinking ? "animate-pulse text-red-400" : h.F > 0.02 ? "text-amber-300" : "text-emerald-300"}>{h.sinking ? "SINKING!" : h.F > 0.02 ? "LEAK" : "INTACT"}</span>
       </div>
       <div className="relative mb-1.5 h-12 overflow-hidden rounded-md bg-slate-800/80">
         <div className="absolute inset-x-1 bottom-1 top-3 flex gap-0.5" style={{ transform: `rotate(${Math.max(-25, Math.min(25, h.pitchDeg * -0.6))}deg)` }}>
@@ -58,9 +58,9 @@ function ShipStatus({ h }: { h: HudState }) {
         <div className="absolute inset-x-0 top-0 h-3 bg-gradient-to-b from-slate-300/20 to-transparent" />
       </div>
       <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
-        <span className="text-slate-300">Einbruch-Grenze</span>
+        <span className="text-slate-300">Flood limit</span>
         <span className="text-right font-mono">{sinkPct.toFixed(0)}%</span>
-        <span className="text-slate-300">Schlagseite</span>
+        <span className="text-slate-300">List</span>
         <span className="text-right font-mono">{h.tilt.toFixed(0)}°</span>
       </div>
       <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/10">
@@ -71,7 +71,7 @@ function ShipStatus({ h }: { h: HudState }) {
 }
 
 function Compass({ deg }: { deg: number }) {
-  const marks = ["N", "NO", "O", "SO", "S", "SW", "W", "NW"];
+  const marks = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
   const w = 280;
   const items: React.ReactElement[] = [];
   for (let i = -2; i <= 10; i++) {
@@ -93,9 +93,9 @@ function Compass({ deg }: { deg: number }) {
 }
 
 const WEAP: { id: "pistol" | "shotgun" | "rifle" | "tnt"; n: string; k: string }[] = [
-  { id: "pistol", n: "Pistole", k: "1" },
-  { id: "shotgun", n: "Schrot", k: "2" },
-  { id: "rifle", n: "Gewehr", k: "3" },
+  { id: "pistol", n: "Pistol", k: "1" },
+  { id: "shotgun", n: "Shotgun", k: "2" },
+  { id: "rifle", n: "Rifle", k: "3" },
   { id: "tnt", n: "TNT", k: "4" },
 ];
 
@@ -129,7 +129,7 @@ export default function Hud({ h, settings, touch }: { h: HudState; settings: Set
       <div className="absolute left-2 top-2 origin-top-left" style={{ transform: `scale(${sc})` }}>
         <div className="w-[280px] max-w-[60vw] rounded-xl border border-white/15 bg-black/50 p-2.5 text-xs backdrop-blur-sm">
           <div className="mb-1 flex items-center justify-between text-[11px] font-bold tracking-wider text-orange-300">
-            <span>{h.mode === "mission" ? "AUFTRAG" : "SANDBOX"}</span>
+            <span>{h.mode === "mission" ? "MISSION" : "SANDBOX"}</span>
             <span className="font-mono text-slate-200">
               {String(mm).padStart(2, "0")}:{String(ss).padStart(2, "0")}
             </span>
@@ -143,10 +143,10 @@ export default function Hud({ h, settings, touch }: { h: HudState; settings: Set
             ))}
           </ul>
           <div className="mt-1.5 flex flex-wrap gap-2 text-[11px]">
-            <span className={h.keys.blue ? "text-sky-300" : "text-slate-500"}>▮ Blau</span>
-            <span className={h.keys.red ? "text-red-400" : "text-slate-500"}>▮ Rot</span>
+            <span className={h.keys.blue ? "text-sky-300" : "text-slate-500"}>▮ Blue</span>
+            <span className={h.keys.red ? "text-red-400" : "text-slate-500"}>▮ Red</span>
             <span className="text-slate-300">☠ {h.kills}</span>
-            {h.guardsAlive > 0 && <span className="text-slate-400">Wachen: {h.guardsAlive}</span>}
+            {h.guardsAlive > 0 && <span className="text-slate-400">Guards: {h.guardsAlive}</span>}
           </div>
         </div>
       </div>
@@ -155,10 +155,10 @@ export default function Hud({ h, settings, touch }: { h: HudState; settings: Set
       {!small && (
         <div className="absolute left-1/2 top-2 origin-top" style={{ transform: `translateX(-50%) scale(${sc})` }}>
           <Compass deg={h.heading} />
-          {h.chase && <div className="mt-1 animate-pulse text-center text-xs font-extrabold tracking-widest text-red-400">⚠ ENTDECKT</div>}
+          {h.chase && <div className="mt-1 animate-pulse text-center text-xs font-extrabold tracking-widest text-red-400">⚠ SPOTTED</div>}
         </div>
       )}
-      {small && h.chase && <div className="absolute left-1/2 top-2 -translate-x-1/2 animate-pulse text-xs font-extrabold tracking-widest text-red-400">⚠ ENTDECKT</div>}
+      {small && h.chase && <div className="absolute left-1/2 top-2 -translate-x-1/2 animate-pulse text-xs font-extrabold tracking-widest text-red-400">⚠ SPOTTED</div>}
 
       {/* Oben rechts: Schiffszustand */}
       <div className="absolute right-2 top-2 origin-top-right" style={{ transform: `scale(${sc})`, marginRight: touch ? 46 : 0 }}>
@@ -192,7 +192,7 @@ export default function Hud({ h, settings, touch }: { h: HudState; settings: Set
       {h.prompt && !h.escape && (
         <div className="absolute left-1/2 top-[58%]" style={{ transform: `translateX(-50%) scale(${sc})` }}>
           <div className={`flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-bold shadow-xl backdrop-blur-sm ${h.promptKind === "locked" ? "border-red-400/60 bg-red-950/70 text-red-100" : "border-white/40 bg-black/70 text-white"}`}>
-            <span className="rounded-md border border-white/60 bg-white/15 px-2 py-0.5 font-mono text-xs">{touch ? "BENUTZEN" : "E"}</span>
+            <span className="rounded-md border border-white/60 bg-white/15 px-2 py-0.5 font-mono text-xs">{touch ? "USE" : "E"}</span>
             <span>{h.prompt}</span>
           </div>
         </div>
@@ -204,7 +204,7 @@ export default function Hud({ h, settings, touch }: { h: HudState; settings: Set
           <div className="w-52 rounded-full border border-cyan-300/50 bg-black/60 p-1">
             <div className="h-2.5 rounded-full" style={{ width: `${h.oxygen * 100}%`, background: h.oxygen < 0.3 ? "#ef4444" : "#22d3ee" }} />
           </div>
-          <div className="mt-0.5 text-center text-[11px] font-bold tracking-widest text-cyan-200">SAUERSTOFF</div>
+          <div className="mt-0.5 text-center text-[11px] font-bold tracking-widest text-cyan-200">OXYGEN</div>
         </div>
       )}
 
@@ -212,7 +212,7 @@ export default function Hud({ h, settings, touch }: { h: HudState; settings: Set
       <div className="absolute bottom-2 left-2 origin-bottom-left space-y-1" hidden={h.escape} style={{ transform: `scale(${sc})`, bottom: touch ? undefined : 8, top: touch ? 96 : undefined, display: touch && vp.h < 420 ? "none" : undefined }}>
         <Bar value={h.hp} color={h.hp > 50 ? "linear-gradient(90deg,#16a34a,#4ade80)" : h.hp > 25 ? "linear-gradient(90deg,#d97706,#fbbf24)" : "linear-gradient(90deg,#b91c1c,#f87171)"} label={`${Math.ceil(h.hp)}`} icon="❤" />
         {h.armor > 0 && <Bar value={h.armor} color="linear-gradient(90deg,#1d4ed8,#60a5fa)" label={`${Math.ceil(h.armor)}`} icon="🛡" />}
-        {(h.sprint || h.crouch || h.wading) && <div className="text-[11px] font-semibold text-slate-200">{h.sprint ? "Rennen" : h.crouch ? "Geduckt" : "Im Wasser"}</div>}
+        {(h.sprint || h.crouch || h.wading) && <div className="text-[11px] font-semibold text-slate-200">{h.sprint ? "Sprinting" : h.crouch ? "Crouched" : "In water"}</div>}
       </div>
 
       {/* Unten rechts: Munition & Waffen */}
@@ -241,11 +241,11 @@ export default function Hud({ h, settings, touch }: { h: HudState; settings: Set
               <span className="text-xl text-slate-300">{h.reserve}</span>
             </div>
           )}
-          <div className="mt-0.5 text-[11px] font-semibold uppercase tracking-wider text-slate-300">{h.reloading ? "Lädt nach …" : h.weaponName}</div>
+          <div className="mt-0.5 text-[11px] font-semibold uppercase tracking-wider text-slate-300">{h.reloading ? "Reloading …" : h.weaponName}</div>
           {h.weapon !== "tnt" && <div className="text-[11px] text-slate-400">TNT: {h.tnt}</div>}
-          {h.weapon === "tnt" && <div className="text-[10px] text-slate-400">LMB werfen · RMB ablegen · G zünden</div>}
+          {h.weapon === "tnt" && <div className="text-[10px] text-slate-400">LMB throw · RMB place · G detonate</div>}
         </div>
-        {h.detonatable && <div className="mt-1 animate-pulse text-xs font-bold text-orange-300">💥 Ladung aktiv – [G] Fernzünder</div>}
+        {h.detonatable && <div className="mt-1 animate-pulse text-xs font-bold text-orange-300">💥 Charge active – [G] detonator</div>}
       </div>
       {touch && !h.escape && (
         <div className="absolute left-1/2 origin-bottom text-center" style={{ transform: `translateX(-50%) scale(${sc})`, bottom: 6 }}>

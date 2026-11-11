@@ -20,6 +20,13 @@
 - **Fix:** 331 exact literal replacements across `index.html`, `src/App.tsx`, `src/types/game.ts`, `src/game/CargoShipBuilder.ts`, `MaritimeViewport3D`, `NavalHudOverlay`, `SettingsModal`, `PhotoTxtAnalyzerModal`, `TouchControlsOverlay` and `CrashBoundary`. Status tokens, weapon names, deck/door names and both blackbox presets are English now; ship geometry, physics and gameplay were not touched.
 - **Verified:** `npx vite build` plus a bundle scan for German markers (`UNTER WASSER`, `TÜREN`, `SCHOTTEN`, `KIEL SPRENGEN`, …) returns no hits; both typechecks and all tests stay green.
 
+### [RESOLVED] Sonnet Edition Still German After the Root Pass
+- **Issue:** The independent second edition under `detailed-3d-sinking-freighter-game_sonnet/` (served at `/sonnet/`) still showed German menus, HUD, settings, objectives, messages and ship-part names after the root UI had been translated.
+- **Root Cause:** The first translation pass covered only the root tree. The Sonnet edition had its own literals, including template literals and fallback labels (locked-door messages, pickup names, engine-room marker, settings *Done*) that a JSX-only sweep misses.
+- **Fix:** 282 literal replacements (259 scripted + 23 manual follow-ups) across screens, HUD, settings, touch controls, crash screen, weapons, ship builder, game messages and `index.html`; the follow-ups covered all 13 pickup labels and a message bug where the card colour was read after `unlock()`. Ship geometry, collision, physics and balancing untouched.
+- **Verified:** both Sonnet build paths produce the same 1,000.20 kB artifact and hash; scans of both bundles find 0 German markers and 0 umlauts; both typechecks, `npm test` and both Vite builds exit 0. Preview at 1280×800 and 390×844 shows 5/5 menu buttons and 6/6 help buttons with 0 clipped/covered, settings scroll with *Done* visible. The root UI re-measured 23/23 and 21/21 buttons with 0 clipped/covered.
+- **Lesson:** Scan the built bundle, not only JSX; template literals and fallback labels are easy to miss. Also expect the root single-file hash to move when a project-wide Tailwind scan sees a sibling edition's source — verify the root UI instead of assuming a hash change means root code changed.
+
 ### [RESOLVED] GitHub Pages Deploy Never Created a Site
 - **Issue:** The Pages workflow never published a site; the project URL stayed blank or 404.
 - **Root Cause:** `actions/configure-pages` ran without `enablement`, so the job aborted whenever no Pages site existed; no `github-pages` environment was declared; and a branch-based Pages source would serve the raw `index.html`, which references `/src/main.tsx` and has no compiled CSS.

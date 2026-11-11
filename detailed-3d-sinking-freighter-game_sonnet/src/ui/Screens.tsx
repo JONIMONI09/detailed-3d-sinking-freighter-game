@@ -56,29 +56,29 @@ export function MainMenu({ onStart, onSandbox, onSettings, onHelp, touch }: { on
       `}</style>
 
       <div className="relative z-10 mx-auto flex min-h-full max-w-md flex-col items-center justify-start px-5 pb-[34vh] pt-[6vh] text-center sm:pt-[8vh]">
-        <div className="mb-1 text-xs font-semibold uppercase tracking-[0.4em] text-orange-200 sm:text-sm">3D Sabotage-Abenteuer</div>
+        <div className="mb-1 text-xs font-semibold uppercase tracking-[0.4em] text-orange-200 sm:text-sm">3D Sabotage Adventure</div>
         <h1 className="bg-gradient-to-b from-white to-orange-200 bg-clip-text text-5xl font-black tracking-wider text-transparent drop-shadow-[0_4px_12px_rgba(0,0,0,0.5)] sm:text-7xl">NORDWIND</h1>
-        <p className="mb-6 mt-2 max-w-sm text-sm text-slate-200 sm:text-base">Schleiche an Bord eines riesigen Frachters, öffne Türen, finde Zugangskarten, platziere TNT – und flieh, bevor alles untergeht.</p>
+        <p className="mb-6 mt-2 max-w-sm text-sm text-slate-200 sm:text-base">Sneak aboard a massive freighter, open doors, find access cards, plant TNT – and escape before it all goes under.</p>
         <div className="flex w-full max-w-xs flex-col gap-2.5">
           <button onClick={onStart} className={`${btnBase} bg-orange-500 text-white shadow-lg shadow-orange-900/40 hover:bg-orange-400`}>
-            ▶ Mission starten
+            ▶ Start Mission
           </button>
           <button onClick={onSandbox} className={`${btnBase} border border-white/25 bg-white/10 text-white backdrop-blur hover:bg-white/20`}>
-            🧪 Sandbox (alle Waffen)
+            🧪 Sandbox (all weapons)
           </button>
           <div className="grid grid-cols-2 gap-2.5">
             <button onClick={onSettings} className={`${btnBase} border border-white/20 bg-black/35 text-base backdrop-blur hover:bg-black/55`}>
-              ⚙ Einstellungen
+              ⚙ Settings
             </button>
             <button onClick={onHelp} className={`${btnBase} border border-white/20 bg-black/35 text-base backdrop-blur hover:bg-black/55`}>
-              ❓ Hilfe
+              ❓ Help
             </button>
           </div>
           <button onClick={toggleFullscreen} className="min-h-[44px] rounded-lg text-sm font-semibold text-slate-200 underline-offset-4 hover:underline">
-            ⛶ Vollbild umschalten
+            ⛶ Toggle Fullscreen
           </button>
         </div>
-        <div className="mt-3 rounded-full bg-black/40 px-3 py-1 text-xs text-slate-200">{touch ? "📱 Touch-Steuerung erkannt" : "🖱 Maus & Tastatur"} · läuft auf jedem Gerät</div>
+        <div className="mt-3 rounded-full bg-black/40 px-3 py-1 text-xs text-slate-200">{touch ? "📱 Touch controls detected" : "🖱 Mouse & keyboard"} · runs on any device</div>
       </div>
     </div>
   );
@@ -108,45 +108,45 @@ export function HelpPanel({ onClose }: { onClose: () => void }) {
     <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/75 backdrop-blur-sm sm:items-center sm:p-4">
       <div className="flex max-h-full w-full flex-col overflow-hidden bg-slate-900/95 text-white shadow-2xl sm:max-w-2xl sm:rounded-2xl sm:border sm:border-white/10">
         <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-          <h2 className="text-lg font-bold">Steuerung & Hilfe</h2>
+          <h2 className="text-lg font-bold">Controls & Help</h2>
           <button onClick={onClose} className="min-h-[44px] rounded-lg bg-orange-500 px-5 py-2 font-semibold hover:bg-orange-400">
-            Zurück
+            Back
           </button>
         </div>
         <div className="flex-1 overflow-y-auto px-4 py-4">
-          <Sec t="Ziel der Mission">
+          <Sec t="Mission Objective">
             <p>
-              Die <b>NORDWIND</b> ist ein riesiger Frachter. Finde Zugangskarten, schleiche an den Wachen vorbei, platziere <b>TNT</b> an mindestens <b>2 orangen Sprengpunkten</b> im Rumpf (Maschinenraum und Laderäume) und zünde sie
-              mit dem Fernzünder. Das Schiff läuft voll Wasser, kippt und sinkt. Erreiche ein <b>Rettungsboot</b> an den Seiten, bevor es zu spät ist!
+              The <b>NORDWIND</b> is a massive freighter. Find access cards, sneak past the guards, plant <b>TNT</b> on at least <b>2 orange detonation points</b> in the hull (engine room and cargo holds) and detonate them
+              with the remote detonator. The ship floods, lists and sinks. Reach a <b>lifeboat</b> on the sides before it is too late!
             </p>
           </Sec>
-          <Sec t="Tastatur & Maus">
+          <Sec t="Keyboard & Mouse">
             <p>
               <K k="W" />
               <K k="A" />
               <K k="S" />
-              <K k="D" /> Bewegen · <b>Maus</b> Umsehen · <K k="Shift" /> Rennen · <K k="Strg" />/<K k="C" /> Ducken · <K k="Leertaste" /> Springen
+              <K k="D" /> Move · <b>Mouse</b> look · <K k="Shift" /> sprint · <K k="Ctrl" />/<K k="C" /> crouch · <K k="Space" /> jump
             </p>
             <p>
-              <K k="E" /> Türen öffnen/schließen, Rettungsboot · <b>Linke Maustaste</b> Schießen / TNT werfen · <b>Rechte Maustaste</b> TNT ablegen
+              <K k="E" /> Open/close doors, lifeboat · <b>Left mouse</b> shoot / throw TNT · <b>Right mouse</b> place TNT
             </p>
             <p>
-              <K k="R" /> Nachladen · <K k="1" />–<K k="4" /> oder <b>Mausrad</b> Waffe · <K k="Q" /> letzte Waffe · <K k="G" /> Fernzünder · <K k="F" /> Taschenlampe · <K k="Esc" /> Pause
+              <K k="R" /> Reload · <K k="1" />–<K k="4" /> or <b>mouse wheel</b> weapon · <K k="Q" /> last weapon · <K k="G" /> detonator · <K k="F" /> flashlight · <K k="Esc" /> pause
             </p>
           </Sec>
-          <Sec t="Touch (Handy & Tablet)">
-            <p>Linker Daumen: Joystick (ganz nach oben = rennen). Rechter Daumen: Wischen zum Umsehen. Tasten: FEUER, SPRUNG, BENUTZEN, NACHLADEN, WAFFE, DUCKEN, ZÜNDEN, LAMPE. Größe, Seite und Deckkraft sind einstellbar.</p>
+          <Sec t="Touch (phone & tablet)">
+            <p>Left thumb: joystick (push all the way up = sprint). Right thumb: swipe to look. Buttons: FIRE, JUMP, USE, RELOAD, WEAPON, CROUCH, DETONATE, LIGHT. Size, side and opacity are adjustable.</p>
           </Sec>
           <Sec t="Gamepad">
-            <p>Linker Stick bewegen, rechter Stick umsehen, RT schießen, LT TNT ablegen, A springen, X nachladen, Y benutzen, Bumper Waffe wechseln.</p>
+            <p>Left stick move, right stick look, RT shoot, LT place TNT, A jump, X reload, Y use, bumper switch weapon.</p>
           </Sec>
-          <Sec t="Tipps">
+          <Sec t="Tips">
             <ul className="list-disc space-y-1 pl-5">
-              <li>Türen haben echte Kollision – du kommst nur durch geöffnete Türen. Verschlossene Türen brauchen die passende Zugangskarte (blau/rot). Eine Tür schließt nie auf dich zu.</li>
-              <li>Die <b>blaue Karte</b> liegt in den Kajüten (Deck 1) – sie öffnet das Gittertor zum Laderaum 2. Die <b>rote Karte</b> liegt auf der Brücke – sie öffnet den Maschinenraum.</li>
-              <li>TNT: Wirf es oder lege es mit der rechten Maustaste ab. Die Zündschnur brennt – oder zünde alle Ladungen sofort mit <K k="G" />. Schüsse auf TNT und rote Fässer lösen Explosionen aus.</li>
-              <li>Nur Explosionen nahe der Außenhaut <i>unter</i> der Wasserlinie reißen ein Leck. Das Wasser kommt durch Löcher, steigt, und das Schiff bekommt Schlagseite – du rutschst den Hang hinab!</li>
-              <li>Unter Wasser hast du etwa 30 Sekunden Luft. Fenster können zerschossen werden. Wachen hören Schüsse und Explosionen.</li>
+              <li>Doors have real collision – you can only pass through open doors. Locked doors need the matching access card (blue/red). A door never closes on you.</li>
+              <li>The <b>blue card</b> is in the cabins (deck 1) – it opens the gate to cargo hold 2. The <b>red card</b> is on the bridge – it opens the engine room.</li>
+              <li>TNT: throw it or place it with the right mouse button. The fuse burns – or detonate all charges instantly with <K k="G" />. Shots at TNT and red barrels trigger explosions.</li>
+              <li>Only explosions near the outer hull <i>below</i> the waterline open a leak. Water enters through the holes, rises, and the ship lists – you slide down the slope!</li>
+              <li>Underwater you have about 30 seconds of air. Windows can be shot out. Guards hear shots and explosions.</li>
             </ul>
           </Sec>
         </div>
@@ -160,29 +160,29 @@ export function ReadyPanel({ title, onPlay, onSettings, onHelp, onMenu, onRestar
     <div className="fixed inset-0 z-40 flex overflow-y-auto bg-black/65 p-4 backdrop-blur-sm">
       <div className="m-auto w-full max-w-sm rounded-2xl border border-white/15 bg-slate-900/90 p-5 text-center text-white shadow-2xl">
         <h2 className="mb-1 text-2xl font-black tracking-wide text-orange-300">{title}</h2>
-        <p className="mb-4 text-sm text-slate-300">{touch ? "Tippe zum Spielen." : resume ? "Klicke, um die Maus wieder einzufangen." : "Klicke, um zu starten – die Maus wird eingefangen (Esc = Pause)."}</p>
+        <p className="mb-4 text-sm text-slate-300">{touch ? "Tap to play." : resume ? "Click to capture the mouse again." : "Click to start – the mouse is captured (Esc = pause)."}</p>
         <div className="flex flex-col gap-2.5">
           <button onClick={onPlay} className={`${btnBase} bg-orange-500 text-white hover:bg-orange-400`}>
-            {resume ? "▶ Fortsetzen" : "▶ Spielen"}
+            {resume ? "▶ Resume" : "▶ Play"}
           </button>
           <button onClick={onSettings} className={`${btnBase} border border-white/20 bg-white/10 hover:bg-white/20`}>
-            ⚙ Einstellungen
+            ⚙ Settings
           </button>
           <button onClick={onHelp} className={`${btnBase} border border-white/20 bg-white/10 hover:bg-white/20`}>
-            ❓ Steuerung
+            ❓ Controls
           </button>
           <div className="grid grid-cols-2 gap-2.5">
             {onRestart && (
               <button onClick={onRestart} className={`${btnBase} border border-white/20 bg-white/10 text-base hover:bg-white/20`}>
-                ↻ Neustart
+                ↻ Restart
               </button>
             )}
             <button onClick={onMenu} className={`${btnBase} border border-white/20 bg-white/10 text-base hover:bg-white/20`}>
-              ⌂ Menü
+              ⌂ Menu
             </button>
           </div>
           <button onClick={toggleFullscreen} className="min-h-[40px] text-sm font-semibold text-slate-300 underline-offset-4 hover:underline">
-            ⛶ Vollbild
+            ⛶ Fullscreen
           </button>
         </div>
       </div>
@@ -198,30 +198,30 @@ export function EndScreen({ info, onRetry, onMenu }: { info: EndInfo; onRetry: (
     <div className={`fixed inset-0 z-40 flex overflow-y-auto p-4 backdrop-blur-sm ${win ? "bg-emerald-950/70" : "bg-red-950/75"}`}>
       <div className="m-auto w-full max-w-sm rounded-2xl border border-white/20 bg-slate-950/85 p-6 text-center text-white shadow-2xl">
         <div className="mb-1 text-5xl">{win ? "🏆" : info.kind === "drown" ? "🌊" : "💀"}</div>
-        <h2 className={`mb-1 text-3xl font-black tracking-wide ${win ? "text-emerald-300" : "text-red-400"}`}>{win ? "MISSION ERFÜLLT" : info.kind === "drown" ? "ERTRUNKEN" : "GESCHEITERT"}</h2>
-        <p className="mb-4 text-sm text-slate-300">{win ? "Du bist entkommen und die NORDWIND versinkt in den Wellen." : info.cause}</p>
+        <h2 className={`mb-1 text-3xl font-black tracking-wide ${win ? "text-emerald-300" : "text-red-400"}`}>{win ? "MISSION COMPLETE" : info.kind === "drown" ? "DROWNED" : "FAILED"}</h2>
+        <p className="mb-4 text-sm text-slate-300">{win ? "You escaped and the NORDWIND is sinking beneath the waves." : info.cause}</p>
         <div className="mb-5 grid grid-cols-3 gap-2 text-center">
           <div className="rounded-lg bg-white/5 p-2">
-            <div className="text-xs text-slate-400">Zeit</div>
+            <div className="text-xs text-slate-400">Time</div>
             <div className="font-mono text-lg font-bold">
               {String(mm).padStart(2, "0")}:{String(ss).padStart(2, "0")}
             </div>
           </div>
           <div className="rounded-lg bg-white/5 p-2">
-            <div className="text-xs text-slate-400">Wachen</div>
+            <div className="text-xs text-slate-400">Guards</div>
             <div className="font-mono text-lg font-bold">{info.kills}</div>
           </div>
           <div className="rounded-lg bg-white/5 p-2">
-            <div className="text-xs text-slate-400">Geflutet</div>
+            <div className="text-xs text-slate-400">Flooded</div>
             <div className="font-mono text-lg font-bold">{Math.round(info.flood * 100)}%</div>
           </div>
         </div>
         <div className="flex flex-col gap-2.5">
           <button onClick={onRetry} className={`${btnBase} bg-orange-500 hover:bg-orange-400`}>
-            ↻ Nochmal
+            ↻ Retry
           </button>
           <button onClick={onMenu} className={`${btnBase} border border-white/20 bg-white/10 hover:bg-white/20`}>
-            ⌂ Hauptmenü
+            ⌂ Main Menu
           </button>
         </div>
       </div>

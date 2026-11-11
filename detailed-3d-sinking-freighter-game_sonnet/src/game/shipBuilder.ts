@@ -202,7 +202,7 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
   };
   const colOnly = (cx: number, cy: number, cz: number, sx: number, sy: number, sz: number, tag = "wall") => world.addCentered(cx, cy, cz, sx, sy, sz, tag);
   const rectBox = (mat: string, x0: number, x1: number, y0: number, y1: number, z0: number, z1: number, collide = true) => {
-    if (x1 <= x0 || y1 <= y0 || z1 <= z0) throw new Error(`rectBox mit ungültigen Maßen: ${mat} ${x0},${x1} ${y0},${y1} ${z0},${z1}`);
+    if (x1 <= x0 || y1 <= y0 || z1 <= z0) throw new Error(`rectBox with invalid dimensions: ${mat} ${x0},${x1} ${y0},${y1} ${z0},${z1}`);
     const cx = (x0 + x1) / 2,
       cy = (y0 + y1) / 2,
       cz = (z0 + z1) / 2;
@@ -233,7 +233,7 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
 
   const makeDoor = (axis: "x" | "z", fixed: number, y0: number, o: Opening, heavy = false) => {
     const d = new Door(world, heavy ? heavyDoorMat : doorMat, {
-      name: o.name ?? "Tür",
+      name: o.name ?? "Door",
       axis,
       fixed,
       c: o.c,
@@ -513,10 +513,10 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
   // ------------------------------------------------------------------ Rumpfinneres
   const BZ = { stern: -69.5, b0: -39, b1: -8, b2: 26, b3: 57 };
   const COMP_DEF = [
-    { id: "engine", name: "Maschinenraum", z0: -69.5, z1: -39.25 },
-    { id: "hold3", name: "Laderaum 3", z0: -38.75, z1: -8.25 },
-    { id: "hold2", name: "Laderaum 2", z0: -7.75, z1: 25.75 },
-    { id: "hold1", name: "Laderaum 1", z0: 26.25, z1: 56.75 },
+    { id: "engine", name: "Engine Room", z0: -69.5, z1: -39.25 },
+    { id: "hold3", name: "Cargo Hold 3", z0: -38.75, z1: -8.25 },
+    { id: "hold2", name: "Cargo Hold 2", z0: -7.75, z1: 25.75 },
+    { id: "hold1", name: "Cargo Hold 1", z0: 26.25, z1: 56.75 },
   ];
   // innere Bordwände (Doppelhülle)
   for (const s of [-1, 1]) {
@@ -531,7 +531,7 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
   rectBox("steel", -WI, WI, FLOOR_Y, CEIL_Y, BZ.b3 + 0.25, BZ.b3 + 0.6, false);
   // Schotten
   for (const zc of [BZ.b0, BZ.b1, BZ.b2]) {
-    wall("x", zc, -WI, WI, FLOOR_Y, CEIL_Y, 0.5, "steel", [{ c: 0, w: 1.5, kind: "sdoor", hinge: -1, name: "Wasserdichtes Schott" }], true);
+    wall("x", zc, -WI, WI, FLOOR_Y, CEIL_Y, 0.5, "steel", [{ c: 0, w: 1.5, kind: "sdoor", hinge: -1, name: "Watertight Bulkhead" }], true);
   }
   wall("x", BZ.b3, -WI, WI, FLOOR_Y, CEIL_Y, 0.5, "steel");
   // Decke der Räume wird durch das Deck gebildet. Decken-Unterseite sichtbar (steel)
@@ -659,7 +659,7 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
       [3.9, -41.4],
     ] as [number, number][])
       addBarrel(x, FLOOR_Y, z);
-    markers.push(makeMarker("m_engine", "Maschinenraum", -9.0, FLOOR_Y, -48));
+    markers.push(makeMarker("m_engine", "Engine Room", -9.0, FLOOR_Y, -48));
     guardSpawns.push({ name: "engine", pos: v3(-4.8, FLOOR_Y, -55), patrol: [v3(-4.8, FLOOR_Y, -56), v3(-4.8, FLOOR_Y, -42)] });
   }
 
@@ -740,15 +740,15 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
     rail(-6.15, -5.95, 18.5, 25.5, DECK_Y); // Ost
     rail(-7.55, -6.05, 25.4, 25.6, DECK_Y); // Nordkante B
     rail(-9.35, -6.05, 18.4, 18.6, DECK_Y); // Süd
-    makeDoor("x", 27.6, DECK_Y, { c: -8.6, w: 1.5, kind: "door", hinge: -1, key: "blue", name: "Gittertor Laderaum 2" });
+    makeDoor("x", 27.6, DECK_Y, { c: -8.6, w: 1.5, kind: "door", hinge: -1, key: "blue", name: "Cargo Hold 2 Gate" });
     // Container-Fläche unter dem Tor frei (kein Stapel dort)
     for (const z of [22, 25]) addLamp(-8.0, 2.45, z, 2);
     addBarrel(-5.0, FLOOR_Y, 20.5);
     // TNT-Kisten
-    addPickup("tnt", 2, -2.0, FLOOR_Y, 12, "TNT-Kiste");
-    addPickup("tnt", 2, 3.0, FLOOR_Y, -30, "TNT-Kiste");
-    addPickup("ammo_rifle", 30, -3.0, FLOOR_Y, 40, "Gewehr-Munition");
-    addPickup("medkit", 50, 1.5, FLOOR_Y, -14, "Verbandskasten");
+    addPickup("tnt", 2, -2.0, FLOOR_Y, 12, "TNT crate");
+    addPickup("tnt", 2, 3.0, FLOOR_Y, -30, "TNT crate");
+    addPickup("ammo_rifle", 30, -3.0, FLOOR_Y, 40, "Rifle ammo");
+    addPickup("medkit", 50, 1.5, FLOOR_Y, -14, "Medkit");
     guardSpawns.push({ name: "hold3", pos: v3(0, FLOOR_Y, -30), patrol: [v3(0, FLOOR_Y, -34), v3(0, FLOOR_Y, -12)] });
     guardSpawns.push({ name: "hold1", pos: v3(0, FLOOR_Y, 40), patrol: [v3(0, FLOOR_Y, 30), v3(0, FLOOR_Y, 54)] });
     for (const [x, z] of [[3.3, -27], [-3.3, 17], [3.3, 43]] as [number, number][]) addBarrel(x, FLOOR_Y, z);
@@ -785,7 +785,7 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
     const y0 = LV[0],
       y1 = LV[1] - 0.2;
     wall("x", SZ1, -9, 9, y0, y1, 0.3, "wall", [
-      { c: 0, w: 1.5, kind: "door", hinge: -1, name: "Haupteingang" },
+      { c: 0, w: 1.5, kind: "door", hinge: -1, name: "Main Entrance" },
       { c: -5.5, w: 2.2, kind: "window" },
       { c: 5.5, w: 2.2, kind: "window" },
     ]);
@@ -795,15 +795,15 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
     ]);
     for (const s of [-1, 1]) {
       wall("z", s * SX, -66, -44, y0, y1, 0.3, "wall", [
-        { c: -47, w: 1.2, kind: "door", hinge: s > 0 ? 1 : -1, name: "Seiteneingang" },
+        { c: -47, w: 1.2, kind: "door", hinge: s > 0 ? 1 : -1, name: "Side Entrance" },
         ...roomWindowsSide(y0, [-54, -61]),
       ]);
       wall("z", s * 1.7, -57.2, -44.15, y0, y1, 0.2, "wallBlue", [
-        { c: -53.6, w: 1.0, kind: "door", hinge: s > 0 ? -1 : 1, name: "Tür" },
-        { c: -47, w: 1.0, kind: "door", hinge: s > 0 ? 1 : -1, name: "Tür" },
+        { c: -53.6, w: 1.0, kind: "door", hinge: s > 0 ? -1 : 1, name: "Door" },
+        { c: -47, w: 1.0, kind: "door", hinge: s > 0 ? 1 : -1, name: "Door" },
       ]);
     }
-    wall("x", -57.2, -8.85, 8.85, y0, y1, 0.2, "wallBlue", [{ c: 0, w: 1.4, kind: "door", hinge: -1, key: "red", name: "Maschinenleitstand" }]);
+    wall("x", -57.2, -8.85, 8.85, y0, y1, 0.2, "wallBlue", [{ c: 0, w: 1.4, kind: "door", hinge: -1, key: "red", name: "Engine Control Room" }]);
     wall("x", -50, -8.85, -1.8, y0, y1, 0.2, "wall");
     wall("x", -50, 1.8, 8.85, y0, y1, 0.2, "wall");
     // Böden
@@ -833,8 +833,8 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
     furnish("galley", -1, -57.2, -50, y0);
     furnish("lounge", 1, -50, -44.15, y0);
     furnish("workshop", 1, -57.2, -50, y0);
-    addPickup("medkit", 50, -6, y0, -55, "Verbandskasten");
-    addPickup("ammo_pistol", 24, 7.5, y0, -47, "Pistolen-Munition");
+    addPickup("medkit", 50, -6, y0, -55, "Medkit");
+    addPickup("ammo_pistol", 24, 7.5, y0, -47, "Pistol ammo");
     guardSpawns.push({ name: "lobby", pos: v3(0.9, y0, -47), patrol: [v3(0.9, y0, -55), v3(0.9, y0, -46)] });
   }
   // Ebenen 1 & 2
@@ -849,9 +849,9 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
     for (const s of [-1, 1]) {
       wall("z", s * SX, -66, -44, y0, y1, 0.3, "wall", roomWindowsSide(y0, [-62, -54, -47]));
       wall("z", s * 1.7, SZ0, -44.15, y0, y1, 0.2, "wallBlue", [
-        { c: -62, w: 1.0, kind: "door", hinge: s > 0 ? -1 : 1, name: "Kajütentür" },
-        { c: -54, w: 1.0, kind: "door", hinge: s > 0 ? -1 : 1, name: "Kajütentür" },
-        { c: -47, w: 1.0, kind: "door", hinge: s > 0 ? 1 : -1, name: "Kajütentür" },
+        { c: -62, w: 1.0, kind: "door", hinge: s > 0 ? -1 : 1, name: "Cabin Door" },
+        { c: -54, w: 1.0, kind: "door", hinge: s > 0 ? -1 : 1, name: "Cabin Door" },
+        { c: -47, w: 1.0, kind: "door", hinge: s > 0 ? 1 : -1, name: "Cabin Door" },
       ]);
     }
     for (const z of [-58, -50]) {
@@ -876,11 +876,11 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
     // Brüstung der Treppenöffnung (Spindelgeländer)
   }
   // Pickups in Kabinen
-  addPickup("key_blue", 1, 8.5, LV[1] + 0.8, -51.2, "Blaue Zugangskarte");
-  addPickup("weapon_shotgun", 8, -8.5, LV[2] + 0.8, -59.6, "Schrotflinte");
-  addPickup("ammo_shotgun", 10, -8.5, LV[2] + 0.8, -58.9, "Schrotpatronen");
-  addPickup("ammo_pistol", 24, 8.5, LV[2] + 0.8, -45.35, "Pistolen-Munition");
-  addPickup("armor", 50, -6.2, LV[1], -47, "Schutzweste");
+  addPickup("key_blue", 1, 8.5, LV[1] + 0.8, -51.2, "Blue Access Card");
+  addPickup("weapon_shotgun", 8, -8.5, LV[2] + 0.8, -59.6, "Shotgun");
+  addPickup("ammo_shotgun", 10, -8.5, LV[2] + 0.8, -58.9, "Shotgun shells");
+  addPickup("ammo_pistol", 24, 8.5, LV[2] + 0.8, -45.35, "Pistol ammo");
+  addPickup("armor", 50, -6.2, LV[1], -47, "Body armor");
   guardSpawns.push({ name: "deck1", pos: v3(0, LV[1], -60), patrol: [v3(0, LV[1], -63), v3(0, LV[1], -55)] });
 
   // Brücke (Ebene 3)
@@ -890,7 +890,7 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
     wall("x", SZ1, -9, 9, y0, y1, 0.3, "wall", [-7.25, -4.35, -1.45, 1.45, 4.35, 7.25].map((c) => ({ c, w: 2.4, kind: "window" as const, sill: 0.9, top: 2.6 })));
     for (const s of [-1, 1]) wall("z", s * SX, -52.2, -44, y0, y1, 0.3, "wall", [-50.2, -46.8].map((c) => ({ c, w: 2.4, kind: "window" as const, sill: 0.9, top: 2.6 })));
     wall("x", -52.2, -9, 9, y0, y1, 0.2, "wall", [
-      { c: 5.5, w: 1.2, kind: "door", hinge: -1, name: "Brückentür" },
+      { c: 5.5, w: 1.2, kind: "door", hinge: -1, name: "Bridge Door" },
       { c: -5.5, w: 2.4, kind: "window" },
     ]);
     padH("carpet", -8.7, 8.7, -52, -44.3, y0, [holeA]);
@@ -935,9 +935,9 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
     for (const x of [-6, 0, 6]) addLamp(x, y0 + 2.9, -47.5, -1);
     addLamp(-6, y0 + 2.9, -50.5, -1);
     addLamp(6, y0 + 2.9, -50.5, -1);
-    addPickup("key_red", 1, -5.5, y0 + 1.05, -49.6, "Rote Zugangskarte");
-    addPickup("weapon_rifle", 30, 6.2, y0 + 1.1, -48.7, "Sturmgewehr");
-    addPickup("ammo_rifle", 30, 6.6, y0 + 1.1, -49.4, "Gewehr-Munition");
+    addPickup("key_red", 1, -5.5, y0 + 1.05, -49.6, "Red Access Card");
+    addPickup("weapon_rifle", 30, 6.2, y0 + 1.1, -48.7, "Assault Rifle");
+    addPickup("ammo_rifle", 30, 6.6, y0 + 1.1, -49.4, "Rifle ammo");
     guardSpawns.push({ name: "bridge", pos: v3(2, y0, -47), patrol: [v3(-3, y0, -47.5), v3(4, y0, -48.5)] });
   }
 
@@ -1121,7 +1121,7 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
     ] as [number, number, PickupType][]) {
       addCrate(x, DECK_Y, z, loot);
     }
-    addPickup("tnt", 2, 9.3, DECK_Y, -38, "TNT-Kiste");
+    addPickup("tnt", 2, 9.3, DECK_Y, -38, "TNT crate");
     guardSpawns.push({ name: "stb", pos: v3(9.2, DECK_Y, 4), patrol: [v3(9.2, DECK_Y, 4), v3(9.2, DECK_Y, 30), v3(9.2, DECK_Y, 48)] });
     guardSpawns.push({ name: "port", pos: v3(-9.2, DECK_Y, 40), patrol: [v3(-9.2, DECK_Y, 40), v3(-9.2, DECK_Y, 0), v3(-9.2, DECK_Y, -36)] });
     guardSpawns.push({ name: "bow", pos: v3(0, DECK_Y, 56), patrol: [v3(-2.5, DECK_Y, 58), v3(2.5, DECK_Y, 56)] });

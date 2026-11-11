@@ -126,7 +126,9 @@ ticker is capped at `92vw`, and the HUD respects `env(safe-area-inset-*)` with
 button stays tappable.
 
 All player-facing text is English (HUD, weapon bar, prompts, settings, blackbox
-analyzer, crash screen); German survives only in internal code comments.
+analyzer, crash screen); German survives only in internal code comments. The
+Sonnet edition at `/sonnet/` is fully English as well, with unchanged ship
+geometry and physics; details are in [CI_DEPLOYMENT.md](CI_DEPLOYMENT.md) §12.
 
 Layout harness (dev server): `/tools/hud-preview.html?w=844&h=390`.
 Details and measurements: [RESPONSIVE_UI.md](RESPONSIVE_UI.md).

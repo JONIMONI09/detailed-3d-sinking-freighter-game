@@ -246,3 +246,80 @@ The verified tree was pushed to `main` as `98d649f` (fast-forward
 Cloud sandbox: `gh` has no authenticated host and the anonymous Actions API
 returns HTTP 403 for the private repository. Read the status on the repository's
 **Actions** tab; both workflows trigger on a push to `main`.
+
+---
+
+## 12. Sonnet edition English UI pass (2026-11-11)
+
+The second, independent edition (`detailed-3d-sinking-freighter-game_sonnet/`,
+served at `/sonnet/`) was still German. Its player-facing strings are now
+English: **282 literal replacements** (259 from a one-off script plus 23 manual
+follow-ups for template literals, all 13 pickup labels, the engine-room
+detonation marker, the settings *Done* button and the locked-door messages).
+The unlock message now captures the card colour before `unlock()` instead of
+reading the already-cleared lock state. Screens,
+help, settings, HUD, weapon names, ship-part/door names, objectives, event
+messages, crash screen, touch controls and `index.html` (`lang="en"`, English
+title) were covered. Ship geometry, collision, physics, balancing and the root
+edition were not touched — `git diff` for root `src/`, `index.html` and both
+build configs is empty.
+
+The final clean-room chain (`npm ci` from the lockfile) passed:
+
+| Step | Exit | Result |
+| :--- | :---: | :--- |
+| `npm ci` | 0 | 104 packages, lockfile unchanged |
+| `npm run typecheck` | 0 | no diagnostics |
+| Sonnet `tsc --noEmit` | 0 | no diagnostics |
+| `npm test` | 0 | 5/5 physics tests, 7/7 Python checks |
+| Root `npx vite build` | 0 | 953.62 kB (gzip 250.57 kB) |
+| Sonnet Pages build | 0 | 1,000.17 kB (gzip 275.60 kB) |
+| Sonnet `ci.yml` build | 0 | 1,000.17 kB (gzip 275.60 kB) |
+
+Artifact hashes of the verified run:
+
+```
+1c9d3b60143df32166718c60d9ebadbc5d29f1b5945293d698303ebb817d2898  dist/index.html
+cd863102621f2b381455ee4427112667ba38d5d1f6cfc1d4eb1928f2ac953d9b  dist/sonnet/index.html
+cd863102621f2b381455ee4427112667ba38d5d1f6cfc1d4eb1928f2ac953d9b  detailed-3d-sinking-freighter-game_sonnet/dist/index.html
+```
+
+Both Sonnet invocations produce the same artifact. Scans of both Sonnet bundles
+find **no German UI marker and no umlaut**; the only `der` match is Three.js'
+"Van der Corput" shader comment, and `die()` is an internal enemy method. German
+comments in the source are unchanged and allowed.
+
+Preview in the Cloud browser at exact iframe sizes (buttons measured with
+`elementFromPoint` and clip-aware scroll-ancestor intersections):
+
+| Viewport | Screen | Fully visible | Clipped | Covered |
+| :--- | :--- | :---: | :---: | :---: |
+| 1280×800 | Menu | 5/5 | 0 | 0 |
+| 1280×800 | Settings | 20 own controls | 0 | 0 (5 background buttons intentionally behind the modal) |
+| 1280×800 | Help | 6/6 | 0 | 0 |
+| 390×844 | Menu / after start | 5/5 | 0 | 0 |
+| 390×844 | Settings | 20 own controls | 0 | 0 |
+| 390×844 | Help | 6/6 | 0 | 0 |
+
+The settings body scrolls (978/652 px desktop, 1,553/701 px mobile), the four
+tabs scroll horizontally at 390 px (416/390), and *Done* stays visible. After
+*Start Mission* the mobile build shows 5/5 ready-screen buttons with the canvas
+running. Root spot checks: 1280×800 23/23 buttons, 390×844 21/21, 0 clipped and
+0 covered. The root UI was therefore re-checked after the Sonnet pass.
+
+**Root bundle hash change:** §10/§11 recorded `2e69b066…`, while the same root
+source now builds to `1c9d3b60…` (953.62 kB). No root file was edited. Tailwind's
+project-wide content scan also reads the Sonnet source; removing that folder
+from the tree temporarily and rebuilding root yields `8ccb0d75…` (929.73 kB),
+which isolates the cause. The extra generated utilities are unused by the root
+UI, which measured with zero clipped/covered buttons; the shipped and CI build
+includes the Sonnet folder and is the `1c9d3b60…` artifact above.
+
+Before the push both workflows were validated again with Python (`yaml.SafeLoader`
+plus a duplicate-key constructor): **46/46 assertions passed**, including triggers,
+Node 22, `npm ci`, both typechecks/builds, Pages permissions, `enablement: true`,
+artifact checks and no force flags. `python tools/ci_check.py` passed 7/7.
+
+The GitHub Actions run itself still cannot be read from this sandbox (`gh`
+unauthenticated, anonymous API 403 for the private repository); check the
+repository's **Actions** tab. Both workflows trigger on the push to `main`.
