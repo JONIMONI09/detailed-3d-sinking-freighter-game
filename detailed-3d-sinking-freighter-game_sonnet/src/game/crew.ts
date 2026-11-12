@@ -23,7 +23,12 @@ import {
   RagdollTriggerSensors,
 } from "./ragdoll";
 
-export type CrewRole = "chief-engineer" | "boatswain" | "damage-control";
+export type CrewRole =
+  | "chief-engineer"
+  | "boatswain"
+  | "damage-control"
+  | "electrician"
+  | "medic";
 export type CrewState =
   | "patrol"
   | "alert"
@@ -93,11 +98,25 @@ export interface CrewWorld {
     filter?: (c: { tag?: string; owner?: unknown }) => boolean,
   ) => { collider: { owner?: unknown }; dist: number } | null;
   move: (
-    body: { x: number; y: number; z: number; vx: number; vy: number; vz: number; r: number; h: number; onGround: boolean },
+    body: CrewBody,
     dx: number,
     dy: number,
     dz: number,
   ) => void;
+}
+
+/** Body shape shared with the physical collision world (see `physics.ts`). */
+export interface CrewBody {
+  x: number;
+  y: number;
+  z: number;
+  vx: number;
+  vy: number;
+  vz: number;
+  r: number;
+  h: number;
+  onGround: boolean;
+  step: number;
 }
 
 export interface CrewStepContext {
@@ -233,7 +252,6 @@ function nearestBreach(
 function walkToward(
   m: CrewMember,
   tx: number,
-  ty: number,
   tz: number,
   step: number,
   raycast?: RaycastFn,
@@ -274,7 +292,18 @@ function walkToward(
 
   if (world) {
     const vy = Math.max(-20, (m.vy ?? 0) - 18 * dt);
-    const body = { x: m.x, y: m.y, z: m.z, vx: 0, vy, vz: 0, r: 0.34, h: 1.75, onGround: m.onGround ?? false };
+    const body: CrewBody = {
+      x: m.x,
+      y: m.y,
+      z: m.z,
+      vx: 0,
+      vy,
+      vz: 0,
+      r: 0.34,
+      h: 1.75,
+      onGround: m.onGround ?? false,
+      step: 0.35,
+    };
     world.move(body, desiredStep.x, body.vy * dt, desiredStep.z);
     m.x = body.x;
     m.y = body.y;
@@ -361,7 +390,7 @@ export function stepCrew(
   if (m.state === "traversing_door" && m.activeDoor) {
     const res = updateDoorInteraction(m.activeDoor, v3(m.x, m.y, m.z), dt);
     if (res.canMove && res.targetPos) {
-      walkToward(m, res.targetPos.x, res.targetPos.y, res.targetPos.z, cfg.walkSpeed * dt, ctx?.raycast, ctx?.world, dt);
+      walkToward(m, res.targetPos.x, res.targetPos.z, cfg.walkSpeed * dt, ctx?.raycast, ctx?.world, dt);
     }
     if (res.state === "complete") {
       m.activeDoor = undefined;
@@ -387,7 +416,7 @@ export function stepCrew(
       }
       if (cfg.patrol.length > 0) {
         const wp = cfg.patrol[m.patrolIndex % cfg.patrol.length];
-        walkToward(m, wp.x, wp.y, wp.z, cfg.walkSpeed * 0.5 * dt, ctx?.raycast, ctx?.world, dt);
+        walkToward(m, wp.x, wp.z, cfg.walkSpeed * 0.5 * dt, ctx?.raycast, ctx?.world, dt);
         if (dist(m, wp) < 0.5) m.patrolIndex = (m.patrolIndex + 1) % cfg.patrol.length;
       }
       return null;
@@ -419,7 +448,7 @@ export function stepCrew(
         return null;
       }
 
-      walkToward(m, target.x, target.y, target.z, cfg.walkSpeed * dt, ctx?.raycast, ctx?.world, dt);
+      walkToward(m, target.x, target.z, cfg.walkSpeed * dt, ctx?.raycast, ctx?.world, dt);
 
       if (dist(m, target) <= REPAIR_REACH || (horizontalDist <= REPAIR_REACH + 0.8 && Math.abs(target.y - m.y) <= 3.5)) {
         enter(m, "repairing");

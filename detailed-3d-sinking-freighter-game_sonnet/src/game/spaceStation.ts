@@ -270,7 +270,7 @@ export class OrbitalSpaceStationSim {
           y0: yFloor,
           h: 2.5,
           kind: doorKind,
-          key: doorKey,
+          locked: doorKey ?? null,
           heavy: true,
           bulkhead: true,
         });
@@ -543,29 +543,6 @@ export class OrbitalSpaceStationSim {
         });
       }
     }
-
-    const doorHandles = this.doors.map((d) => ({
-      name: d.name,
-      axis: d.axis,
-      fixed: d.fixed,
-      c: d.c,
-      w: d.w,
-      y0: 0,
-      h: d.h,
-      open: d.open,
-      target: d.target,
-      bulkhead: d.bulkhead,
-      locked: d.locked,
-    }));
-
-    const compInfos = this.modules.map((m) => ({
-      id: m.id,
-      name: m.name,
-      minZ: m.minZ,
-      maxZ: m.maxZ,
-      fill: Math.max(0, (101.3 - m.pressureKpa) / 101.3),
-      flow: m.breaches.reduce((s, b) => s + b.area, 0) * 2.5,
-    }));
 
     for (let idx = 0; idx < this.crew.length; idx++) {
       const member = this.crew[idx];

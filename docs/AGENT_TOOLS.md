@@ -81,9 +81,14 @@ rendering; state whether the page was visually inspected.
 | One-shot tool used by the script | `codegraph_pr_context` with `--graph-only` |
 | Docs tools available when embeddings are enabled | `codegraph_index_markdown`, `codegraph_search_docs`, `codegraph_list_doc_sources` |
 
-The package downloads its analysis engine during install. If the engine is not
-available, the docs check fails with the install path and the recovery command
-`npx codegraph-mcp-fetch-engine`; it must not silently pass.
+The package downloads its analysis engine during install. The file-level
+documentation checks always run. CodeGraph itself is optional tooling: when the
+native engine is missing for the host platform (best-effort postinstall, air-gapped
+install) or the MCP call exceeds the 120-second timeout, the gate prints an
+explicit `[WARN]` plus the recovery command `npx codegraph-mcp-fetch-engine` and
+continues with the file-level checks. A launched engine that exits with a real
+error, returns non-JSON output, or reports an unknown tool still fails the gate,
+so a broken CodeGraph integration is never hidden.
 
 ## Operating rules
 

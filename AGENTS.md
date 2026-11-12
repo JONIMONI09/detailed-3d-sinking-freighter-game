@@ -3,7 +3,7 @@
 > **Scope: Freebuff AI agent only.** This file is the operating rulebook for
 > the Freebuff AI agent in this repository. It is not user-facing product
 > documentation. Update it whenever a durable rule, verification gate, tool,
-> or skill workflow changes. Last updated: 2026-11-12 (Europe/Berlin).
+> or skill workflow changes. Last updated: 2026-11-13 (Europe/Berlin).
 
 ## Scope & Project Overview
 - **Project Name:** detailed-3d-sinking-freighter-game
@@ -48,7 +48,12 @@
   Freebuff web session date as a cross-check and record disagreements.
 - CodeGraph is installed as `@astudioplus/codegraph-mcp`. Always use it through
   `npm run docs:check` (one-shot graph-only `codegraph_pr_context`), never as an
-  ad-hoc chat client. `--no-codegraph` is offline diagnosis only.
+  ad-hoc chat client. `--no-codegraph` is offline diagnosis only. The file-level
+  documentation checks always run; a missing native engine or a 120-second MCP
+  timeout is reported as an explicit `[WARN]` with the
+  `npx codegraph-mcp-fetch-engine` recovery command instead of failing the gate,
+  because the engine is a best-effort per-platform download. A started engine
+  that errors, returns non-JSON, or reports an unknown tool still fails.
 - Do not duplicate a skill under an alias to make a picker search return more
   rows. Update the project copy and the Account copy, then verify the exact
   command name.

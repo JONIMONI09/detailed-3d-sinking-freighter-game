@@ -879,7 +879,7 @@ export class Game {
         } else if (hitBs) {
           damageBattleship(hitBs, proj.kind === "shell" ? 160 : 280);
           this.pn.emit(proj.pos.x, proj.pos.y + 1, proj.pos.z, 0, 8, 0, 5, 0.5, 0.9, 1, 0.5, 0.1, 0.8, -2, 1.0);
-          this.audio.explosion(0.7);
+          this.audio.explosion(undefined, 0.7);
         } else if (hitWater) {
           this.pn.emit(proj.pos.x, proj.pos.y + 0.5, proj.pos.z, 0, 10, 0, 4.5, 0.45, 0.9, 0.85, 0.95, 1.0, 0.7, -3.0, 1.2);
         }
@@ -1333,7 +1333,6 @@ export class Game {
     if (!this.battleships.length) {
       this.spawnExtraBattleship();
     }
-    const bs = this.battleships[0];
     if (this.activeVessel === "freighter") {
       this.activeVessel = "battleship";
       this.helmMode = false;
@@ -1400,7 +1399,7 @@ export class Game {
       this.navalProjectiles.push({ mesh, pos: muzzle.clone(), vel: shellDir.multiplyScalar(115), kind: "shell", life: 3.5 });
       this.tracer(muzzle, muzzle.clone().addScaledVector(dir, 55), 0xff8833);
       this.pn.emit(muzzle.x, muzzle.y, muzzle.z, dir.x * 4, 2, dir.z * 4, 2.0, 0.35, 0.8, 0.8, 0.7, 0.5, 0.8, -0.2, 0.4);
-      this.audio.explosion(0.45);
+      this.audio.explosion(undefined, 0.45);
     });
   }
 
@@ -1440,7 +1439,7 @@ export class Game {
     mesh.position.copy(start);
     this.scene.add(mesh);
     this.navalProjectiles.push({ mesh, pos: start, vel: V(0, 26, 0), kind: "missile", life: 8.0 });
-    this.audio.explosion(0.35);
+    this.audio.explosion(undefined, 0.35);
     this.say("CRUISE MISSILE LAUNCHED!", "alert");
   }
 
@@ -1620,7 +1619,7 @@ export class Game {
       coreMat.dispose();
     }, 110);
 
-    this.audio.explosion(2.2, 14);
+    this.audio.explosion({ dist: 14, pan: 0 }, 2.2);
     this.shake = Math.max(this.shake, 1.4);
     const hitPos = V(tx, 1.5, tz);
     // Massive Orbital Fireball, Plasma Plume & Expanding Shockwave Ring

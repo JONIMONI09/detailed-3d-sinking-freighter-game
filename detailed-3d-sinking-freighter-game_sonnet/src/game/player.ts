@@ -81,7 +81,7 @@ export class Player {
       const fz = -Math.cos(this.yaw) * Math.cos(this.pitch);
       const rx = Math.cos(this.yaw);
       const rz = -Math.sin(this.yaw);
-      const vy = (input.jump ? 1 : 0) - (input.crouch ? 1 : 0);
+      const vy = (input.jumpHeld ? 1 : 0) - (input.crouch ? 1 : 0);
       b.vx = (fx * my + rx * mx) * flySpeed;
       b.vy = (fy * my + vy) * flySpeed;
       b.vz = (fz * my + rz * mx) * flySpeed;
