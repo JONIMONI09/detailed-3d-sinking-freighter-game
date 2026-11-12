@@ -2950,7 +2950,7 @@ export class Game {
       return;
     }
     if (this.orbitalLaserMode) {
-      this.vm.group.visible = false;
+      this.vm.root.visible = false;
       const zoomT = Math.max(0, Math.min(1, (this.orbitalZoomFov - 8) / (72 - 8)));
       const camY = 34 + zoomT * (STATION_BASE_Y - 46);
       const targetFov = 36 + zoomT * 34;
@@ -2965,7 +2965,7 @@ export class Game {
       cam.updateMatrixWorld(true);
       return;
     }
-    this.vm.group.visible = this.activeVessel !== "battleship";
+    this.vm.root.visible = !this.dead && !this.escapeState && this.activeVessel !== "battleship";
     if (Math.abs(cam.fov - st.fov) > 0.05) {
       cam.fov = st.fov;
       cam.updateProjectionMatrix();
