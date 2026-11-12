@@ -310,6 +310,20 @@ Use exact commands and real run IDs when they exist.
 - Verification: `npm test` (10 suites + 10 Python checks pass), `npm run build` clean.
 - Related files / skills: `detailed-3d-sinking-freighter-game_sonnet/src/game/crew.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/player.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/game.ts`, `error-fix-document`.
 
+### ERR-2026-11-12-15 - Crew CollisionWorld door traversal, Command Tablet [TAB], Battleship 3rd-person mode, and Freighter NaN telegraph fix
+
+- Date (Europe/Berlin): 2026-11-12
+- Area: Crew AI & repair logging, Bridge Command Tablet, Battleship combat mode, Freighter autopilot
+- Status: Resolved
+- Symptom: Crew members fell through deck floors during explosion ragdoll events, failed to open doors or detect breaches beyond 30 m, and logged no repair events; `[TAB]` Tablet lacked remote controls and triggered pause on pointer unlock; switching to the Battleship left the FPS viewmodel visible and caused the Freighter to vanish with `NaNm` / `NaN% FLOODED` and an `AudioParam.setTargetAtTime` non-finite error.
+- Root cause: `stepCrew` triggered floor-dropping ragdoll physics (`deckFloorY: -5.0`) even when `CollisionWorld` was active, used a 30 m `detectRadius`, and did not use `world.move` / `world.raycast` door opening; `onLockChange` triggered `onPause()` when `tabletOpen` released pointer lock; Freighter evasive autopilot assigned invalid telegraph `"half"` instead of `"half-ahead"`, producing `NaN` in `stepHelm` and `ship.group.position`.
+- Solution:
+  1. In `crew.ts` and `stormworksSupervisor.ts`: Enabled `Guard`-style `CollisionWorld` gravity, `world.move`, and automatic door opening (`world.raycast(..., c.tag === "door")`), suppressed floor-clipping ragdolls when `world` is active, spawned all 3 crew on clear `DECK_Y` (`y = 0.1`) lanes, increased `detectRadius` to `120 m`, and added `[NORDWIND/CREW]` event logging.
+  2. In `game.ts`, `Hud.tsx`, `App.tsx`, `input.ts`, and `battleships.ts`: Implemented the `[TAB]` Bridge Command Tablet (releasing pointer lock without pausing), `[V]` vessel switching with 3rd-person Battleship chase camera (hiding the FPS viewmodel), WASD driving, mouse-aimed twin turrets, `[LMB]` hull-breaching cannons, `[RMB]/[Q]` torpedoes, and clickable HUD controls.
+  3. In `game.ts` and `bridge.ts`: Fixed Freighter autopilot telegraph to `"half-ahead"`, added `TELEGRAPH_SPEED[h.telegraph] ?? 0` guard, kept `ship.group.visible = true` while sinking in Sandbox/Battleship mode, and parked the FPS body safely on deck during Battleship command.
+- Verification: `npm test` (all 10 unit test suites + 10 Python CI checks pass) and `npm run build` (clean single-file production bundle).
+- Related files / skills: `detailed-3d-sinking-freighter-game_sonnet/src/game/crew.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/stormworksSupervisor.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/battleships.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/bridge.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/game.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/ui/Hud.tsx`, `error-fix-document`.
+
 ## Open incidents
 
 None at this revision. Add a new entry before merging any future fix, even when
