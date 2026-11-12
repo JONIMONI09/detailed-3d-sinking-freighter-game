@@ -998,7 +998,10 @@ row uses that date.
 
 ### 24.3 Delivery
 
-The branch is `feat/creative-project-skills`. The exact-SHA CI run, main CI,
-Pages deployment, and live root/`/sonnet/` HTTP checks are reported in the
-delivery message and follow the same explicit-branch, exact-SHA, Pages gate as
-section 23. No deployment is complete until those runs are green.
+The branch is `feat/creative-project-skills`. The implementation commit
+`b36d1c1` passed feature-branch CI in run `43259665018` (completed/success).
+The evidence-only documentation commit that adds this line receives its own
+exact-SHA run before merge. Main CI, the Pages deployment, and the live
+root/`/sonnet/` HTTP checks are reported in the delivery message and follow the
+same explicit-branch, exact-SHA, Pages gate as section 23. No deployment is
+complete until those runs are green.
