@@ -299,6 +299,17 @@ Use exact commands and real run IDs when they exist.
 - Prevention: Player input actions (fire, use, throw) must never be conditioned on browser pointer-lock states; pointer lock should be requested opportunistically while allowing gameplay gestures to proceed.
 - Related files / skills: `detailed-3d-sinking-freighter-game_sonnet/src/game/game.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/input.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/shipBuilder.ts`, `tests/sandbox-overhaul.test.mjs`, `error-fix-document`.
 
+### ERR-2026-11-12-14 - Crew clipping through deck floor and noclip flight activation
+
+- Date (Europe/Berlin): 2026-11-12
+- Area: Crew navigation, ship bounds clamping, and noclip 3D flight
+- Status: Resolved
+- Symptom: Crew members walked diagonally through the deck floor toward lower-hull breaches; `[N]` noclip toggled a flag without enabling 3D flight.
+- Root cause: `walkToward` in `crew.ts` interpolated `m.y` directly toward lower-deck targets; `Player.update` in `player.ts` did not handle `ctx.noclip`.
+- Solution: Restricted `walkToward` to horizontal deck movement (`dy = 0`) with `enforceShipBoundsAndRespawn`; implemented 3D flight in `Player.update` when `noclip` is active.
+- Verification: `npm test` (10 suites + 10 Python checks pass), `npm run build` clean.
+- Related files / skills: `detailed-3d-sinking-freighter-game_sonnet/src/game/crew.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/player.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/game.ts`, `error-fix-document`.
+
 ## Open incidents
 
 None at this revision. Add a new entry before merging any future fix, even when

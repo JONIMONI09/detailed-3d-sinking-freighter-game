@@ -217,12 +217,11 @@ function walkToward(
   raycast?: RaycastFn,
 ) {
   const dx = tx - m.x,
-    dy = ty - m.y,
     dz = tz - m.z;
-  const d = Math.hypot(dx, dy, dz);
+  const d = Math.hypot(dx, dz);
   if (d <= 1e-6) return;
 
-  let desiredStep: Vector3Like = v3((dx / d) * step, (dy / d) * step, (dz / d) * step);
+  let desiredStep: Vector3Like = v3((dx / d) * step, 0, (dz / d) * step);
 
   // Apply 5-ray anti-clipping steering if raycast function is provided
   if (raycast) {
