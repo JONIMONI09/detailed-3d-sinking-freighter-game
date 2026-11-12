@@ -176,9 +176,10 @@ export default function Hud({ h, settings, touch, game }: { h: HudState; setting
       {h.alarm && !dead && <div className="absolute inset-0 animate-pulse" style={{ boxShadow: "inset 0 0 90px rgba(255,0,0,0.35)" }} />}
       {dead && <div className="absolute inset-0 bg-red-950/50" />}
 
-      {!h.escape && <Crosshair type={settings.crosshair} hit={h.hit} holdProgress={h.godModeHoldProgress} />}
+      {!h.escape && !h.orbitalLaserMode && <Crosshair type={settings.crosshair} hit={h.hit} holdProgress={h.godModeHoldProgress} />}
 
       {/* Oben links: Auftrag */}
+      {!h.orbitalLaserMode && (
       <div className="absolute left-2 top-2 origin-top-left" style={{ transform: `scale(${sc})` }}>
         <div className="w-[280px] max-w-[60vw] rounded-xl border border-white/15 bg-black/50 p-2.5 text-xs backdrop-blur-sm">
           <div className="mb-1 flex items-center justify-between text-[11px] font-bold tracking-wider text-orange-300">
@@ -220,6 +221,7 @@ export default function Hud({ h, settings, touch, game }: { h: HudState; setting
           </div>
         </div>
       </div>
+      )}
 
       {/* Oben Mitte: Kompass */}
       {!small && (
@@ -266,7 +268,7 @@ export default function Hud({ h, settings, touch, game }: { h: HudState; setting
       </div>
 
       {/* Interaktions-Hinweis */}
-      {h.prompt && !h.escape && (
+      {h.prompt && !h.escape && !h.orbitalLaserMode && (
         <div className="absolute left-1/2 top-[58%]" style={{ transform: `translateX(-50%) scale(${sc})` }}>
           <div className={`flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-bold shadow-xl backdrop-blur-sm ${h.promptKind === "locked" ? "border-red-400/60 bg-red-950/70 text-red-100" : h.promptKind === "confirm" ? "animate-pulse border-amber-400/70 bg-amber-950/80 text-amber-100" : "border-white/40 bg-black/70 text-white"}`}>
             <span className="rounded-md border border-white/60 bg-white/15 px-2 py-0.5 font-mono text-xs">{touch ? "USE" : "E"}</span>
@@ -289,7 +291,7 @@ export default function Hud({ h, settings, touch, game }: { h: HudState; setting
       {(() => {
         const isInfinite = h.godMode || h.mode === "sandbox";
         return (
-          <div className="absolute bottom-2 left-2 origin-bottom-left space-y-1" hidden={h.escape} style={{ transform: `scale(${sc})`, bottom: touch ? undefined : 8, top: touch ? 96 : undefined, display: touch && vp.h < 420 ? "none" : undefined }}>
+          <div className="absolute bottom-2 left-2 origin-bottom-left space-y-1" hidden={h.escape || h.orbitalLaserMode} style={{ transform: `scale(${sc})`, bottom: touch ? undefined : 8, top: touch ? 96 : undefined, display: (touch && vp.h < 420) || h.orbitalLaserMode ? "none" : undefined }}>
             <Bar value={isInfinite ? 100 : h.hp} color={h.hp > 50 ? "linear-gradient(90deg,#16a34a,#4ade80)" : h.hp > 25 ? "linear-gradient(90deg,#d97706,#fbbf24)" : "linear-gradient(90deg,#b91c1c,#f87171)"} label={isInfinite ? "∞" : `${Math.ceil(h.hp)}`} icon="❤" />
             {(h.armor > 0 || isInfinite) && <Bar value={isInfinite ? 100 : h.armor} color="linear-gradient(90deg,#1d4ed8,#60a5fa)" label={isInfinite ? "∞" : `${Math.ceil(h.armor)}`} icon="🛡" />}
             {(h.sprint || h.crouch || h.wading) && <div className="text-[11px] font-semibold text-slate-200">{h.sprint ? "Sprinting" : h.crouch ? "Crouched" : "In water"}</div>}
@@ -301,7 +303,7 @@ export default function Hud({ h, settings, touch, game }: { h: HudState; setting
       {(() => {
         const isInfiniteAmmo = h.godMode || h.mode === "sandbox";
         return (
-          <div className="absolute bottom-2 right-2 origin-bottom-right text-right" style={{ transform: `scale(${sc})`, display: touch || h.escape ? "none" : undefined }}>
+          <div className="absolute bottom-2 right-2 origin-bottom-right text-right" style={{ transform: `scale(${sc})`, display: touch || h.escape || h.orbitalLaserMode ? "none" : undefined }}>
             <div className="mb-1 flex justify-end gap-1">
               {WEAP.map((w) => (
                 <div
@@ -514,7 +516,7 @@ export default function Hud({ h, settings, touch, game }: { h: HudState; setting
           </div>
         </div>
       )}
-      {!h.tabletOpen && (
+      {!h.tabletOpen && !h.orbitalLaserMode && (
         <div className="pointer-events-auto absolute bottom-3 left-1/2 flex -translate-x-1/2 gap-2 rounded-full border border-cyan-400/30 bg-black/65 px-3 py-1 text-[10px] font-bold tracking-wide text-cyan-200">
           <button onClick={() => game?.toggleTablet(true)} className="hover:text-white">
             [TAB] Command Tablet
