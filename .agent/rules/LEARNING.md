@@ -54,6 +54,13 @@
 - **Verified:** `npx skills list` lists all three from `.agents/skills/`; `python tools/ci_check.py` passes 10/10; `npm test` passes 5/5 physics, 14/14 browser guards and 10/10 Python; branch run `43216150102`, main CI `43216286360` and Pages `43216286679` all **success** on `34f28d1`; live `/` and `/sonnet/` return HTTP 200. See `CI_DEPLOYMENT.md` §17.
 - **Lesson:** A skill is discoverable only when it sits in a path the target runtime actually scans; Claude-only paths and bare slash names are not enough. Invocation syntax is part of discovery too.
 
+### [RESOLVED] Skill Discovery Had No Repeatable Audit
+- **Issue:** When a skill was missing or a slash command was not recognized, the check depended on memory and the same path and syntax mistakes recurred.
+- **Root Cause:** No project skill encoded the discovery rules: native path, YAML validation, exact `/skill:<name>` invocation and the session-start reload.
+- **Fix:** Added `skill-discovery-audit` under `.agents/skills/`, registered it in `tools/ci_check.py`, and documented it in `README.md` and `CI_DEPLOYMENT.md` §15.
+- **Verified:** The skill parses as YAML, the suite now validates four skills, and `npm test` passes 5/5 physics, 14/14 browser guards and 10/10 Python. Remote evidence is recorded in `CI_DEPLOYMENT.md` §18.
+- **Lesson:** Encode discovery checks as a skill so the next missing-command report follows one repeatable path instead of a new guess.
+
 ### [RESOLVED] GitHub Pages Deploy Never Created a Site
 - **Issue:** The Pages workflow never published a site; the project URL stayed blank or 404.
 - **Root Cause:** `actions/configure-pages` ran without `enablement`, so the job aborted whenever no Pages site existed; no `github-pages` environment was declared; and a branch-based Pages source would serve the raw `index.html`, which references `/src/main.tsx` and has no compiled CSS.

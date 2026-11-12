@@ -19,7 +19,7 @@
 - Validate `.github/workflows/*.yml` with Python (parse, duplicate keys, required steps) before pushing.
 - Work on a feature branch; merge only after GitHub CI is green. A feature-branch push must create an Actions run for the exact commit; verify that run before merging, not just the local checks.
 - Keep tests and documentation in English and update both when behavior changes.
-- Project skills live in `.agents/skills/`, Freebuff's native project path and highest-priority discovery location. Freebuff also supports `.claude/skills/` for Claude Code compatibility. Each skill uses YAML frontmatter, and `tools/ci_check.py` checks presence, names, frontmatter fields, body length and common non-English markers. Invoke a skill as `/skill:<name>` (for example `/skill:error-fix-document`); a bare `/skill-name` is not a command.
+- Project skills live in `.agents/skills/`, Freebuff's native project path and highest-priority discovery location. Freebuff also supports `.claude/skills/` for Claude Code compatibility. Each skill uses YAML frontmatter, and `tools/ci_check.py` checks presence, names, frontmatter fields, body length and common non-English markers. The project skills cover the mandatory error-fix, CI-audit, documentation and skill-discovery workflows. Invoke a skill as `/skill:<name>` (for example `/skill:error-fix-document`); a bare `/skill-name` is not a command.
 - **Physics Fidelity:**
   - Hydrodynamic multi-compartment water simulation with pressure head calculation ($Q = C_d A \sqrt{2g \Delta h}$).
   - Realistic localized explosive damage preventing non-keel detonations from snapping the ship.

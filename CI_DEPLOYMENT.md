@@ -21,7 +21,7 @@ Initial deployment fix: `410a321` — *Enable GitHub Pages provisioning*.
 | Physics unit tests | Exit 0, 5/5 passed |
 | Browser-guard regression tests | Exit 0, 14/14 passed |
 | Python CI integrity suite | Exit 0, 10/10 passed |
-| Project skills | 3 `SKILL.md` files; frontmatter structure checked by `tools/ci_check.py` |
+| Project skills | 4 `SKILL.md` files; frontmatter structure checked by `tools/ci_check.py` |
 | Branch CI (`fix/fullscreen-pointer-capture`) | **success**, run `43119185236` |
 | Main CI (`7e54232`) | **success**, run `43119328266` |
 | GitHub Pages deploy (`7e54232`) | **success**, run `43119328360` |
@@ -445,7 +445,7 @@ records that later delivery; §14 keeps the result from the fix itself.
 
 ## 15. Project skills and recurring workflow (2026-11-12)
 
-Three project-local skills under `.agents/skills/` turn the recurring delivery
+Four project-local skills under `.agents/skills/` turn the recurring delivery
 rules into discoverable instructions. `.agents/skills/` is Freebuff's native
 project discovery path; `.claude/skills/` is also supported for Claude Code
 compatibility. The native path is used here because `npx skills list` labels
@@ -456,6 +456,7 @@ compatibility. The native path is used here because `npx skills list` labels
 | `error-fix-document` | Reproduce, fix the root cause, add fallbacks, add regression tests, update docs, and gate the branch through CI. |
 | `ci-workflow-audit` | Validate workflow YAML with duplicate-key detection, verify branch/Pages triggers, and check the exact-SHA Actions run before merging. |
 | `documentation-maintenance` | Scan for stale claims, keep current and historical results separate, and record commands, hashes, run IDs, and limitations. |
+| `skill-discovery-audit` | Verify the native path, YAML frontmatter, exact `/skill:<name>` command and session reload when a skill is missing or a slash command is not recognized. |
 
 Each `SKILL.md` starts with YAML frontmatter containing `name`, `description`,
 `license`, and `metadata`. Skill names match their directory names, which
@@ -463,12 +464,13 @@ Freebuff requires. The official format is documented at
 <https://docs.freebuff.page/working-with-the-agent/#skills>.
 
 Freebuff registers every skill as `/skill:<name>`. The project skills are
-`/skill:error-fix-document`, `/skill:ci-workflow-audit` and
-`/skill:documentation-maintenance`; the built-in account skills are
+`/skill:error-fix-document`, `/skill:ci-workflow-audit`,
+`/skill:documentation-maintenance` and `/skill:skill-discovery-audit`; the
+built-in account skills are
 `/skill:brainstorming`, `/skill:find-skills` and `/skill:skill-creator`. A bare
 `/brainstorming` is not a command.
 
-`tools/ci_check.py` checks the three skill files for presence, frontmatter
+`tools/ci_check.py` checks the four skill files for presence, frontmatter
 delimiters, directory/name match, a non-empty description, actionable body
 length, absence of German umlauts, and no unfinished markers. Full YAML syntax
 was parsed separately with `yaml.safe_load` during delivery. `npm test` fails

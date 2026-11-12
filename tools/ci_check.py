@@ -113,6 +113,7 @@ def check_project_skills():
         "error-fix-document",
         "ci-workflow-audit",
         "documentation-maintenance",
+        "skill-discovery-audit",
     ]
 
     if not skills_dir.exists():

@@ -69,7 +69,7 @@ tests for them.
 
 ```text
 ├── .agent/                             # Antigravity Rules, Workflows & LEARNING.md
-├── .agents/skills/                     # Project skills (quality, CI, documentation)
+├── .agents/skills/                     # Project skills (quality, CI, docs, discovery)
 ├── CI_DEPLOYMENT.md                    # CI & GitHub Pages verification record
 ├── RESPONSIVE_UI.md                    # Responsive HUD & landscape layout record
 ├── detailed-3d-sinking-freighter-game_sonnet/ # Alternative / Sub-workspace Edition
@@ -144,9 +144,10 @@ Details and measurements: [RESPONSIVE_UI.md](RESPONSIVE_UI.md).
 
 ### Agent skills
 
-Three project skills under `.agents/skills/` encode the recurring workflow:
+Four project skills under `.agents/skills/` encode the recurring workflow:
 reproduce, fix the root cause, add a fallback and regression tests, update the
-English documentation, and verify the feature branch through CI. `.agents/skills/`
+English documentation, verify the feature branch through CI, and audit skill
+discovery. `.agents/skills/`
 is Freebuff's native project discovery path; `.claude/skills/` is also supported
 for Claude Code compatibility. These skills follow the official
 [Freebuff skills format](https://docs.freebuff.page/working-with-the-agent/#skills).
@@ -158,6 +159,7 @@ Invoke every skill as `/skill:<name>`:
 | `error-fix-document` | `/skill:error-fix-document` |
 | `ci-workflow-audit` | `/skill:ci-workflow-audit` |
 | `documentation-maintenance` | `/skill:documentation-maintenance` |
+| `skill-discovery-audit` | `/skill:skill-discovery-audit` |
 | Built-in brainstorming | `/skill:brainstorming` |
 | Built-in skill discovery | `/skill:find-skills` |
 | Built-in skill creator | `/skill:skill-creator` |
@@ -169,6 +171,7 @@ reload the chat (or start a new one) after adding, moving, or renaming a skill.
 - `error-fix-document` — bug and incident workflow with fallback and docs.
 - `ci-workflow-audit` — YAML validation, exact-SHA CI gate and Pages checks.
 - `documentation-maintenance` — stale-claim scan and evidence recording.
+- `skill-discovery-audit` — native path, YAML, `/skill:<name>` invocation and reload checks.
 
 `tools/ci_check.py` checks their presence, names, frontmatter fields, body
 length, and absence of German umlauts or unfinished markers. Full YAML syntax
