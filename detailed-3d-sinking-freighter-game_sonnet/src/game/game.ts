@@ -20,7 +20,7 @@ import { stepTelegraph, MAX_RUDDER_DEG, TELEGRAPH_SPEED } from "./bridge";
 import { shouldWindowBurst } from "./ingress";
 import { v3 } from "./navmesh3d";
 import { CrewVisual } from "./crewVisual";
-import { Battleship, createBattleship, stepBattleship, damageBattleship, fireBattleshipSalvo } from "./battleships";
+import { Battleship, createBattleship, stepBattleship, stepBattleshipAI, damageBattleship, fireBattleshipSalvo } from "./battleships";
 import { OrbitalSpaceStationSim, STATION_BASE_Y } from "./spaceStation";
 
 export type Mode = "mission" | "sandbox";
@@ -86,6 +86,8 @@ export interface HudState {
   battleshipCount: number;
   fleetBattle: boolean;
   theatre: "maritime" | "orbital";
+  orbitalLaserMode: boolean;
+  orbitalZoomFov: number;
 }
 
 export interface EndInfo {
@@ -238,6 +240,13 @@ export class Game {
   bsMissileCd = 0;
   fleetBattle = false;
   theatre: "maritime" | "orbital" = "maritime";
+  orbitalLaserMode = false;
+  orbitalZoomFov = 55;
+  orbitalAimX = 0;
+  orbitalAimZ = 0;
+  laserCd = 0;
+  activeFires: { pos: THREE.Vector3; life: number; spreadCd: number }[] = [];
+  debris: { m: THREE.Mesh; vel: THREE.Vector3; rot: THREE.Vector3; life: number }[] = [];
   spaceStation!: OrbitalSpaceStationSim;
   navalProjectiles: { mesh: THREE.Mesh; pos: THREE.Vector3; vel: THREE.Vector3; kind: "shell" | "torpedo" | "missile"; life: number; ownerIdx?: number }[] = [];
   engineExploded = false;
@@ -635,6 +644,7 @@ export class Game {
 
   /** lokale Wasserhöhe an Punkt (oder -Infinity) */
   waterAt = (x: number, y: number, z: number): number => {
+    if (this.theatre === "orbital" || y > 120) return -Infinity;
     for (const c of this.ship.compartments) {
       if (Math.abs(x) <= WI + 0.4 && z >= c.min.z - 0.3 && z <= c.max.z + 0.3 && y >= c.min.y - 0.4 && y <= c.max.y + 0.05) {
         return c.fill > 0.004 ? this.sim.localLevel(c, x, z) : -Infinity;
@@ -755,17 +765,41 @@ export class Game {
     this.ship.group.position.addScaledVector(forward, this.supervisor.helm.speed * dt);
     this.ship.group.updateMatrixWorld(true);
 
-    // Step Orbital Space Station (0 CPU when inactive)
+    // Step Orbital Space Station (0 CPU when inactive); keep Ocean & Ships visible far below!
     this.spaceStation.step(dt, t, false);
+    this.ocean.mesh.visible = true;
+    for (const bs of this.battleships) bs.group.visible = true;
+    this.laserCd = Math.max(0, this.laserCd - dt);
 
-    // Step walkable Battleships & rotating turrets (skipped in Orbital Space mode)
-    if (this.theatre === "orbital") {
-      this.ship.group.visible = false;
-      this.ocean.mesh.visible = false;
-      for (const bs of this.battleships) bs.group.visible = false;
-    } else {
-      this.ocean.mesh.visible = true;
-      for (const bs of this.battleships) bs.group.visible = true;
+    // Step spreading 3D fires (extinguished if flooded, capped at 18 for 60 FPS)
+    for (let i = this.activeFires.length - 1; i >= 0; i--) {
+      const f = this.activeFires[i];
+      f.life -= dt;
+      f.spreadCd -= dt;
+      if (Math.random() < dt * 24) {
+        this.pa.emit(f.pos.x, f.pos.y + 0.3, f.pos.z, (Math.random() - 0.5) * 1.2, 2.8 + Math.random() * 2, (Math.random() - 0.5) * 1.2, 2.2, 0.35, 0.7, 1.0, 0.45, 0.08, 0.85, 0.5, 0.5);
+        this.pn.emit(f.pos.x, f.pos.y + 1.1, f.pos.z, (Math.random() - 0.5) * 0.8, 2.2, (Math.random() - 0.5) * 0.8, 2.8, 0.5, 1.4, 0.18, 0.18, 0.2, 0.45, 0.2, 0.8);
+      }
+      if (f.spreadCd <= 0 && this.activeFires.length < 18) {
+        f.spreadCd = 2.8;
+        const np = f.pos.clone().add(V((Math.random() - 0.5) * 7, 0, (Math.random() - 0.5) * 7));
+        this.activeFires.push({ pos: np, life: 22, spreadCd: 3.2 });
+      }
+      if (f.life <= 0) this.activeFires.splice(i, 1);
+    }
+    // Step shattered 3D ship debris pieces
+    for (let i = this.debris.length - 1; i >= 0; i--) {
+      const d = this.debris[i];
+      d.life -= dt;
+      d.vel.y -= 14.5 * dt;
+      d.m.position.addScaledVector(d.vel, dt);
+      d.m.rotation.x += d.rot.x * dt;
+      d.m.rotation.y += d.rot.y * dt;
+      d.m.rotation.z += d.rot.z * dt;
+      if (d.m.position.y < -6 || d.life <= 0) {
+        this.scene.remove(d.m);
+        this.debris.splice(i, 1);
+      }
     }
     const bsPlayerControlled = this.activeVessel === "battleship" && !this.tabletOpen;
     const bsAimDir = V(-Math.sin(this.player.yaw) * Math.cos(this.player.pitch), Math.sin(this.player.pitch), -Math.cos(this.player.yaw) * Math.cos(this.player.pitch)).normalize();
@@ -773,13 +807,16 @@ export class Game {
     for (let bi = 0; bi < this.battleships.length; bi++) {
       const bs = this.battleships[bi];
       const isPlayerShip = bi === 0 && bsPlayerControlled;
-      // In Fleet Battle mode, non-player Battleships fight each other (or the Freighter)
+      // In Fleet Battle mode, AI Battleships maneuver & fight opposing team (or the Freighter!)
       let targetPos = freighterTarget;
+      let opp: Battleship | undefined;
       if (isPlayerShip) {
         targetPos = bs.group.position.clone().addScaledVector(bsAimDir, 120);
-      } else if (this.fleetBattle && this.battleships.length > 1) {
-        const opp = this.battleships.find((other, oi) => oi !== bi && !other.sunk);
+      } else if (this.fleetBattle) {
+        opp = this.battleships.find((other, oi) => oi !== bi && !other.sunk && other.team !== bs.team)
+          ?? this.battleships.find((other, oi) => oi !== bi && !other.sunk);
         if (opp) targetPos = opp.group.position.clone().add(V(0, 3, 0));
+        stepBattleshipAI(bs, targetPos, dt);
       }
       stepBattleship(
         bs,
@@ -788,16 +825,21 @@ export class Game {
         targetPos,
         (x, z, tt) => this.ocean.height(x, z, tt),
         (muzzle, dir) => {
-          this.tracer(muzzle, muzzle.clone().addScaledVector(dir, 55), 0xff8833);
-          if (this.fleetBattle && this.battleships.length > 1) {
-            const opp = this.battleships.find((other, oi) => oi !== bi && !other.sunk);
-            if (opp && muzzle.distanceTo(opp.group.position) < 260) {
-              damageBattleship(opp, 45);
+          this.tracer(muzzle, muzzle.clone().addScaledVector(dir, 55), bs.team === "red" ? 0xef4444 : 0x38bdf8);
+          if (this.fleetBattle) {
+            if (opp && muzzle.distanceTo(opp.group.position) < 280) {
+              const sunkNow = damageBattleship(opp, 35 + bs.level * 14);
               this.pn.emit(opp.baseX, 4, opp.baseZ, 0, 5, 0, 3, 0.35, 0.7, 1, 0.5, 0.1, 0.7, -1, 0.8);
+              if (sunkNow) this.say(`⚓ ${opp.id.toUpperCase()} (Lv.${opp.level}) SUNK by ${bs.id.toUpperCase()}!`, "alert");
+            } else if (!opp && !this.sim.sunk && muzzle.distanceTo(freighterTarget) < 300) {
+              this.pn.emit(freighterTarget.x, 4, freighterTarget.z, 0, 6, 0, 4, 0.4, 0.9, 1, 0.5, 0.1, 0.8, -1, 0.8);
+              if (this.activeFires.length < 18 && Math.random() < 0.35) {
+                this.activeFires.push({ pos: freighterTarget.clone().add(V((Math.random() - 0.5) * 10, 0, (Math.random() - 0.5) * 30)), life: 18, spreadCd: 3.0 });
+              }
             }
           }
         },
-        !isPlayerShip && (this.fleetBattle || bi === 0),
+        !isPlayerShip && this.fleetBattle,
       );
     }
 
@@ -899,10 +941,34 @@ export class Game {
 
     const p = this.player;
     const b = p.body;
-    const controls = !this.dead && !this.escapeState && !this.ended && !this.helmMode && !this.tabletOpen && this.activeVessel !== "battleship";
+    const controls = !this.dead && !this.escapeState && !this.ended && !this.helmMode && !this.tabletOpen && this.activeVessel !== "battleship" && !this.orbitalLaserMode;
 
     let ev: { step: boolean; jumped: boolean; landed: number } = { step: false, jumped: false, landed: 0 };
-    if (this.activeVessel === "battleship" && this.battleships[0]) {
+    if (this.orbitalLaserMode) {
+      if (!this.tabletOpen && !this.paused && !this.ended) {
+        const [lx, ly] = inp.consumeLook();
+        const panScale = (this.orbitalZoomFov / 60) * 0.45;
+        this.orbitalAimX = Math.max(-220, Math.min(220, this.orbitalAimX + lx * panScale));
+        this.orbitalAimZ = Math.max(-220, Math.min(220, this.orbitalAimZ + ly * panScale));
+        const panSpd = (this.orbitalZoomFov / 60) * 70 * dt;
+        if (inp.keys.has("KeyA") || inp.keys.has("ArrowLeft")) this.orbitalAimX -= panSpd;
+        if (inp.keys.has("KeyD") || inp.keys.has("ArrowRight")) this.orbitalAimX += panSpd;
+        if (inp.keys.has("KeyW") || inp.keys.has("ArrowUp")) this.orbitalAimZ -= panSpd;
+        if (inp.keys.has("KeyS") || inp.keys.has("ArrowDown")) this.orbitalAimZ += panSpd;
+        if (inp.keys.has("Equal") || inp.keys.has("NumpadAdd") || inp.keys.has("KeyQ")) {
+          this.orbitalZoomFov = Math.max(8, this.orbitalZoomFov - 38 * dt);
+        }
+        if (inp.keys.has("Minus") || inp.keys.has("NumpadSubtract") || inp.keys.has("KeyZ")) {
+          this.orbitalZoomFov = Math.min(72, this.orbitalZoomFov + 38 * dt);
+        }
+        if (inp.fire) this.fireOrbitalDeathRay();
+        if (inp.pressed("interact")) this.toggleOrbitalLaser(false);
+      }
+      b.vx = 0;
+      b.vy = 0;
+      b.vz = 0;
+      b.onGround = true;
+    } else if (this.activeVessel === "battleship" && this.battleships[0]) {
       const bs = this.battleships[0];
       if (!this.tabletOpen && !this.paused && !this.ended) {
         const [lx, ly] = inp.consumeLook();
@@ -1409,11 +1475,13 @@ export class Game {
     const dist = 65 + idx * 25;
     const x = this.ship.group.position.x + Math.cos(angle) * dist;
     const z = this.ship.group.position.z + Math.sin(angle) * dist;
-    const bs = createBattleship(`bs-${idx + 1}`, x, z);
+    const level = (idx % 5) + 1;
+    const team: "blue" | "red" = idx % 2 === 0 ? "blue" : "red";
+    const bs = createBattleship(`bs-${idx + 1}`, x, z, level, team);
     this.scene.add(bs.group);
     this.battleships.push(bs);
     this.audio.click();
-    this.say(`Spawned Battleship #${idx + 1} (Walkable deck, Twin Turrets)!`, "good");
+    this.say(`Spawned Battleship #${idx + 1} [Lv.${level} · ${team.toUpperCase()} · ${bs.maxHp} HP]!`, "good");
   }
 
   toggleTheatre(target?: "maritime" | "orbital") {
@@ -1423,26 +1491,123 @@ export class Game {
     this.spaceStation.root.visible = next === "orbital";
     this.activeVessel = "freighter";
     this.helmMode = false;
+    this.orbitalLaserMode = false;
+    this.camera.fov = this.settings.fov;
+    this.camera.updateProjectionMatrix();
     this.player.body.vx = 0;
     this.player.body.vy = 0;
     this.player.body.vz = 0;
     this.player.body.onGround = true;
+    this.ship.group.visible = true;
+    this.ocean.mesh.visible = true;
+    for (const bs of this.battleships) bs.group.visible = true;
     if (next === "orbital") {
-      this.ship.group.visible = false;
-      this.ocean.mesh.visible = false;
-      for (const bs of this.battleships) bs.group.visible = false;
       this.player.teleport(0, STATION_BASE_Y + 0.35, 0, 0);
-      this.say("🛰️ HYPERION-9 Orbital Space Station: Ships hidden, full orbital gravity!", "good");
+      this.say("🛰️ HYPERION-9 Orbital Space Station: Ships visible below — visit Command Center for Orbital Death Ray!", "good");
     } else {
-      this.ship.group.visible = true;
-      this.ocean.mesh.visible = true;
-      for (const bs of this.battleships) bs.group.visible = true;
       this.player.teleport(9.8, DECK_Y + 0.3, -42, Math.PI);
       this.say("⚓ Returned to Maritime Ocean Theatre.", "info");
     }
     this.audio.click();
     if (this.tabletOpen) this.toggleTablet(false);
     else if (!this.paused && !this.isTouch()) this.requestLock();
+  }
+
+  toggleOrbitalLaser(force?: boolean) {
+    if (this.theatre !== "orbital") return;
+    const next = force ?? !this.orbitalLaserMode;
+    this.orbitalLaserMode = next;
+    if (next) {
+      this.orbitalAimX = this.ship.group.position.x;
+      this.orbitalAimZ = this.ship.group.position.z;
+      this.orbitalZoomFov = 55;
+      this.say("☄️ ORBITAL DEATH RAY ONLINE: Aim [Mouse/WASD] · Zoom [Q/Z or +/-] · Fire [LMB] · Exit [E]", "alert");
+    } else {
+      this.camera.fov = this.settings.fov;
+      this.camera.updateProjectionMatrix();
+      this.say("Exited Orbital Death Ray targeting.", "info");
+    }
+    this.audio.click();
+    if (this.tabletOpen) this.toggleTablet(false);
+    else if (!this.paused && !this.isTouch()) this.requestLock();
+  }
+
+  private shatterIntoPieces(center: THREE.Vector3, baseColor: number, count: number) {
+    const geo = new THREE.BoxGeometry(1.1, 0.75, 1.4);
+    const mat = new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.6, metalness: 0.45 });
+    for (let i = 0; i < count; i++) {
+      const m = new THREE.Mesh(geo, mat);
+      const sx = 0.5 + Math.random() * 1.9;
+      const sy = 0.4 + Math.random() * 1.3;
+      const sz = 0.6 + Math.random() * 2.2;
+      m.scale.set(sx, sy, sz);
+      m.position.set(
+        center.x + (Math.random() - 0.5) * 26,
+        Math.max(0.5, center.y + Math.random() * 7),
+        center.z + (Math.random() - 0.5) * 75,
+      );
+      const vel = V((Math.random() - 0.5) * 34, 14 + Math.random() * 28, (Math.random() - 0.5) * 34);
+      const rot = V((Math.random() - 0.5) * 9, (Math.random() - 0.5) * 9, (Math.random() - 0.5) * 9);
+      this.scene.add(m);
+      this.debris.push({ m, vel, rot, life: 9 + Math.random() * 5 });
+    }
+  }
+
+  fireOrbitalDeathRay() {
+    if (this.laserCd > 0) return;
+    this.laserCd = 1.4;
+    const tx = this.orbitalAimX;
+    const tz = this.orbitalAimZ;
+    const beamGeo = new THREE.CylinderGeometry(2.6, 4.4, STATION_BASE_Y + 20, 14);
+    const beamMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
+    const beam = new THREE.Mesh(beamGeo, beamMat);
+    beam.position.set(tx, (STATION_BASE_Y - 10) * 0.5, tz);
+    this.scene.add(beam);
+    const coreGeo = new THREE.CylinderGeometry(1.1, 1.8, STATION_BASE_Y + 20, 10);
+    const coreMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false });
+    const core = new THREE.Mesh(coreGeo, coreMat);
+    core.position.copy(beam.position);
+    this.scene.add(core);
+    setTimeout(() => {
+      this.scene.remove(beam);
+      this.scene.remove(core);
+      beamGeo.dispose();
+      beamMat.dispose();
+      coreGeo.dispose();
+      coreMat.dispose();
+    }, 380);
+
+    this.audio.explosion(1.6, 10);
+    this.shake = Math.max(this.shake, 0.9);
+    const hitPos = V(tx, 1.5, tz);
+    this.pn.emit(tx, 2.5, tz, 0, 14, 0, 10, 0.4, 2.2, 0.2, 0.85, 1.0, 0.95, -2, 1.4);
+    this.pa.emit(tx, 1.5, tz, 0, 9, 0, 12, 0.5, 2.4, 1.0, 0.5, 0.12, 0.9, -1, 1.1);
+    if (this.activeFires.length < 18) {
+      this.activeFires.push({ pos: hitPos.clone(), life: 25, spreadCd: 2.0 });
+    }
+
+    // Check Freighter hit -> shatter into 300 pieces & trigger sinking!
+    const shipDist = Math.hypot(tx - this.ship.group.position.x, tz - this.ship.group.position.z);
+    if (shipDist < 68 && this.ship.group.visible) {
+      this.shatterIntoPieces(this.ship.group.position.clone().add(V(0, 4, 0)), 0x475569, 260);
+      this.ship.group.visible = false;
+      this.sim.sunk = true;
+      for (const c of this.ship.compartments) c.fill = 1;
+      this.say("☄️ ORBITAL DEATH RAY OBLITERATED FREIGHTER NORDWIND!", "alert");
+    }
+
+    // Check Battleships -> shatter into 220 pieces!
+    for (const bs of this.battleships) {
+      if (!bs.group.visible) continue;
+      const d = Math.hypot(tx - bs.baseX, tz - bs.baseZ);
+      if (d < 48) {
+        this.shatterIntoPieces(bs.group.position.clone().add(V(0, 3, 0)), 0x64748b, 200);
+        bs.group.visible = false;
+        bs.sunk = true;
+        bs.hp = 0;
+        this.say("☄️ ORBITAL DEATH RAY SHATTERED BATTLESHIP!", "alert");
+      }
+    }
   }
 
   toggleFleetBattle() {
@@ -2249,7 +2414,8 @@ export class Game {
     let bestText = "";
     let bestKind: "" | "normal" | "locked" | "confirm" = "";
     const secCtx = this.securityContext();
-    for (const d of this.ship.doors) {
+    const doorList = this.theatre === "orbital" ? this.spaceStation.doors : this.ship.doors;
+    for (const d of doorList) {
       const to = d.center.clone().sub(eye);
       const dist = to.length();
       if (dist > 2.7) continue;
@@ -2264,6 +2430,21 @@ export class Game {
         bestKind = pr.kind;
         bestText = pr.text;
         bestAct = () => this.useDoor(d);
+      }
+    }
+    if (this.theatre === "orbital") {
+      const consolePos = new THREE.Vector3(0, STATION_BASE_Y + 0.65, 3);
+      const distCon = consolePos.distanceTo(eye);
+      if (distCon < 3.6 || this.orbitalLaserMode) {
+        const score = 6.0;
+        if (score > best || this.orbitalLaserMode) {
+          best = score;
+          bestKind = this.orbitalLaserMode ? "confirm" : "normal";
+          bestText = this.orbitalLaserMode
+            ? `ORBITAL DEATH RAY [LMB] Fire · [Q/Z] Zoom (${this.orbitalZoomFov.toFixed(0)}°) · [E] Exit`
+            : "Orbital Command Console [E] – Activate Death Ray";
+          bestAct = () => this.toggleOrbitalLaser();
+        }
       }
     }
     for (const lb of this.ship.lifeboats) {
@@ -2712,6 +2893,22 @@ export class Game {
       this.ship.group.updateMatrixWorld(true);
       return;
     }
+    if (this.orbitalLaserMode) {
+      if (Math.abs(cam.fov - this.orbitalZoomFov) > 0.05) {
+        cam.fov = this.orbitalZoomFov;
+        cam.updateProjectionMatrix();
+      }
+      cam.position.set(this.orbitalAimX, STATION_BASE_Y - 12, this.orbitalAimZ);
+      const lookTarget = V(this.orbitalAimX, 0, this.orbitalAimZ);
+      const m = new THREE.Matrix4().lookAt(cam.position, lookTarget, V(0, 0, -1));
+      cam.quaternion.setFromRotationMatrix(m);
+      cam.updateMatrixWorld(true);
+      return;
+    }
+    if (Math.abs(cam.fov - st.fov) > 0.05) {
+      cam.fov = st.fov;
+      cam.updateProjectionMatrix();
+    }
     if (this.activeVessel === "battleship" && this.battleships[0]) {
       const bs = this.battleships[0];
       const back = V(Math.sin(p.yaw) * Math.cos(p.pitch), -Math.sin(p.pitch), Math.cos(p.yaw) * Math.cos(p.pitch));
@@ -2779,13 +2976,20 @@ export class Game {
     this.hemi.groundColor.copy(env.hemiGround);
     const depthDark = under ? 0.45 : 1;
     this.hemi.intensity = (env.hemiIntensity * (1 - 0.75 * ind) + 0.1 * ind + this.lightning * 2.5) * depthDark;
-    const fogD = 0.0016 * (1.15 - st.viewDistance) * (1 + env.storm * 1.2);
-    const fogC = under ? new THREE.Color(0.02, 0.2, 0.28).multiplyScalar(0.4 + 0.6 * env.night * 0 + 0.6) : env.fogColor;
+    const spaceMix = Math.max(0, Math.min(1, (cam.position.y - 60) / 140));
+    const fogD = 0.0016 * (1.15 - st.viewDistance) * (1 + env.storm * 1.2) * (1 - spaceMix * 0.85);
+    const spaceColor = new THREE.Color(0x02040a);
+    const fogC = under
+      ? new THREE.Color(0.02, 0.2, 0.28).multiplyScalar(0.4 + 0.6 * env.night * 0 + 0.6)
+      : env.fogColor.clone().lerp(spaceColor, spaceMix);
     if (!this.scene.fog) this.scene.fog = new THREE.FogExp2(fogC.getHex(), fogD);
     const fog = this.scene.fog as THREE.FogExp2;
     fog.color.copy(fogC);
     fog.density = under ? 0.075 : fogD;
-    this.scene.background = null;
+    this.scene.background = spaceMix > 0.15 ? fogC : null;
+    if (this.spaceStation.starPoints) {
+      this.spaceStation.starPoints.visible = spaceMix > 0.1;
+    }
     this.ocean.apply(env, fog.density, st.waveHeight);
     this.ocean.update(cam.position, this.time, this.shipInv(), !this.sim.sunk, under);
     this.sky.update(cam.position, this.time);
@@ -2840,6 +3044,7 @@ export class Game {
   }
 
   private cameraUnderwater(): boolean {
+    if (this.theatre === "orbital") return false;
     if (this.escapeState) {
       const h = this.ocean.height(this.camera.position.x, this.camera.position.z, this.time);
       return this.camera.position.y < h - 0.05;
@@ -2963,6 +3168,8 @@ export class Game {
       battleshipCount: this.battleships.length,
       fleetBattle: this.fleetBattle,
       theatre: this.theatre,
+      orbitalLaserMode: this.orbitalLaserMode,
+      orbitalZoomFov: this.orbitalZoomFov,
     };
     this.cb.onHud(hud);
   }

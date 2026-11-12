@@ -8,6 +8,8 @@ export interface BattleshipTurret {
 
 export interface Battleship {
   id: string;
+  level: number;
+  team: "blue" | "red";
   group: THREE.Group;
   turrets: BattleshipTurret[];
   hp: number;
@@ -26,7 +28,13 @@ export interface Battleship {
 }
 
 /** Builds a walkable 3D Battleship with twin-barrel rotating turrets and bridge superstructure. */
-export function createBattleship(id: string, x: number, z: number): Battleship {
+export function createBattleship(
+  id: string,
+  x: number,
+  z: number,
+  level = 1,
+  team: "blue" | "red" = "blue",
+): Battleship {
   const group = new THREE.Group();
   group.position.set(x, 0, z);
 
@@ -80,13 +88,21 @@ export function createBattleship(id: string, x: number, z: number): Battleship {
     turrets.push({ group: tGroup, barrels, cooldown: 2.5 + Math.random() * 2.0 });
   }
 
+  const maxHp = 1000 + (level - 1) * 450;
+  const beaconMat = new THREE.MeshBasicMaterial({ color: team === "blue" ? 0x38bdf8 : 0xef4444 });
+  const beacon = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), beaconMat);
+  beacon.position.set(0, 14.5, -2);
+  group.add(beacon);
+
   return {
     id,
+    level,
+    team,
     group,
     turrets,
-    hp: 1000,
-    maxHp: 1000,
-    armorAbsorption: 0.3, // 30% battleship armor belt from ship fighter
+    hp: maxHp,
+    maxHp,
+    armorAbsorption: Math.min(0.65, 0.3 + (level - 1) * 0.08),
     sunk: false,
     sinkDepth: 0,
     roll: 0,
@@ -98,6 +114,24 @@ export function createBattleship(id: string, x: number, z: number): Battleship {
     rudderDeg: 0,
     deckBounds: { minX: -5.3, maxX: 5.3, minZ: -27.5, maxZ: 27.5, deckY: 2.5 },
   };
+}
+
+/** Steers an AI battleship into a dynamic naval broadside orbit around its target. */
+export function stepBattleshipAI(bs: Battleship, targetWorldPos: THREE.Vector3, dt: number): void {
+  if (bs.sunk) return;
+  const dx = targetWorldPos.x - bs.baseX;
+  const dz = targetWorldPos.z - bs.baseZ;
+  const dist = Math.hypot(dx, dz);
+  const directHeading = Math.atan2(-dx, -dz);
+  // Broadside orbit: approach if far (>135m), peel off if close (<85m), else circle at 90 deg
+  const offsetAngle = dist > 135 ? 0 : dist < 85 ? Math.PI * 0.72 : Math.PI * 0.48;
+  const desiredHeading = directHeading + offsetAngle;
+  let diff = desiredHeading - bs.heading;
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+  const desiredRudder = Math.max(-28, Math.min(28, (diff * 180) / Math.PI * 0.65));
+  bs.rudderDeg += (desiredRudder - bs.rudderDeg) * Math.min(1, dt * 3.0);
+  bs.targetSpeed = 7.5 + bs.level * 1.2;
 }
 
 /** Updates battleship wave motion, turret tracking, and sinking kinematics. */

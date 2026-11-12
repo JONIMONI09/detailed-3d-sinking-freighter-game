@@ -221,10 +221,17 @@ export class OrbitalSpaceStationSim {
         cupola.position.set(0, h, cz);
         modGroup.add(cupola);
 
-        // Command Bridge Console
+        // Command Bridge Console (Orbital Death Ray & Observation)
         const consoleMesh = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.1, 1.2), tiDark);
         consoleMesh.position.set(0, 0.65, cz + 3);
         modGroup.add(consoleMesh);
+        const screenMesh = new THREE.Mesh(
+          new THREE.BoxGeometry(2.6, 0.45, 0.1),
+          new THREE.MeshBasicMaterial({ color: 0x22d3ee }),
+        );
+        screenMesh.position.set(0, 1.25, cz + 2.55);
+        screenMesh.rotation.x = -0.45;
+        modGroup.add(screenMesh);
       }
 
       // Transverse Airlock Bulkhead Wall at z1 (with Stormworks Airlock Door)
@@ -248,6 +255,12 @@ export class OrbitalSpaceStationSim {
 
         // Alternate between Sliding Electro-Hydraulic Blast Doors and Hinged Airlock Hatches
         const doorKind = i % 2 === 0 ? "slide" : "swing";
+        const doorKey = i === 0 ? "red" : i === 2 ? "blue" : undefined;
+        const frameMat = new THREE.MeshBasicMaterial({ color: doorKey === "red" ? 0xef4444 : doorKey === "blue" ? 0x3b82f6 : 0x22d3ee });
+        const frameTop = new THREE.Mesh(new THREE.BoxGeometry(doorW + 0.3, 0.12, 0.42), frameMat);
+        frameTop.position.set(0, 2.56, spec.z1);
+        modGroup.add(frameTop);
+
         const airlockDoor = new Door(this.world, airlockMat, {
           name: `Airlock ${i + 1} (${spec.name.split(" ")[0]})`,
           axis: "x",
@@ -257,6 +270,7 @@ export class OrbitalSpaceStationSim {
           y0: yFloor,
           h: 2.5,
           kind: doorKind,
+          key: doorKey,
           heavy: true,
           bulkhead: true,
         });

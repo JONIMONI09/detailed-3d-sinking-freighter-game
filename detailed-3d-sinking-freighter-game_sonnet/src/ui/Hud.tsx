@@ -460,11 +460,40 @@ export default function Hud({ h, settings, touch, game }: { h: HudState; setting
                 onClick={() => game.toggleTheatre()}
                 className="col-span-2 rounded-lg border border-indigo-400/50 bg-indigo-700/40 py-2 text-indigo-100 hover:bg-indigo-600/50"
               >
-                {h.theatre === "orbital" ? "⚓ Return to Ocean / Ships" : "🛰️ Enter Orbital Space Station (No Ships)"}
+                {h.theatre === "orbital" ? "⚓ Return to Ocean / Ships" : "🛰️ Enter Orbital Space Station (HYPERION-9)"}
               </button>
+              {h.theatre === "orbital" && (
+                <button
+                  onClick={() => game.toggleOrbitalLaser()}
+                  className="col-span-2 rounded-lg border border-cyan-400/60 bg-cyan-800/40 py-2 font-black text-cyan-200 hover:bg-cyan-700/50"
+                >
+                  {h.orbitalLaserMode ? "🛰️ Exit Orbital Death Ray" : "☄️ Activate Orbital Death Ray"}
+                </button>
+              )}
             </div>
           </div>
         </div>
+      )}
+      {!h.tabletOpen && h.orbitalLaserMode && (
+        <>
+          <div className="pointer-events-none fixed inset-0 flex items-center justify-center">
+            <div className="relative h-28 w-28 rounded-full border-2 border-cyan-400/70 shadow-[0_0_24px_rgba(34,211,238,0.45)]">
+              <div className="absolute left-1/2 top-0 h-5 w-0.5 -translate-x-1/2 bg-cyan-300" />
+              <div className="absolute bottom-0 left-1/2 h-5 w-0.5 -translate-x-1/2 bg-cyan-300" />
+              <div className="absolute left-0 top-1/2 h-0.5 w-5 -translate-y-1/2 bg-cyan-300" />
+              <div className="absolute right-0 top-1/2 h-0.5 w-5 -translate-y-1/2 bg-cyan-300" />
+              <div className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-red-500" />
+            </div>
+          </div>
+          <div className="pointer-events-none absolute bottom-10 left-1/2 -translate-x-1/2 rounded-xl border border-cyan-400/60 bg-slate-950/90 px-4 py-2 text-center shadow-xl backdrop-blur-sm">
+            <div className="text-xs font-black tracking-wider text-cyan-300">
+              ☄️ ORBITAL DEATH RAY TARGETING · ZOOM FOV {h.orbitalZoomFov.toFixed(0)}°
+            </div>
+            <div className="mt-1 text-[11px] font-bold text-slate-300">
+              [Mouse / WASD] Aim · [Q / Z / +/-] Zoom · [LMB] Fire Death Ray · [E] Exit Console
+            </div>
+          </div>
+        </>
       )}
       {!h.tabletOpen && h.activeVessel === "battleship" && (
         <div className="pointer-events-none absolute bottom-10 left-1/2 -translate-x-1/2 rounded-xl border border-amber-400/50 bg-slate-950/85 px-4 py-2 text-center shadow-xl backdrop-blur-sm">
