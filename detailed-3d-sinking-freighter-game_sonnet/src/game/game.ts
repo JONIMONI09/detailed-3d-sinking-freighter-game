@@ -724,16 +724,19 @@ export class Game {
       this.ship.world,
     );
 
-    // Freighter AI evasive escape maneuver when player commands the Battleship
+    // Freighter AI evasive autopilot when player commands the Battleship (stays within 220m so it never vanishes)
     if (this.activeVessel === "battleship" && this.battleships[0] && !this.sim.sunk) {
       const bs = this.battleships[0];
       const awayX = this.ship.group.position.x - bs.baseX;
       const awayZ = this.ship.group.position.z - bs.baseZ;
-      const desiredHeading = Math.atan2(-awayX, -awayZ);
+      const dist = Math.hypot(awayX, awayZ);
+      const desiredHeading = dist > 200
+        ? Math.atan2(-awayX, -awayZ) + Math.PI * 0.55 // circle back into combat range
+        : Math.atan2(-awayX, -awayZ); // flee away
       let hDiff = desiredHeading - this.supervisor.helm.heading;
       while (hDiff > Math.PI) hDiff -= Math.PI * 2;
       while (hDiff < -Math.PI) hDiff += Math.PI * 2;
-      this.supervisor.helm.telegraph = "full";
+      this.supervisor.helm.telegraph = "half";
       this.supervisor.helm.rudderCmd = Math.max(-MAX_RUDDER_DEG, Math.min(MAX_RUDDER_DEG, (hDiff * 180) / Math.PI));
     }
 
@@ -849,34 +852,41 @@ export class Game {
     const b = p.body;
     const controls = !this.dead && !this.escapeState && !this.ended && !this.helmMode && !this.tabletOpen && this.activeVessel !== "battleship";
 
-    if (this.activeVessel === "battleship" && this.battleships[0] && !this.tabletOpen && !this.paused && !this.ended) {
+    let ev: { step: boolean; jumped: boolean; landed: number } = { step: false, jumped: false, landed: 0 };
+    if (this.activeVessel === "battleship" && this.battleships[0]) {
       const bs = this.battleships[0];
-      const [lx, ly] = inp.consumeLook();
-      const sens = 0.0022 * st.sens;
-      p.yaw -= lx * sens;
-      p.pitch = Math.max(-0.55, Math.min(0.65, p.pitch - ly * sens * (st.invertY ? -1 : 1)));
-      // WASD Battleship driving
-      if (inp.keys.has("KeyW") || inp.keys.has("ArrowUp")) bs.targetSpeed = Math.min(16, bs.targetSpeed + 10 * dt);
-      else if (inp.keys.has("KeyS") || inp.keys.has("ArrowDown")) bs.targetSpeed = Math.max(-8, bs.targetSpeed - 10 * dt);
-      if (inp.keys.has("KeyA") || inp.keys.has("ArrowLeft")) bs.rudderDeg = Math.max(-MAX_RUDDER_DEG, bs.rudderDeg - 35 * dt);
-      else if (inp.keys.has("KeyD") || inp.keys.has("ArrowRight")) bs.rudderDeg = Math.min(MAX_RUDDER_DEG, bs.rudderDeg + 35 * dt);
-      else bs.rudderDeg += (0 - bs.rudderDeg) * Math.min(1, dt * 1.5);
-      // Fire main cannons (LMB) & Torpedo (RMB / Q)
-      if (inp.fire) this.fireBattleshipCannon();
-      if (inp.pressed("alt") || inp.pressed("last")) this.fireBattleshipTorpedo();
-      // Keep player body synced to Battleship bridge
-      b.x = bs.baseX;
-      b.y = bs.group.position.y + bs.deckBounds.deckY + 2.5;
-      b.z = bs.baseZ;
+      if (!this.tabletOpen && !this.paused && !this.ended) {
+        const [lx, ly] = inp.consumeLook();
+        const sens = 0.0022 * st.sens;
+        p.yaw -= lx * sens;
+        p.pitch = Math.max(-0.55, Math.min(0.65, p.pitch - ly * sens * (st.invertY ? -1 : 1)));
+        // WASD Battleship driving
+        if (inp.keys.has("KeyW") || inp.keys.has("ArrowUp")) bs.targetSpeed = Math.min(16, bs.targetSpeed + 10 * dt);
+        else if (inp.keys.has("KeyS") || inp.keys.has("ArrowDown")) bs.targetSpeed = Math.max(-8, bs.targetSpeed - 10 * dt);
+        if (inp.keys.has("KeyA") || inp.keys.has("ArrowLeft")) bs.rudderDeg = Math.max(-MAX_RUDDER_DEG, bs.rudderDeg - 35 * dt);
+        else if (inp.keys.has("KeyD") || inp.keys.has("ArrowRight")) bs.rudderDeg = Math.min(MAX_RUDDER_DEG, bs.rudderDeg + 35 * dt);
+        else bs.rudderDeg += (0 - bs.rudderDeg) * Math.min(1, dt * 1.5);
+        // Fire main cannons (LMB) & Torpedo (RMB / Q)
+        if (inp.fire) this.fireBattleshipCannon();
+        if (inp.pressed("alt") || inp.pressed("last")) this.fireBattleshipTorpedo();
+      }
+      // Keep FPS body safely parked on Freighter deck (never falling into void)
+      b.x = 9.8;
+      b.y = DECK_Y;
+      b.z = -42;
+      b.vx = 0;
+      b.vy = 0;
+      b.vz = 0;
+      b.onGround = true;
+    } else {
+      // Spieler
+      ev = p.update(
+        dt,
+        inp,
+        { world: this.ship.world, slide: this.sim.tiltDeg > 6 ? this.sim.slideVector() : [0, 0], water: this.waterAt, sens: st.sens, touchSens: st.touchSens, invertY: st.invertY, noclip: this.supervisor.isNoclip() },
+        controls,
+      );
     }
-
-    // Spieler
-    const ev = p.update(
-      dt,
-      inp,
-      { world: this.ship.world, slide: this.sim.tiltDeg > 6 ? this.sim.slideVector() : [0, 0], water: this.waterAt, sens: st.sens, touchSens: st.touchSens, invertY: st.invertY, noclip: this.supervisor.isNoclip() },
-      controls,
-    );
     if (this.helmMode) this.handleHelm(dt);
     this.lastLookDX = 0;
     if (ev.step) {
@@ -1186,12 +1196,16 @@ export class Game {
     if (this.activeVessel === "freighter") {
       this.activeVessel = "battleship";
       this.helmMode = false;
-      this.player.teleport(bs.baseX, bs.group.position.y + bs.deckBounds.deckY + 0.2, bs.baseZ - 10, 0);
       this.say("Switched command to BATTLESHIP!", "good");
     } else {
       this.activeVessel = "freighter";
       this.helmMode = false;
-      this.player.teleport(9.8, DECK_Y, -42, Math.PI);
+      this.ship.group.visible = true;
+      this.player.body.vx = 0;
+      this.player.body.vy = 0;
+      this.player.body.vz = 0;
+      this.player.body.onGround = true;
+      this.player.teleport(9.8, DECK_Y + 0.5, -42, Math.PI);
       this.say("Switched command to FREIGHTER NORDWIND!", "good");
     }
     this.audio.click();
@@ -2462,8 +2476,12 @@ export class Game {
         if (tr.t <= 0) tr.line.visible = false;
       }
     }
-    // Schiff verschwunden?
-    if (this.sim.sunk) this.ship.group.visible = false;
+    // Keep Freighter visible while sinking in Sandbox/Battleship mode so it never despawns
+    if (this.sim.sunk && this.mode !== "sandbox" && this.activeVessel !== "battleship") {
+      this.ship.group.visible = false;
+    } else {
+      this.ship.group.visible = true;
+    }
     for (const c of this.ship.compartments) {
       const wm = c.waterMesh;
       wm.visible = c.fill > 0.004 && !this.sim.sunk;
