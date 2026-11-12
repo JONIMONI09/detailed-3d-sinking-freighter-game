@@ -1209,6 +1209,11 @@ export class Game {
       this.say("Switched command to FREIGHTER NORDWIND!", "good");
     }
     this.audio.click();
+    if (this.tabletOpen) {
+      this.toggleTablet(false);
+    } else if (!this.paused && !this.isTouch()) {
+      this.requestLock();
+    }
   }
 
   remoteTelegraph(dir: 1 | -1) {

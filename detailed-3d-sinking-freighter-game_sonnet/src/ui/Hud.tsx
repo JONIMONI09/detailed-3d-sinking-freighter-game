@@ -448,8 +448,16 @@ export default function Hud({ h, settings, touch, game }: { h: HudState; setting
         </div>
       )}
       {!h.tabletOpen && (
-        <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full border border-cyan-400/30 bg-black/55 px-3 py-1 text-[10px] font-bold tracking-wide text-cyan-200">
-          [TAB] Command Tablet · [V] Switch Ship ({h.activeVessel.toUpperCase()}) · [N] Fly
+        <div className="pointer-events-auto absolute bottom-3 left-1/2 flex -translate-x-1/2 gap-2 rounded-full border border-cyan-400/30 bg-black/65 px-3 py-1 text-[10px] font-bold tracking-wide text-cyan-200">
+          <button onClick={() => game?.toggleTablet(true)} className="hover:text-white">
+            [TAB] Command Tablet
+          </button>
+          <span className="text-slate-500">·</span>
+          <button onClick={() => game?.switchVessel()} className="hover:text-amber-300">
+            [V] Switch Ship ({h.activeVessel.toUpperCase()})
+          </button>
+          <span className="text-slate-500">·</span>
+          <span>[N] Fly</span>
         </div>
       )}
     </div>

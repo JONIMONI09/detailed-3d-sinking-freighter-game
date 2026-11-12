@@ -176,7 +176,7 @@ export class StormworksSupervisor {
     const lowestCompartmentWaterY = this.compartments.reduce((minY, c) => Math.min(minY, c.worldLevel), 0);
 
     for (const member of this.crew) {
-      stepCrew(member, dt, breaches, undefined, {
+      const ev = stepCrew(member, dt, breaches, undefined, {
         navmesh: this.navmesh,
         raycast,
         world,
@@ -186,6 +186,9 @@ export class StormworksSupervisor {
         vesselRollDeg,
         deckFloorY: -5.0,
       });
+      if (ev) {
+        console.log(`[NORDWIND/CREW] ${member.name} (${member.role}) -> ${ev} at (${member.x.toFixed(1)}, ${member.y.toFixed(1)}, ${member.z.toFixed(1)}) [kits=${member.patchKits}, breaches=${breaches.length}]`);
+      }
 
       // Synchronize repaired breach areas back to hole geometry
       for (const b of breaches) {

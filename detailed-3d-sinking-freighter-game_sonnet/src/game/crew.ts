@@ -116,10 +116,10 @@ export const REPAIR_REACH = 1.4;
 export const HIGH_BREACH_THRESHOLD_Y = 2.0;
 
 export const DEFAULT_CREW_CONFIG: CrewConfig = {
-  walkSpeed: 2.4,
-  detectRadius: 30,
-  reactionTime: 1,
-  repairRate: 0.35,
+  walkSpeed: 2.8,
+  detectRadius: 120,
+  reactionTime: 0.5,
+  repairRate: 0.45,
   patrol: [],
 };
 
@@ -421,7 +421,7 @@ export function stepCrew(
 
       walkToward(m, target.x, target.y, target.z, cfg.walkSpeed * dt, ctx?.raycast, ctx?.world, dt);
 
-      if (dist(m, target) <= REPAIR_REACH) {
+      if (dist(m, target) <= REPAIR_REACH || (horizontalDist <= REPAIR_REACH + 0.8 && Math.abs(target.y - m.y) <= 3.5)) {
         enter(m, "repairing");
         return "arrived";
       }
