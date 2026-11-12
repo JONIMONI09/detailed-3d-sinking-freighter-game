@@ -168,6 +168,13 @@ A bare `/brainstorming` or `/find-skills` is not a Freebuff command; the
 `/skill:` prefix is required. Skill discovery happens at session start, so
 reload the chat (or start a new one) after adding, moving, or renaming a skill.
 
+A fresh `@codebuff/sdk@0.10.7` `loadSkills()` run against this repository
+returned all four project skills from `.agents/skills/` with their exact
+`/skill:<name>` handles and no duplicate or shadowing warning. The six account
+skills are enabled in the account registry and use the same `/skill:` form.
+The Desktop slash-menu rendering after a reload remains the UI-only check; the
+loader proof does not cover it. See [CI_DEPLOYMENT.md](CI_DEPLOYMENT.md) §19.
+
 - `error-fix-document` — bug and incident workflow with fallback and docs.
 - `ci-workflow-audit` — YAML validation, exact-SHA CI gate and Pages checks.
 - `documentation-maintenance` — stale-claim scan and evidence recording.

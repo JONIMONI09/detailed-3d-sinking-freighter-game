@@ -61,6 +61,13 @@
 - **Verified:** The skill parses as YAML, the suite now validates four skills, and `npm test` passes 5/5 physics, 14/14 browser guards and 10/10 Python; branch run `43224320242`, main CI `43225088772` and Pages `43225088864` all **success** on `4b7480a`; root build 956.10 kB/`092f298f…`, Sonnet unchanged; live `/` 200/956,096 and `/sonnet/` 200/1,001,088. See `CI_DEPLOYMENT.md` §18.
 - **Lesson:** Encode discovery checks as a skill so the next missing-command report follows one repeatable path instead of a new guess.
 
+### [RESOLVED] Skill Registration Was Not Proven by Execution
+- **Issue:** The repository could show four `SKILL.md` files and a passing YAML check while still leaving open whether a fresh Freebuff process actually loaded them.
+- **Root Cause:** Earlier verification stopped at the filesystem and CI layer; it did not call the real SDK loader or compare project names against the account registry.
+- **Fix:** Ran `@codebuff/sdk@0.10.7` `loadSkills()` in a fresh Node process with both project-only and home-inclusive options. No repository change was needed; §19 records the method and the UI-only gap.
+- **Verified:** Four project skills loaded from `.agents/skills/`, each with its exact `/skill:<name>` handle; six account skills were enabled; project/account intersection was empty; no warnings; `.claude/skills` absent. The temporary SDK install was removed.
+- **Lesson:** Loader execution and account-registry comparison are separate evidence from file listing and CI; UI rendering after reload remains a separate, unprovable-from-CLI layer.
+
 ### [RESOLVED] GitHub Pages Deploy Never Created a Site
 - **Issue:** The Pages workflow never published a site; the project URL stayed blank or 404.
 - **Root Cause:** `actions/configure-pages` ran without `enablement`, so the job aborted whenever no Pages site existed; no `github-pages` environment was declared; and a branch-based Pages source would serve the raw `index.html`, which references `/src/main.tsx` and has no compiled CSS.

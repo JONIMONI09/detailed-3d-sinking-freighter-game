@@ -599,3 +599,56 @@ Live pages after the deployment:
 | :--- | :---: | ---: |
 | `https://jonimoni09.github.io/detailed-3d-sinking-freighter-game/` | 200 | 956,096 |
 | `https://jonimoni09.github.io/detailed-3d-sinking-freighter-game/sonnet/` | 200 | 1,001,088 |
+
+---
+
+## 19. Fresh loader verification (2026-11-12)
+
+A fresh Node.js 26 process using the published `@codebuff/sdk@0.10.7`
+`loadSkills()` implementation was run against this repository. This was not a
+file listing: the SDK parsed the discovered `SKILL.md` files and returned the
+skills map. The run used both `includeHomeSkills: false` and
+`includeHomeSkills: true`; both returned the same four project skills.
+
+| Project skill | Exact handle | Loaded path |
+| :--- | :--- | :--- |
+| `ci-workflow-audit` | `/skill:ci-workflow-audit` | `.agents/skills/ci-workflow-audit/SKILL.md` |
+| `documentation-maintenance` | `/skill:documentation-maintenance` | `.agents/skills/documentation-maintenance/SKILL.md` |
+| `error-fix-document` | `/skill:error-fix-document` | `.agents/skills/error-fix-document/SKILL.md` |
+| `skill-discovery-audit` | `/skill:skill-discovery-audit` | `.agents/skills/skill-discovery-audit/SKILL.md` |
+
+The account registry was checked separately because account skills are not
+stored in the project tree. All six account skills were enabled:
+
+| Account skill | Exact handle | State |
+| :--- | :--- | :--- |
+| `brainstorming` | `/skill:brainstorming` | enabled |
+| `find-skills` | `/skill:find-skills` | enabled |
+| `skill-creator` | `/skill:skill-creator` | enabled |
+| `web-design-guidelines` | `/skill:web-design-guidelines` | enabled |
+| `performance` | `/skill:performance` | enabled |
+| `github-actions-docs` | `/skill:github-actions-docs` | enabled |
+
+Freebuff registers each loaded name with `getSlashCommandsWithSkills()` as
+`skill:${name}` and inserts `/skill:${name}`. The loader returned no warnings;
+project/account name intersection was empty, so there was no shadowing. The
+project count was 4, the account count was 6, the home-inclusive count stayed
+4, and `.claude/skills` was absent. The temporary SDK install was removed and
+no dependency was added to the repository.
+
+Verified by execution:
+
+- all four project skills load from `.agents/skills/`
+- names, paths and `/skill:<name>` handles match
+- the home-inclusive load does not change the project result
+- no duplicate, shadowing or loader warnings
+- all six account skills are enabled separately
+
+Only the UI can verify:
+
+- whether a particular Desktop session renders the `/skill:` menu after reload
+- whether that session accepts the command in its input field
+
+A loader process cannot prove those pixels or the state of a chat that has not
+been reloaded. `npx skills find` is catalog search and does not load local
+skills; it was used only for the requested ecosystem search.
