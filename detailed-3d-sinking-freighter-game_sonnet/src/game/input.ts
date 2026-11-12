@@ -13,7 +13,8 @@ export type Action =
   | "pause"
   | "jump"
   | "alt"
-  | "status";
+  | "status"
+  | "terminal";
 
 export class Input {
   keys = new Set<string>();
@@ -109,6 +110,7 @@ export class Input {
       KeyP: "pause",
       Space: "jump",
       Tab: "status",
+      KeyT: "terminal",
     };
     const a = map[e.code];
     if (a) this.queue.add(a);

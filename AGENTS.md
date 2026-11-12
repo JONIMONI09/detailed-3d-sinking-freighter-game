@@ -15,6 +15,8 @@
   - `src/audio/SoundEngine.ts`: Web Audio API procedural sound effects for hull creaks, explosions, water rush, alarms.
 
 ## Subtree Governance
+- **Primary engine:** `detailed-3d-sinking-freighter-game_sonnet/` is the main game engine; the root `vite.config.ts` builds it. Do not alter the equations in its `src/game/shipSim.ts` or `src/game/physics.ts`. The former root `src/` (Maritime Viewport edition) is legacy.
+- **Door security:** `src/game/doorSecurity.ts` (safety interlock, confirmation, terminal log) is pure and read-only toward the simulation; it is covered by `tests/door-security.test.mjs`.
 - **Code Language:** English (identifiers, comments, docs, commit messages).
 - **Quality Standard:** 100% complete implementations; strictly NO placeholders, NO empty stubs, NO `// TODO` markers.
 

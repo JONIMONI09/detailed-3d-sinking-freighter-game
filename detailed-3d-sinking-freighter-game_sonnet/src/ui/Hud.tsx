@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { HudState } from "../game/game";
 import type { Settings } from "../game/settings";
+import type { TerminalEntry } from "../game/doorSecurity";
 
 function Bar({ value, color, label, icon }: { value: number; color: string; label: string; icon: string }) {
   return (
@@ -66,6 +67,34 @@ function ShipStatus({ h }: { h: HudState }) {
       <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/10">
         <div className="h-full" style={{ width: `${sinkPct}%`, background: sinkPct > 80 ? "#ef4444" : "#f59e0b" }} />
       </div>
+    </div>
+  );
+}
+
+const TERMINAL_VISIBLE_SECONDS = 9;
+
+const TERMINAL_COLOR: Record<TerminalEntry["level"], string> = {
+  info: "text-slate-200",
+  ok: "text-emerald-300",
+  warn: "text-amber-300",
+  alert: "text-red-300",
+};
+
+/** Door and bulkhead security terminal. Fades out unless pinned with [T]. */
+function Terminal({ h }: { h: HudState }) {
+  const lines = h.terminalPinned ? h.terminal : h.terminal.filter((e) => h.time - e.time < TERMINAL_VISIBLE_SECONDS).slice(-5);
+  if (lines.length === 0) return null;
+  return (
+    <div className="w-[340px] max-w-[70vw] rounded-lg border border-emerald-400/30 bg-black/65 p-2 font-mono text-[10px] leading-snug backdrop-blur-sm">
+      <div className="mb-0.5 flex justify-between font-bold tracking-wider text-emerald-300">
+        <span>▮ DOOR SECURITY TERMINAL</span>
+        <span className="text-slate-400">[T] {h.terminalPinned ? "unpin" : "pin"}</span>
+      </div>
+      {lines.map((e) => (
+        <div key={e.id} className={`truncate ${TERMINAL_COLOR[e.level]}`} title={e.text}>
+          <span className="text-slate-500">{String(Math.floor(e.time / 60)).padStart(2, "0")}:{String(Math.floor(e.time % 60)).padStart(2, "0")}</span> {e.source} {e.text}
+        </div>
+      ))}
     </div>
   );
 }
@@ -166,6 +195,13 @@ export default function Hud({ h, settings, touch }: { h: HudState; settings: Set
         {settings.showFps && <div className="mt-1 text-right font-mono text-[11px] text-lime-300">{h.fps} FPS</div>}
       </div>
 
+      {/* Door-Security-Terminal */}
+      {!h.escape && (
+        <div className="absolute left-2 origin-bottom-left" style={{ transform: `scale(${sc})`, bottom: touch ? 8 : 76 }}>
+          <Terminal h={h} />
+        </div>
+      )}
+
       {/* Meldungen */}
       <div className="absolute left-1/2 top-[18%] flex w-full flex-col items-center gap-1 px-3" style={{ transform: `translateX(-50%) scale(${sc})` }}>
         {h.messages.slice(-4).map((m) => (
@@ -191,7 +227,7 @@ export default function Hud({ h, settings, touch }: { h: HudState; settings: Set
       {/* Interaktions-Hinweis */}
       {h.prompt && !h.escape && (
         <div className="absolute left-1/2 top-[58%]" style={{ transform: `translateX(-50%) scale(${sc})` }}>
-          <div className={`flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-bold shadow-xl backdrop-blur-sm ${h.promptKind === "locked" ? "border-red-400/60 bg-red-950/70 text-red-100" : "border-white/40 bg-black/70 text-white"}`}>
+          <div className={`flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-bold shadow-xl backdrop-blur-sm ${h.promptKind === "locked" ? "border-red-400/60 bg-red-950/70 text-red-100" : h.promptKind === "confirm" ? "animate-pulse border-amber-400/70 bg-amber-950/80 text-amber-100" : "border-white/40 bg-black/70 text-white"}`}>
             <span className="rounded-md border border-white/60 bg-white/15 px-2 py-0.5 font-mono text-xs">{touch ? "USE" : "E"}</span>
             <span>{h.prompt}</span>
           </div>

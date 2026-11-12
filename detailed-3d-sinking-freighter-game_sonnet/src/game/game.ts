@@ -13,6 +13,8 @@ import { createTextures, setAnisotropy, TexSet } from "./textures";
 import { ViewModel, WEAPONS, WeaponId } from "./weapons";
 import { Guard } from "./enemies";
 import { rayAABB } from "./physics";
+import { DoorSecurity, TerminalEntry, TerminalLog } from "./doorSecurity";
+import type { SecurityContext } from "./doorSecurity";
 
 export type Mode = "mission" | "sandbox";
 
@@ -29,7 +31,7 @@ export interface HudState {
   underwater: boolean;
   wading: boolean;
   prompt: string;
-  promptKind: "" | "normal" | "locked";
+  promptKind: "" | "normal" | "locked" | "confirm";
   objectives: { text: string; done: boolean }[];
   messages: { id: number; text: string; kind: string }[];
   flood: { name: string; fill: number; flow: number }[];
@@ -59,6 +61,8 @@ export interface HudState {
   dragMode: boolean;
   sunk: boolean;
   guardsAlive: number;
+  terminal: TerminalEntry[];
+  terminalPinned: boolean;
 }
 
 export interface EndInfo {
@@ -179,8 +183,12 @@ export class Game {
   armedCount = 0;
   escapeState: null | { boat: Lifeboat; t: number; phase: number; startPos: THREE.Vector3; dir: THREE.Vector3; speed: number } = null;
   prompt = "";
-  promptKind: "" | "normal" | "locked" = "";
+  promptKind: "" | "normal" | "locked" | "confirm" = "";
   promptTarget: null | (() => void) = null;
+  /** Terminal log of all door operations and security decisions. */
+  terminal = new TerminalLog(64, (e) => console.debug(`[NORDWIND/${e.source}] t=${e.time.toFixed(1)}s ${e.level.toUpperCase()} ${e.text}`));
+  doorSecurity = new DoorSecurity(this.terminal);
+  terminalPinned = false;
   tracers: { line: THREE.Line; t: number }[] = [];
   holes: THREE.Mesh[] = [];
   holeIdx = 0;
@@ -305,8 +313,10 @@ export class Game {
         if (e === "open") this.audio.door(door.kind === "slide" ? "slide" : "open", pos);
         else if (e === "close") this.audio.door(door.kind === "slide" ? "slide" : "close", pos);
         else if (e === "unlock") this.audio.unlock();
+        this.doorSecurity.recordEvent(door, e, this.securityContext());
       };
     });
+    this.terminal.push(0, "info", "SYS", `Door security online: ${this.ship.doors.length} doors, ${this.ship.doors.filter((d) => d.bulkhead).length} watertight bulkheads monitored`);
 
     prog(0.6, "Effects …");
     this.pn = new ParticleSystem(4000, false);
@@ -795,7 +805,10 @@ export class Game {
     }
     if (inp.pressed("detonate")) this.detonateAll();
     inp.pressed("status");
-
+    if (inp.pressed("terminal")) {
+      this.terminalPinned = !this.terminalPinned;
+      this.audio.click();
+    }
     // Nachladen
     if (inp.pressed("reload")) this.startReload();
     if (this.reloading) {
@@ -1517,7 +1530,8 @@ export class Game {
     let best = -1e9;
     let bestAct: (() => void) | null = null;
     let bestText = "";
-    let bestKind: "" | "normal" | "locked" = "";
+    let bestKind: "" | "normal" | "locked" | "confirm" = "";
+    const secCtx = this.securityContext();
     for (const d of this.ship.doors) {
       const to = d.center.clone().sub(eye);
       const dist = to.length();
@@ -1529,8 +1543,9 @@ export class Game {
       const score = -dist + dot * 1.5;
       if (score > best) {
         best = score;
-        bestKind = d.locked ? "locked" : "normal";
-        bestText = d.locked ? `${d.name} – locked (${d.locked === "red" ? "red" : "blue"} access card required)` : d.target === 1 ? `Close ${d.name}` : `Open ${d.name}`;
+        const pr = this.doorSecurity.prompt(d, secCtx);
+        bestKind = pr.kind;
+        bestText = pr.text;
         bestAct = () => this.useDoor(d);
       }
     }
@@ -1555,21 +1570,37 @@ export class Game {
     }
   }
 
+  /** Snapshot of everything the door safety checks need to read. */
+  private securityContext(): SecurityContext {
+    return {
+      now: this.time,
+      hasKey: this.hasKey,
+      sandbox: this.mode === "sandbox",
+      sinking: this.sim.sinking,
+      compartments: this.ship.compartments,
+    };
+  }
+
   private useDoor(d: Door) {
-    if (d.locked) {
-      if (this.hasKey[d.locked]) {
-        const card = d.locked === "red" ? "red" : "blue";
-        d.unlock();
-        this.say(`${d.name} unlocked with the ${card} card.`, "good");
-        const p = this.player.body;
-        d.toggle(p.x, p.z);
-      } else {
-        this.audio.locked();
-        this.say(`Locked. You need the ${d.locked === "red" ? "red" : "blue"} access card.`, "warn");
-      }
+    const decision = this.doorSecurity.request(d, this.securityContext());
+    if (decision.action === "deny") {
+      this.audio.locked();
+      this.say(decision.message, "warn");
+      return;
+    }
+    if (decision.action === "confirm") {
+      this.audio.locked();
+      this.say(decision.message, "alert");
       return;
     }
     const p = this.player.body;
+    if (d.locked) {
+      const card = d.locked === "red" ? "red" : "blue";
+      d.unlock();
+      this.say(`${d.name} unlocked with the ${card} card.`, "good");
+    } else if (decision.level === "warn" || decision.level === "alert") {
+      this.say(decision.message, "warn");
+    }
     d.toggle(p.x, p.z);
   }
 
@@ -2138,6 +2169,8 @@ export class Game {
       dragMode: this.dragMode,
       sunk: this.sim.sunk,
       guardsAlive: this.guards.filter((g) => !g.dead).length,
+      terminal: this.terminal.recent(10),
+      terminalPinned: this.terminalPinned,
     };
     this.cb.onHud(hud);
   }

@@ -131,6 +131,7 @@ interface Opening {
   top?: number;
   hinge?: 1 | -1;
   name?: string;
+  bulkhead?: boolean;
 }
 
 export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
@@ -244,6 +245,7 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
       kind: o.kind === "sdoor" ? "slide" : "swing",
       locked: opts.sandbox ? null : (o.key ?? null),
       heavy,
+      bulkhead: !!o.bulkhead,
     });
     group.add(d.pivot);
     doors.push(d);
@@ -531,7 +533,7 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
   rectBox("steel", -WI, WI, FLOOR_Y, CEIL_Y, BZ.b3 + 0.25, BZ.b3 + 0.6, false);
   // Schotten
   for (const zc of [BZ.b0, BZ.b1, BZ.b2]) {
-    wall("x", zc, -WI, WI, FLOOR_Y, CEIL_Y, 0.5, "steel", [{ c: 0, w: 1.5, kind: "sdoor", hinge: -1, name: "Watertight Bulkhead" }], true);
+    wall("x", zc, -WI, WI, FLOOR_Y, CEIL_Y, 0.5, "steel", [{ c: 0, w: 1.5, kind: "sdoor", hinge: -1, name: "Watertight Bulkhead", bulkhead: true }], true);
   }
   wall("x", BZ.b3, -WI, WI, FLOOR_Y, CEIL_Y, 0.5, "steel");
   // Decke der Räume wird durch das Deck gebildet. Decken-Unterseite sichtbar (steel)

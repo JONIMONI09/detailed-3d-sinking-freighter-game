@@ -45,6 +45,8 @@ export class Door {
   c: number;
   y0: number;
   heavy: boolean;
+  /** Watertight bulkhead door: subject to the flooding safety interlock. */
+  bulkhead: boolean;
   speed: number;
   sign = 1;
   leafDir: number;
@@ -55,7 +57,7 @@ export class Door {
   constructor(
     world: CollisionWorld,
     mat: THREE.Material,
-    opts: { name: string; axis: "x" | "z"; fixed: number; c: number; w: number; y0: number; h: number; hinge?: 1 | -1; kind?: "swing" | "slide"; locked?: KeyColor | null; heavy?: boolean },
+    opts: { name: string; axis: "x" | "z"; fixed: number; c: number; w: number; y0: number; h: number; hinge?: 1 | -1; kind?: "swing" | "slide"; locked?: KeyColor | null; heavy?: boolean; bulkhead?: boolean },
   ) {
     this.name = opts.name;
     this.axis = opts.axis;
@@ -67,6 +69,7 @@ export class Door {
     this.y0 = opts.y0;
     this.locked = opts.locked ?? null;
     this.heavy = !!opts.heavy;
+    this.bulkhead = !!opts.bulkhead;
     this.speed = this.kind === "slide" ? 0.75 : 1.8;
     const hinge = opts.hinge ?? -1;
     this.leafDir = -hinge; // Richtung vom Scharnier zur gegenüberliegenden Zarge

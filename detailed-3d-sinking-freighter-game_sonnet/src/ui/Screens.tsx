@@ -155,6 +155,7 @@ export function HelpPanel({ onClose }: { onClose: () => void }) {
           <Sec t="Tips">
             <ul className="list-disc space-y-1 pl-5">
               <li>Doors have real collision – you can only pass through open doors. Locked doors need the matching access card (blue/red). A door never closes on you.</li>
+              <li>Watertight bulkhead interlock: opening a bulkhead toward a flooded compartment needs confirmation (press <K k="E" /> twice within 3 seconds). Every door action is logged in the door security terminal – <K k="T" /> pins it.</li>
               <li>The <b>blue card</b> is in the cabins (deck 1) – it opens the gate to cargo hold 2. The <b>red card</b> is on the bridge – it opens the engine room.</li>
               <li>TNT: throw it or place it with the right mouse button. The fuse burns – or detonate all charges instantly with <K k="G" />. Shots at TNT and red barrels trigger explosions.</li>
               <li>Only explosions near the outer hull <i>below</i> the waterline open a leak. Water enters through the holes, rises, and the ship lists – you slide down the slope!</li>
