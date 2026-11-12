@@ -879,7 +879,7 @@ a follow-up documentation commit.
 | Main skill | `.agents/skills/skill-index/SKILL.md` plus the Account copy |
 | Documentation index | `docs/SKILLS.md`: 5 project skills, 6 other Account skills, 11 total |
 | Tool inventory | `docs/AGENT_TOOLS.md`: current English tool list and CodeGraph commands |
-| Error ledger | `docs/ERRORS_AND_FIXES.md`: six incidents, including the CI failures below |
+| Error ledger | `docs/ERRORS_AND_FIXES.md`: seven incidents, including the CI failures below |
 | Documentation gate | `tools/check_skill_docs.py` + `npm run docs:check` |
 | CodeGraph | `@astudioplus/codegraph-mcp@0.21.0`, Apache-2.0, graph-only one-shot mode |
 | CI | `npm run docs:check` after `npm test` |
@@ -942,7 +942,15 @@ rendered canvas. The right-side preview panel was opened for the user.
 
 ### 23.5 Main and Pages
 
-The feature branch is verified at `e00a232`. The fast-forward merge, main CI,
-Pages deployment and live URL checks are performed after this evidence is
-committed; their exact run IDs and HTTP results are reported in the delivery
-message because an evidence-only commit changes the SHA again.
+The feature branch is verified at `e00a232` and the documentation commit at
+`4d6b0ce`. The fast-forward merge to `main` produced:
+
+| Check | Result |
+| :--- | :--- |
+| Main CI | Run `43257181509`, success on `4d6b0ce` |
+| Pages deployment | Run `43257181169`, success on `4d6b0ce` |
+| Live root | HTTP 200, 956,117 bytes, SHA-256 `2841dd3980ca418cdaf5c4e0f0ec85a9ea7194878029041f9332ef92005855ab`; title `MS POSEIDON VII // 3D Freighter Sinking & Demolition Simulator` |
+| Live `/sonnet/` | HTTP 200, 1,001,088 bytes, SHA-256 `7ea4957dfe82f83ac489e159b5683d0a2f056424329399482cd1ffa5d1a9635f`; title `NORDWIND - Freighter Sabotage 3D` |
+
+This text was added in a follow-up documentation commit; its own CI/Pages run
+is reported in the delivery message because the commit changes the SHA again.
