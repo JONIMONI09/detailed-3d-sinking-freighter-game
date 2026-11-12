@@ -104,6 +104,7 @@ export class StormworksSupervisor {
     baseFloodSpeed: number,
     raycast?: RaycastFn,
     blastImpulse = 0,
+    world?: import("./crew").CrewWorld,
   ): void {
     // 1. Modulate flood speed with sandbox dial
     const currentFloodRate = effectiveFloodSpeed(this.sandbox, baseFloodSpeed);
@@ -178,6 +179,7 @@ export class StormworksSupervisor {
       stepCrew(member, dt, breaches, undefined, {
         navmesh: this.navmesh,
         raycast,
+        world,
         waterVelocity: this.activeWaterVelocity,
         waterLevelY: lowestCompartmentWaterY,
         blastImpulse,

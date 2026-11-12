@@ -706,6 +706,7 @@ export class Game {
         };
       },
       this.shake * 180,
+      this.ship.world,
     );
 
     // Real vessel propulsion and rudder steering

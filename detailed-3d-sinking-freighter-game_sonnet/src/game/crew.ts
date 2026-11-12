@@ -79,9 +79,29 @@ export interface CrewConfig {
   patrol: readonly { x: number; y: number; z: number }[];
 }
 
+export interface CrewWorld {
+  raycast: (
+    ox: number,
+    oy: number,
+    oz: number,
+    dx: number,
+    dy: number,
+    dz: number,
+    maxDist: number,
+    filter?: (c: { tag?: string; owner?: unknown }) => boolean,
+  ) => { collider: { owner?: unknown }; dist: number } | null;
+  move: (
+    body: { x: number; y: number; z: number; vx: number; vy: number; vz: number; r: number; h: number; onGround: boolean },
+    dx: number,
+    dy: number,
+    dz: number,
+  ) => void;
+}
+
 export interface CrewStepContext {
   navmesh?: NavMesh3D;
   raycast?: RaycastFn;
+  world?: CrewWorld;
   waterVelocity?: Vector3Like;
   waterLevelY?: number;
   blastImpulse?: number;
@@ -215,13 +235,28 @@ function walkToward(
   tz: number,
   step: number,
   raycast?: RaycastFn,
+  world?: CrewWorld,
 ) {
   const dx = tx - m.x,
     dz = tz - m.z;
   const d = Math.hypot(dx, dz);
   if (d <= 1e-6) return;
 
-  let desiredStep: Vector3Like = v3((dx / d) * step, 0, (dz / d) * step);
+  const nx = dx / d;
+  const nz = dz / d;
+
+  // Enemy-AI style automatic door opening when approaching closed unlocked doors
+  if (world) {
+    const doorRay = world.raycast(m.x, m.y + 1.0, m.z, nx, 0, nz, 1.4, (c) => c.tag === "door");
+    if (doorRay && doorRay.collider.owner) {
+      const door = doorRay.collider.owner as { locked?: boolean; target: number; fixed: number; forceOpen: (dir: number) => void };
+      if (!door.locked && door.target === 0) {
+        door.forceOpen(Math.sign(m.z - door.fixed) || 1);
+      }
+    }
+  }
+
+  let desiredStep: Vector3Like = v3(nx * step, 0, nz * step);
 
   // Apply 5-ray anti-clipping steering if raycast function is provided
   if (raycast) {
@@ -234,9 +269,17 @@ function walkToward(
     desiredStep = steering.vel;
   }
 
-  m.x += desiredStep.x;
-  m.y += desiredStep.y;
-  m.z += desiredStep.z;
+  if (world) {
+    const body = { x: m.x, y: m.y, z: m.z, vx: 0, vy: 0, vz: 0, r: 0.32, h: 1.7, onGround: true };
+    world.move(body, desiredStep.x, 0, desiredStep.z);
+    m.x = body.x;
+    m.y = body.y;
+    m.z = body.z;
+  } else {
+    m.x += desiredStep.x;
+    m.y += desiredStep.y;
+    m.z += desiredStep.z;
+  }
 }
 
 /** Advances one crew member by dt seconds; mutates the member and the breach it repairs. */
@@ -312,7 +355,7 @@ export function stepCrew(
   if (m.state === "traversing_door" && m.activeDoor) {
     const res = updateDoorInteraction(m.activeDoor, v3(m.x, m.y, m.z), dt);
     if (res.canMove && res.targetPos) {
-      walkToward(m, res.targetPos.x, res.targetPos.y, res.targetPos.z, cfg.walkSpeed * dt, ctx?.raycast);
+      walkToward(m, res.targetPos.x, res.targetPos.y, res.targetPos.z, cfg.walkSpeed * dt, ctx?.raycast, ctx?.world);
     }
     if (res.state === "complete") {
       m.activeDoor = undefined;
@@ -338,7 +381,7 @@ export function stepCrew(
       }
       if (cfg.patrol.length > 0) {
         const wp = cfg.patrol[m.patrolIndex % cfg.patrol.length];
-        walkToward(m, wp.x, wp.y, wp.z, cfg.walkSpeed * 0.5 * dt, ctx?.raycast);
+        walkToward(m, wp.x, wp.y, wp.z, cfg.walkSpeed * 0.5 * dt, ctx?.raycast, ctx?.world);
         if (dist(m, wp) < 0.5) m.patrolIndex = (m.patrolIndex + 1) % cfg.patrol.length;
       }
       return null;
@@ -370,7 +413,7 @@ export function stepCrew(
         return null;
       }
 
-      walkToward(m, target.x, target.y, target.z, cfg.walkSpeed * dt, ctx?.raycast);
+      walkToward(m, target.x, target.y, target.z, cfg.walkSpeed * dt, ctx?.raycast, ctx?.world);
 
       if (dist(m, target) <= REPAIR_REACH) {
         enter(m, "repairing");
