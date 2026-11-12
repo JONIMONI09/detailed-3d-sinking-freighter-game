@@ -18,7 +18,8 @@ export type Action =
   | "lockdown"
   | "godmode"
   | "noclip"
-  | "floodDial";
+  | "floodDial"
+  | "switchShip";
 
 export class Input {
   keys = new Set<string>();
@@ -123,6 +124,7 @@ export class Input {
       Space: "jump",
       Tab: "status",
       KeyT: "terminal",
+      KeyV: "switchShip",
     };
     const a = map[e.code];
     if (a) this.queue.add(a);

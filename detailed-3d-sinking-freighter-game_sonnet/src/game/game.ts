@@ -20,7 +20,7 @@ import { stepTelegraph, MAX_RUDDER_DEG, TELEGRAPH_SPEED } from "./bridge";
 import { shouldWindowBurst } from "./ingress";
 import { v3 } from "./navmesh3d";
 import { CrewVisual } from "./crewVisual";
-import { Battleship, createBattleship, stepBattleship, damageBattleship } from "./battleships";
+import { Battleship, createBattleship, stepBattleship, damageBattleship, fireBattleshipSalvo } from "./battleships";
 
 export type Mode = "mission" | "sandbox";
 
@@ -71,6 +71,13 @@ export interface HudState {
   terminalPinned: boolean;
   godMode: boolean;
   godModeHoldProgress: number;
+  tabletOpen: boolean;
+  activeVessel: "freighter" | "battleship";
+  vesselSpeed: number;
+  vesselRudder: number;
+  vesselTelegraph: string;
+  battleshipHp: number;
+  battleshipAvailable: boolean;
 }
 
 export interface EndInfo {
@@ -216,6 +223,8 @@ export class Game {
   battleships: Battleship[] = [];
   helmMode = false;
   helmThrottleCooldown = 0;
+  tabletOpen = false;
+  activeVessel: "freighter" | "battleship" = "freighter";
   engineExploded = false;
   private tmpV = V();
   private tmpQ = new THREE.Quaternion();
@@ -782,7 +791,7 @@ export class Game {
 
     const p = this.player;
     const b = p.body;
-    const controls = !this.dead && !this.escapeState && !this.ended && !this.helmMode;
+    const controls = !this.dead && !this.escapeState && !this.ended && !this.helmMode && !this.tabletOpen;
 
     // Spieler
     const ev = p.update(
@@ -806,8 +815,24 @@ export class Game {
     if (b.y < -25 || !isFinite(b.x + b.y + b.z)) {
       this.damagePlayer(1000, "fell out of the world");
     }
-    // Sicherheitsnetz: Schiff verlassen / außerhalb der Welt -> zurück an Deck (ausgesetzt bei Noclip-Flug)
-    if (controls && !this.supervisor.isNoclip() && (Math.abs(b.x) > 13.5 || b.z < -72 || b.z > 72 || b.y > 25)) {
+    // Sicherheitsnetz: aktives Schiff (Freighter oder Battleship)
+    if (this.activeVessel === "battleship" && this.battleships[0]) {
+      const bs = this.battleships[0];
+      if (!this.supervisor.isNoclip()) {
+        const minX = bs.baseX + bs.deckBounds.minX + 0.4;
+        const maxX = bs.baseX + bs.deckBounds.maxX - 0.4;
+        const minZ = bs.baseZ + bs.deckBounds.minZ + 0.4;
+        const maxZ = bs.baseZ + bs.deckBounds.maxZ - 0.4;
+        b.x = Math.max(minX, Math.min(maxX, b.x));
+        b.z = Math.max(minZ, Math.min(maxZ, b.z));
+        const deckY = bs.group.position.y + bs.deckBounds.deckY;
+        if (b.y < deckY) {
+          b.y = deckY;
+          b.vy = 0;
+          b.onGround = true;
+        }
+      }
+    } else if (controls && !this.supervisor.isNoclip() && (Math.abs(b.x) > 13.5 || b.z < -72 || b.z > 72 || b.y > 25)) {
       p.teleport(9.8, DECK_Y, -42, Math.PI);
       this.say("Placed back on deck.", "warn");
     }
@@ -986,7 +1011,12 @@ export class Game {
       this.godModeHoldProgress = 0;
     }
 
-    inp.pressed("status");
+    if (inp.pressed("status")) {
+      this.toggleTablet();
+    }
+    if (inp.pressed("switchShip")) {
+      this.switchVessel();
+    }
     if (inp.pressed("terminal")) {
       this.terminalPinned = !this.terminalPinned;
       this.audio.click();
@@ -1052,6 +1082,103 @@ export class Game {
         this.fireHeld = true;
       } else this.fireHeld = false;
     }
+  }
+
+  toggleTablet(force?: boolean) {
+    this.tabletOpen = force ?? !this.tabletOpen;
+    this.audio.click();
+    if (this.tabletOpen && document.pointerLockElement) {
+      try {
+        document.exitPointerLock();
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  switchVessel() {
+    if (!this.battleships.length) {
+      this.say("No Battleship spawned in this mode.", "warn");
+      return;
+    }
+    const bs = this.battleships[0];
+    if (this.activeVessel === "freighter") {
+      this.activeVessel = "battleship";
+      this.helmMode = false;
+      this.player.teleport(bs.baseX, bs.group.position.y + bs.deckBounds.deckY + 0.2, bs.baseZ - 10, 0);
+      this.say("Switched command to BATTLESHIP!", "good");
+    } else {
+      this.activeVessel = "freighter";
+      this.helmMode = false;
+      this.player.teleport(9.8, DECK_Y, -42, Math.PI);
+      this.say("Switched command to FREIGHTER NORDWIND!", "good");
+    }
+    this.audio.click();
+  }
+
+  remoteTelegraph(dir: 1 | -1) {
+    if (this.activeVessel === "battleship" && this.battleships[0]) {
+      const bs = this.battleships[0];
+      bs.targetSpeed = Math.max(-6, Math.min(14, bs.targetSpeed + dir * 4));
+      this.say(`Battleship Target Speed: ${bs.targetSpeed.toFixed(0)} m/s`, "good");
+    } else {
+      const helm = this.supervisor.helm;
+      helm.telegraph = stepTelegraph(helm.telegraph, dir);
+      this.say(`Freighter Telegraph: ${helm.telegraph.toUpperCase()} (${TELEGRAPH_SPEED[helm.telegraph]} m/s)`, "good");
+    }
+    this.audio.click();
+  }
+
+  remoteRudder(deg: number) {
+    if (this.activeVessel === "battleship" && this.battleships[0]) {
+      this.battleships[0].rudderDeg = Math.max(-MAX_RUDDER_DEG, Math.min(MAX_RUDDER_DEG, deg));
+      this.say(`Battleship Rudder: ${this.battleships[0].rudderDeg.toFixed(0)}°`, "info");
+    } else {
+      this.supervisor.helm.rudderCmd = Math.max(-MAX_RUDDER_DEG, Math.min(MAX_RUDDER_DEG, deg));
+      this.say(`Freighter Rudder: ${this.supervisor.helm.rudderCmd.toFixed(0)}°`, "info");
+    }
+    this.audio.click();
+  }
+
+  remoteFireSalvo() {
+    const bs = this.battleships[0];
+    if (!bs || bs.sunk) {
+      this.say("No active Battleship turrets available.", "warn");
+      return;
+    }
+    const target = this.ship.group.position.clone();
+    fireBattleshipSalvo(bs, target, (muzzle, dir) => {
+      this.tracer(muzzle, muzzle.clone().addScaledVector(dir, 75), 0xff5522);
+      this.audio.shot("rifle");
+    });
+    this.say("BATTLESHIP SALVO FIRED!", "alert");
+  }
+
+  remoteLockdown() {
+    const closed = this.supervisor.lockdownBulkheads();
+    this.alarm = true;
+    this.say(`MASTER LOCKDOWN: ${closed} watertight bulkheads sealed!`, "alert");
+  }
+
+  remoteToggleGodMode() {
+    const on = this.supervisor.toggleGodMode();
+    if (on) {
+      this.player.health = 100;
+      this.player.armor = 100;
+      this.player.alive = true;
+      this.dead = false;
+    }
+    this.say(on ? "GOD MODE: ON" : "GOD MODE: OFF", on ? "good" : "warn");
+  }
+
+  remoteToggleNoclip() {
+    const on = this.supervisor.toggleNoclip();
+    this.say(on ? "NOCLIP: ON" : "NOCLIP: OFF", on ? "good" : "warn");
+  }
+
+  remoteCycleFlood() {
+    const rate = this.supervisor.cycleFloodRate();
+    this.say(`FLOOD RATE: ${rate}x`, "info");
   }
 
   private handleHelm(dt: number) {
@@ -2483,6 +2610,16 @@ export class Game {
       terminalPinned: this.terminalPinned,
       godMode: this.supervisor.isGodMode(),
       godModeHoldProgress: this.godModeHoldProgress,
+      tabletOpen: this.tabletOpen,
+      activeVessel: this.activeVessel,
+      vesselSpeed: this.activeVessel === "battleship" && this.battleships[0] ? this.battleships[0].speed : this.supervisor.helm.speed,
+      vesselRudder: this.activeVessel === "battleship" && this.battleships[0] ? this.battleships[0].rudderDeg : this.supervisor.helm.rudderDeg,
+      vesselTelegraph:
+        this.activeVessel === "battleship" && this.battleships[0]
+          ? `${this.battleships[0].targetSpeed.toFixed(0)} m/s`
+          : this.supervisor.helm.telegraph.toUpperCase(),
+      battleshipHp: this.battleships[0] ? Math.round(this.battleships[0].hp) : 0,
+      battleshipAvailable: this.battleships.length > 0,
     };
     this.cb.onHud(hud);
   }

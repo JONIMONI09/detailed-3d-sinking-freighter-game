@@ -59,6 +59,8 @@ export interface CrewMember {
   /** Seconds spent in the current state. */
   stateTime: number;
   patrolIndex: number;
+  vy?: number;
+  onGround?: boolean;
 
   // Extended navigation & physics states
   ragdoll?: ArticulatedRagdoll;
@@ -236,6 +238,7 @@ function walkToward(
   step: number,
   raycast?: RaycastFn,
   world?: CrewWorld,
+  dt = 0.016,
 ) {
   const dx = tx - m.x,
     dz = tz - m.z;
@@ -270,11 +273,14 @@ function walkToward(
   }
 
   if (world) {
-    const body = { x: m.x, y: m.y, z: m.z, vx: 0, vy: 0, vz: 0, r: 0.32, h: 1.7, onGround: true };
-    world.move(body, desiredStep.x, 0, desiredStep.z);
+    const vy = Math.max(-20, (m.vy ?? 0) - 18 * dt);
+    const body = { x: m.x, y: m.y, z: m.z, vx: 0, vy, vz: 0, r: 0.34, h: 1.75, onGround: m.onGround ?? false };
+    world.move(body, desiredStep.x, body.vy * dt, desiredStep.z);
     m.x = body.x;
     m.y = body.y;
     m.z = body.z;
+    m.vy = body.onGround ? 0 : body.vy;
+    m.onGround = body.onGround;
   } else {
     m.x += desiredStep.x;
     m.y += desiredStep.y;
@@ -293,8 +299,8 @@ export function stepCrew(
   m.stateTime += dt;
   enforceShipBoundsAndRespawn(m);
 
-  // 1. Dynamic Ragdoll Evaluation
-  if (ctx) {
+  // 1. Dynamic Ragdoll Evaluation (skip floor-dropping ragdoll when CollisionWorld physics is active)
+  if (ctx && !ctx.world) {
     const sensors: RagdollTriggerSensors = {
       waterVelocity: ctx.waterVelocity || v3(0, 0, 0),
       blastImpulse: ctx.blastImpulse || 0,
@@ -355,7 +361,7 @@ export function stepCrew(
   if (m.state === "traversing_door" && m.activeDoor) {
     const res = updateDoorInteraction(m.activeDoor, v3(m.x, m.y, m.z), dt);
     if (res.canMove && res.targetPos) {
-      walkToward(m, res.targetPos.x, res.targetPos.y, res.targetPos.z, cfg.walkSpeed * dt, ctx?.raycast, ctx?.world);
+      walkToward(m, res.targetPos.x, res.targetPos.y, res.targetPos.z, cfg.walkSpeed * dt, ctx?.raycast, ctx?.world, dt);
     }
     if (res.state === "complete") {
       m.activeDoor = undefined;
@@ -381,7 +387,7 @@ export function stepCrew(
       }
       if (cfg.patrol.length > 0) {
         const wp = cfg.patrol[m.patrolIndex % cfg.patrol.length];
-        walkToward(m, wp.x, wp.y, wp.z, cfg.walkSpeed * 0.5 * dt, ctx?.raycast, ctx?.world);
+        walkToward(m, wp.x, wp.y, wp.z, cfg.walkSpeed * 0.5 * dt, ctx?.raycast, ctx?.world, dt);
         if (dist(m, wp) < 0.5) m.patrolIndex = (m.patrolIndex + 1) % cfg.patrol.length;
       }
       return null;
@@ -413,7 +419,7 @@ export function stepCrew(
         return null;
       }
 
-      walkToward(m, target.x, target.y, target.z, cfg.walkSpeed * dt, ctx?.raycast, ctx?.world);
+      walkToward(m, target.x, target.y, target.z, cfg.walkSpeed * dt, ctx?.raycast, ctx?.world, dt);
 
       if (dist(m, target) <= REPAIR_REACH) {
         enter(m, "repairing");

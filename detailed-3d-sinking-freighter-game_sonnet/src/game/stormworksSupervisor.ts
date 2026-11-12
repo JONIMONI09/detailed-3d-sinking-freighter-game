@@ -85,11 +85,11 @@ export class StormworksSupervisor {
       });
     }
 
-    // Initialize standard 3-man Damage Control team
+    // Initialize standard 3-man Damage Control team on clear walkable DECK_Y lanes
     this.crew.push(
-      createCrewMember("Chief Engineer", "chief-engineer", 4.5, 3.0, -38.0, 4),
-      createCrewMember("Boatswain", "boatswain", -4.5, 3.0, -32.0, 3),
-      createCrewMember("DC Sailor", "damage-control", 2.0, 3.0, -24.0, 5),
+      createCrewMember("Chief Engineer", "chief-engineer", 9.2, 0.1, -34.0, 4),
+      createCrewMember("Boatswain", "boatswain", -9.2, 0.1, 4.0, 3),
+      createCrewMember("DC Sailor", "damage-control", 2.5, 0.1, 44.0, 5),
     );
   }
 

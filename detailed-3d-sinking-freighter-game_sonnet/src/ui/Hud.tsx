@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { HudState } from "../game/game";
+import type { Game, HudState } from "../game/game";
 import type { Settings } from "../game/settings";
 import type { TerminalEntry } from "../game/doorSecurity";
 
@@ -152,7 +152,7 @@ const WEAP: { id: "pistol" | "shotgun" | "rifle" | "tnt"; n: string; k: string }
   { id: "tnt", n: "TNT", k: "4" },
 ];
 
-export default function Hud({ h, settings, touch }: { h: HudState; settings: Settings; touch: boolean }) {
+export default function Hud({ h, settings, touch, game }: { h: HudState; settings: Settings; touch: boolean; game?: Game | null }) {
   const [vp, setVp] = useState({ w: window.innerWidth, h: window.innerHeight });
   useEffect(() => {
     const f = () => setVp({ w: window.innerWidth, h: window.innerHeight });
@@ -354,6 +354,88 @@ export default function Hud({ h, settings, touch }: { h: HudState; settings: Set
           </div>
         );
       })()}
+      {h.tabletOpen && game && (
+        <div className="pointer-events-auto absolute inset-0 z-30 flex items-center justify-center bg-black/55 backdrop-blur-sm">
+          <div className="w-[460px] max-w-[92vw] rounded-2xl border border-cyan-400/40 bg-slate-950/95 p-4 text-slate-100 shadow-2xl">
+            <div className="mb-3 flex items-center justify-between border-b border-white/10 pb-2">
+              <div>
+                <div className="text-sm font-black tracking-wider text-cyan-300">📱 BRIDGE COMMAND TABLET</div>
+                <div className="text-[11px] text-slate-400">
+                  Active Vessel: <span className="font-bold uppercase text-amber-300">{h.activeVessel}</span> · Speed {h.vesselSpeed.toFixed(1)} m/s · Rudder {h.vesselRudder.toFixed(0)}°
+                </div>
+              </div>
+              <button
+                onClick={() => game.toggleTablet(false)}
+                className="rounded-lg border border-white/20 bg-white/10 px-2.5 py-1 text-xs font-bold hover:bg-white/20"
+              >
+                Close [TAB]
+              </button>
+            </div>
+
+            <div className="mb-3 grid grid-cols-2 gap-2">
+              <button
+                onClick={() => game.switchVessel()}
+                disabled={!h.battleshipAvailable}
+                className="rounded-lg border border-amber-400/40 bg-amber-500/20 px-3 py-2 text-xs font-bold text-amber-200 hover:bg-amber-500/35 disabled:opacity-40"
+              >
+                🚢 Switch Ship [V] ({h.activeVessel === "freighter" ? "→ Battleship" : "→ Freighter"})
+              </button>
+              <button
+                onClick={() => game.remoteFireSalvo()}
+                disabled={!h.battleshipAvailable}
+                className="rounded-lg border border-red-400/40 bg-red-500/20 px-3 py-2 text-xs font-bold text-red-200 hover:bg-red-500/35 disabled:opacity-40"
+              >
+                💥 Fire Battleship Salvo (HP: {h.battleshipHp})
+              </button>
+            </div>
+
+            <div className="mb-3 rounded-xl border border-white/10 bg-white/5 p-2.5">
+              <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-300">
+                Remote Helm &amp; Telegraph ({h.vesselTelegraph})
+              </div>
+              <div className="mb-2 flex gap-2">
+                <button onClick={() => game.remoteTelegraph(-1)} className="flex-1 rounded bg-slate-800 py-1.5 text-xs font-bold hover:bg-slate-700">
+                  ▼ Astern / Slower
+                </button>
+                <button onClick={() => game.remoteTelegraph(1)} className="flex-1 rounded bg-emerald-700/70 py-1.5 text-xs font-bold hover:bg-emerald-600/80">
+                  ▲ Ahead / Faster
+                </button>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => game.remoteRudder(-25)} className="flex-1 rounded bg-slate-800 py-1.5 text-xs font-bold hover:bg-slate-700">
+                  ◄ Port (-25°)
+                </button>
+                <button onClick={() => game.remoteRudder(0)} className="flex-1 rounded bg-slate-800 py-1.5 text-xs font-bold hover:bg-slate-700">
+                  ● Midships (0°)
+                </button>
+                <button onClick={() => game.remoteRudder(25)} className="flex-1 rounded bg-slate-800 py-1.5 text-xs font-bold hover:bg-slate-700">
+                  Stbd (+25°) ►
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-xs font-bold">
+              <button onClick={() => game.remoteLockdown()} className="rounded-lg border border-red-400/30 bg-red-900/40 py-2 hover:bg-red-800/50">
+                🔒 Bulkhead Lockdown [B]
+              </button>
+              <button onClick={() => game.remoteToggleGodMode()} className="rounded-lg border border-emerald-400/30 bg-emerald-900/40 py-2 hover:bg-emerald-800/50">
+                🛡️ God Mode [G]: {h.godMode ? "ON" : "OFF"}
+              </button>
+              <button onClick={() => game.remoteToggleNoclip()} className="rounded-lg border border-cyan-400/30 bg-cyan-900/40 py-2 hover:bg-cyan-800/50">
+                ✈️ Flight / Noclip [N]
+              </button>
+              <button onClick={() => game.remoteCycleFlood()} className="rounded-lg border border-blue-400/30 bg-blue-900/40 py-2 hover:bg-blue-800/50">
+                🌊 Cycle Flood Rate [F]
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {!h.tabletOpen && (
+        <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full border border-cyan-400/30 bg-black/55 px-3 py-1 text-[10px] font-bold tracking-wide text-cyan-200">
+          [TAB] Command Tablet · [V] Switch Ship ({h.activeVessel.toUpperCase()}) · [N] Fly
+        </div>
+      )}
     </div>
   );
 }

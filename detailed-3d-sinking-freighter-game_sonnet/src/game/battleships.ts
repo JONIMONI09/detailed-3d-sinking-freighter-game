@@ -18,6 +18,10 @@ export interface Battleship {
   roll: number;
   baseX: number;
   baseZ: number;
+  heading: number;
+  speed: number;
+  targetSpeed: number;
+  rudderDeg: number;
   deckBounds: { minX: number; maxX: number; minZ: number; maxZ: number; deckY: number };
 }
 
@@ -88,6 +92,10 @@ export function createBattleship(id: string, x: number, z: number): Battleship {
     roll: 0,
     baseX: x,
     baseZ: z,
+    heading: 0,
+    speed: 0,
+    targetSpeed: 0,
+    rudderDeg: 0,
     deckBounds: { minX: -5.3, maxX: 5.3, minZ: -27.5, maxZ: 27.5, deckY: 2.5 },
   };
 }
@@ -108,6 +116,19 @@ export function stepBattleship(
     bs.group.rotation.z = bs.roll;
     return;
   }
+
+  // Propulsion & rudder steering
+  bs.speed += (bs.targetSpeed - bs.speed) * Math.min(1, dt * 0.9);
+  if (Math.abs(bs.speed) > 0.05 && Math.abs(bs.rudderDeg) > 0.1) {
+    bs.heading += (bs.rudderDeg * Math.PI / 180) * (bs.speed / 12) * 0.45 * dt;
+  }
+  const fx = -Math.sin(bs.heading);
+  const fz = -Math.cos(bs.heading);
+  bs.baseX += fx * bs.speed * dt;
+  bs.baseZ += fz * bs.speed * dt;
+  bs.group.position.x = bs.baseX;
+  bs.group.position.z = bs.baseZ;
+  bs.group.rotation.y = bs.heading;
 
   const h = waveHeight(bs.baseX, bs.baseZ, time);
   bs.group.position.y = h * 0.7;
@@ -130,6 +151,26 @@ export function stepBattleship(
         onTurretFire(wp.clone().addScaledVector(dir, 4.0), dir);
       }
     }
+  }
+}
+
+/** Fires an immediate salvo from all turrets of a battleship. */
+export function fireBattleshipSalvo(
+  bs: Battleship,
+  targetWorldPos: THREE.Vector3,
+  onTurretFire: (muzzleWorld: THREE.Vector3, dir: THREE.Vector3) => void,
+): void {
+  if (bs.sunk) return;
+  for (const t of bs.turrets) {
+    const wp = new THREE.Vector3();
+    t.group.getWorldPosition(wp);
+    const dir = new THREE.Vector3(
+      targetWorldPos.x - wp.x,
+      targetWorldPos.y - wp.y,
+      targetWorldPos.z - wp.z,
+    ).normalize();
+    onTurretFire(wp.clone().addScaledVector(dir, 4.0), dir);
+    t.cooldown = 3.0;
   }
 }
 

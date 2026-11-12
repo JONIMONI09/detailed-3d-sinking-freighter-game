@@ -243,7 +243,7 @@ export default function App() {
               setOverlay("ready");
             }}
           />
-          {hud && overlay !== "ready" && <Hud h={hud} settings={settings} touch={touch} />}
+          {hud && overlay !== "ready" && <Hud h={hud} settings={settings} touch={touch} game={gameRef.current} />}
           {touch && started && hud && overlay === null && !hud.escape && (
             <TouchControls game={gameRef.current} settings={settings} tnt={hud.owned.tnt} detonatable={hud.detonatable} onPause={onPause} />
           )}
