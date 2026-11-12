@@ -30,6 +30,12 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Prepare CodeGraph Base Branch
+        run: |
+          # actions/checkout can leave a feature checkout without origin/main.
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          git show-ref --verify --quiet refs/heads/main || git branch main origin/main
+
       - name: Install Node Dependencies
         run: npm ci
 

@@ -164,5 +164,10 @@ npm run docs:check
 
 The script runs CodeGraph's one-shot MCP mode
 (`codegraph_pr_context`, graph-only) and then validates that every required
-skill, documentation file, date, and index row is present. `--no-codegraph`
-exists only for offline diagnosis and is not a valid pass for a docs delivery.
+skill, documentation file, date, and index row is present. It resolves the
+base as `main`, `origin/main`, `master`, or `origin/master`; CI must check out
+with `fetch-depth: 0` and fetch `origin/main` before the gate so the merge base
+exists. A skill edit must be committed
+together with this index, otherwise the change-coupling check fails when a
+skill is edited alone. `--no-codegraph` exists only for offline diagnosis and
+is not a valid pass for a docs delivery.

@@ -46,8 +46,8 @@ documented fallback; do not pretend the tool ran.
 `tools/check_skill_docs.py`. Do not call the MCP server directly from a chat
 turn for this repository. The script resolves the base as `main`, then
 `origin/main`, then `master`, then `origin/master`; CI must fetch full history
-(`fetch-depth: 0`) so the local `main` reference and merge base exist. A
-depth-1 feature checkout makes CodeGraph fail with
+(`fetch-depth: 0`), fetch `origin/main`, and create a local `main` ref before
+the gate. A depth-1 feature checkout without `main` makes CodeGraph fail with
 `fatal: ambiguous argument 'main...HEAD'`.
 
 ### Cloud preview commands

@@ -168,7 +168,8 @@ Use exact commands and real run IDs when they exist.
   feature ref. It created neither a local `main` branch nor the ancestry for a
   merge base, so CodeGraph's `git diff main...HEAD` failed with
   `fatal: ambiguous argument 'main...HEAD'`.
-- Solution: Set `fetch-depth: 0` in the CI checkout, and make
+- Solution: Set `fetch-depth: 0` in the CI checkout, fetch `origin/main`
+  explicitly, create a local `main` ref when absent, and make
   `tools/check_skill_docs.py` resolve `main`, `origin/main`, `master`, or
   `origin/master` (in that order) instead of assuming a local `main`.
 - Verification: A depth-1 clone reproduced the failure. The script now prints
