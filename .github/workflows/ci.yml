@@ -14,6 +14,10 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          # CodeGraph's PR context needs a real merge base. The default
+          # depth-1 checkout has neither a local main nor its ancestry.
+          fetch-depth: 0
 
       - name: Setup Node.js Environment
         uses: actions/setup-node@v4

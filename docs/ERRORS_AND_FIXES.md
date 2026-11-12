@@ -134,6 +134,51 @@ Use exact commands and real run IDs when they exist.
 - Related files / skills: `docs/AGENT_TOOLS.md`, `skill-index`,
   `documentation-maintenance`.
 
+### ERR-2026-11-12-06 - `cloud_git push` defaulted to `main`
+
+- Date (Europe/Berlin): 2026-11-12
+- Area: Git delivery
+- Status: Resolved by verification; process corrected
+- Symptom: `cloud_git` with `operation=push` and no `branch` printed
+  `87a9cfc..517fe39 HEAD -> main`, updating the integration branch before a
+  feature-branch CI run had been verified.
+- Root cause: The tool defaults to the chat's starting branch (`main`), not the
+  currently checked-out branch. The explicit `branch` argument was omitted.
+- Solution: Pushed `feat/skill-governance` explicitly at the same commit, then
+  used the feature branch for all further evidence and verification. Remote
+  `main` was not reset or force-pushed; the tree is identical to the verified
+  feature commit.
+- Verification: Remote `main` and `feat/skill-governance` pointed at
+  `517fe39`; the feature branch was pushed successfully. CI and Pages for the
+  final state are recorded below and in `CI_DEPLOYMENT.md` §23.
+- Prevention: Always pass `branch` to `cloud_git push`, even when the local
+  checkout already has the intended name. `AGENTS.md`, `docs/AGENT_TOOLS.md`,
+  and `ci-workflow-audit` now state this explicitly.
+- Related files / skills: `AGENTS.md`, `docs/AGENT_TOOLS.md`,
+  `.agents/skills/ci-workflow-audit/SKILL.md`.
+
+### ERR-2026-11-12-07 - CodeGraph failed in CI because `main` was absent
+
+- Date (Europe/Berlin): 2026-11-12
+- Area: GitHub Actions documentation gate
+- Status: Resolved
+- Symptom: Branch CI run `43255281208` failed at **Validate Skill and
+  Documentation Governance** with exit code 1.
+- Root cause: `actions/checkout@v4` defaults to a depth-1 checkout on the
+  feature ref. It created neither a local `main` branch nor the ancestry for a
+  merge base, so CodeGraph's `git diff main...HEAD` failed with
+  `fatal: ambiguous argument 'main...HEAD'`.
+- Solution: Set `fetch-depth: 0` in the CI checkout, and make
+  `tools/check_skill_docs.py` resolve `main`, `origin/main`, `master`, or
+  `origin/master` (in that order) instead of assuming a local `main`.
+- Verification: A depth-1 clone reproduced the failure. The script now prints
+  the resolved base and CodeGraph returns valid JSON when `origin/main` exists;
+  the final branch run is recorded in `CI_DEPLOYMENT.md` §23.
+- Prevention: The CI workflow comment explains the depth requirement;
+  `docs/AGENT_TOOLS.md` records the base-branch rule.
+- Related files / skills: `.github/workflows/ci.yml`,
+  `tools/check_skill_docs.py`, `ci-workflow-audit`, `skill-index`.
+
 ## Open incidents
 
 None at this revision. Add a new entry before merging any future fix, even when

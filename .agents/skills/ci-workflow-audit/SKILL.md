@@ -50,7 +50,9 @@ Assert all of the following:
 - `ci.yml` has `push` and `pull_request` triggers.
 - `ci.yml` push branches include `main`, `master`, and `"**"`.
 - `deploy-pages.yml` pushes only to `main`; it must not use `"**"`.
-- CI uses Node 22, runs `npm ci`, both typechecks, `npm test`, and both builds.
+- CI checks out with `fetch-depth: 0`; CodeGraph needs `main` ancestry.
+- CI uses Node 22, runs `npm ci`, both typechecks, `npm test`,
+  `npm run docs:check`, and both builds.
 - Pages has `pages: write`, `id-token: write`, the `github-pages` environment,
   `enablement: true`, and the artifact existence check.
 - Neither workflow uses `--force` or `--legacy-peer-deps`.
@@ -61,14 +63,24 @@ Do not claim a YAML pass from a text-only check.
 
 ## 4. Exact-SHA CI gate
 
-After pushing the feature branch, find the run for that exact commit:
+Push the feature branch with the branch argument explicit:
 
 ```bash
-curl -fsS \
+# Always pass branch; an omitted argument targets the chat's starting branch.
+cloud_git operation=push branch=feat/<name>
+```
+
+Then find the run for that exact commit:
+
+```bash
+curl -fsS -H 'User-Agent: freebuff-agent' \
   "https://api.github.com/repos/JONIMONI09/detailed-3d-sinking-freighter-game/actions/runs?branch=BRANCH&per_page=5"
 ```
 
-If `gh` is authenticated, `gh run list --branch BRANCH` is also valid.
+If the unauthenticated API returns 403, check `x-ratelimit-remaining`; it is a
+rate limit, not proof that CI failed. Use an authenticated tool when available,
+or wait for the reset. If `gh` is authenticated, `gh run list --branch BRANCH`
+is also valid.
 
 The gate passes only when a run exists with:
 

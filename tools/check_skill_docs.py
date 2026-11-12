@@ -160,10 +160,31 @@ def git_output(*args: str) -> str:
     return result.stdout if result.returncode == 0 else ""
 
 
-def changed_paths() -> set[str]:
+def resolve_base_branch() -> str:
+    requested = os.environ.get("CODEGRAPH_BASE_BRANCH", "main")
+    candidates = [requested]
+    if requested == "main":
+        candidates.extend(["origin/main", "master", "origin/master"])
+    for candidate in candidates:
+        result = subprocess.run(
+            ["git", "rev-parse", "--verify", f"{candidate}^{{commit}}"],
+            cwd=WORKSPACE,
+            text=True,
+            capture_output=True,
+        )
+        if result.returncode == 0:
+            return candidate
+    fail(
+        f"cannot resolve base branch {requested!r}; fetch it or set "
+        "CODEGRAPH_BASE_BRANCH to an available ref"
+    )
+    raise AssertionError("unreachable")
+
+
+def changed_paths(base: str) -> set[str]:
     paths: set[str] = set()
     for args in (
-        ("diff", "--name-only", "--diff-filter=ACMR", "main...HEAD"),
+        ("diff", "--name-only", "--diff-filter=ACMR", f"{base}...HEAD"),
         ("diff", "--name-only", "--diff-filter=ACMR"),
         ("diff", "--name-only", "--cached", "--diff-filter=ACMR"),
         ("ls-files", "--others", "--exclude-standard"),
@@ -207,10 +228,10 @@ def codegraph_binary() -> Path:
     raise AssertionError("unreachable")
 
 
-def check_codegraph() -> None:
+def check_codegraph(base: str) -> None:
     binary = codegraph_binary()
     args = {
-        "baseBranch": os.environ.get("CODEGRAPH_BASE_BRANCH", "main"),
+        "baseBranch": base,
         "format": "json",
     }
     command = [
@@ -274,14 +295,16 @@ def main() -> int:
     check_required_files()
     check_dates()
     check_index_and_agent_rules()
-    paths = changed_paths()
+    base = resolve_base_branch()
+    print(f"[INFO] CodeGraph base branch: {base}")
+    paths = changed_paths(base)
     check_change_coupling(paths)
     print(f"[INFO] changed paths considered: {len(paths)}")
 
     if args.no_codegraph:
         print("[WARN] CodeGraph skipped: this is not a complete documentation gate")
     else:
-        check_codegraph()
+        check_codegraph(base)
 
     print("-" * 60)
     ok("skill and documentation governance checks passed")
