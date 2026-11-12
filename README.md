@@ -69,7 +69,7 @@ tests for them.
 
 ```text
 ├── .agent/                             # Antigravity Rules, Workflows & LEARNING.md
-├── .claude/skills/                     # Project skills (quality, CI, documentation)
+├── .agents/skills/                     # Project skills (quality, CI, documentation)
 ├── CI_DEPLOYMENT.md                    # CI & GitHub Pages verification record
 ├── RESPONSIVE_UI.md                    # Responsive HUD & landscape layout record
 ├── detailed-3d-sinking-freighter-game_sonnet/ # Alternative / Sub-workspace Edition
@@ -144,11 +144,26 @@ Details and measurements: [RESPONSIVE_UI.md](RESPONSIVE_UI.md).
 
 ### Agent skills
 
-Three project skills under `.claude/skills/` encode the recurring workflow:
+Three project skills under `.agents/skills/` encode the recurring workflow:
 reproduce, fix the root cause, add a fallback and regression tests, update the
-English documentation, and verify the feature branch through CI. Freebuff also
-discovers `.agents/skills/`; these skills follow the official
+English documentation, and verify the feature branch through CI. `.agents/skills/`
+is Freebuff's native project discovery path; `.claude/skills/` is also supported
+for Claude Code compatibility. These skills follow the official
 [Freebuff skills format](https://docs.freebuff.page/working-with-the-agent/#skills).
+
+Invoke every skill as `/skill:<name>`:
+
+| Skill | Command |
+| :--- | :--- |
+| `error-fix-document` | `/skill:error-fix-document` |
+| `ci-workflow-audit` | `/skill:ci-workflow-audit` |
+| `documentation-maintenance` | `/skill:documentation-maintenance` |
+| Built-in brainstorming | `/skill:brainstorming` |
+| Built-in skill discovery | `/skill:find-skills` |
+| Built-in skill creator | `/skill:skill-creator` |
+
+A bare `/brainstorming` or `/find-skills` is not a Freebuff command; the
+`/skill:` prefix is required.
 
 - `error-fix-document` — bug and incident workflow with fallback and docs.
 - `ci-workflow-audit` — YAML validation, exact-SHA CI gate and Pages checks.

@@ -444,10 +444,11 @@ records that later delivery; §14 keeps the result from the fix itself.
 
 ## 15. Project skills and recurring workflow (2026-11-12)
 
-Three project-local skills under `.claude/skills/` turn the recurring delivery
-rules into discoverable instructions. Freebuff supports both
-`.claude/skills/` and `.agents/skills/`; the Claude-compatible path is used
-here.
+Three project-local skills under `.agents/skills/` turn the recurring delivery
+rules into discoverable instructions. `.agents/skills/` is Freebuff's native
+project discovery path; `.claude/skills/` is also supported for Claude Code
+compatibility. The native path is used here because `npx skills list` labels
+`.claude/` skills as Claude Code scope.
 
 | Skill | Purpose |
 | :--- | :--- |
@@ -459,6 +460,12 @@ Each `SKILL.md` starts with YAML frontmatter containing `name`, `description`,
 `license`, and `metadata`. Skill names match their directory names, which
 Freebuff requires. The official format is documented at
 <https://docs.freebuff.page/working-with-the-agent/#skills>.
+
+Freebuff registers every skill as `/skill:<name>`. The project skills are
+`/skill:error-fix-document`, `/skill:ci-workflow-audit` and
+`/skill:documentation-maintenance`; the built-in account skills are
+`/skill:brainstorming`, `/skill:find-skills` and `/skill:skill-creator`. A bare
+`/brainstorming` is not a command.
 
 `tools/ci_check.py` checks the three skill files for presence, frontmatter
 delimiters, directory/name match, a non-empty description, actionable body
@@ -500,3 +507,29 @@ above were therefore verified from the official Actions run pages, which show
 commit `cc32e2e` and `completed successfully`; no run ID or status was invented.
 A later documentation-repair commit is CI-gated separately and does not change
 these historical results.
+
+---
+
+## 17. Native project-skill discovery (2026-11-12)
+
+The three project skills moved from `.claude/skills/` to `.agents/skills/`.
+`npx skills list` lists all three from the native path. Freebuff registers every
+skill as `/skill:<name>`; the built-in account skills are
+`/skill:brainstorming`, `/skill:find-skills` and `/skill:skill-creator`. A bare
+`/brainstorming` is not a command. Freebuff loads skills at session start, so a
+running chat must be reloaded before it sees the new path.
+
+Local gate at this change:
+
+| Check | Result |
+| :--- | :--- |
+| `npm test` | Exit 0: 5/5 physics, 14/14 browser guards, 10/10 Python |
+| Root and Sonnet typechecks | Exit 0 |
+| Root build | 956.06 kB (gzip 251.25 kB), `b5908820…` |
+| Sonnet build (both paths) | 1,001.09 kB (gzip 275.92 kB), `7ea4957d…` |
+| Workflow YAML | Both files parsed with duplicate-key rejection |
+| Skill YAML | 3/3 parsed; names match directories; bodies 3,083–3,326 chars |
+| `npm audit --omit=dev` | 0 vulnerabilities |
+
+The branch and workflow run IDs are recorded in the follow-up documentation
+commit after the branch gate.

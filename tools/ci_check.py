@@ -108,7 +108,7 @@ def check_test_suite_wiring():
 
 def check_project_skills():
     log("Verifying project skills...")
-    skills_dir = WORKSPACE / ".claude" / "skills"
+    skills_dir = WORKSPACE / ".agents" / "skills"
     required = [
         "error-fix-document",
         "ci-workflow-audit",
@@ -116,7 +116,7 @@ def check_project_skills():
     ]
 
     if not skills_dir.exists():
-        log(".claude/skills directory is missing!", "FAIL")
+        log(".agents/skills directory is missing!", "FAIL")
         return False
 
     for name in required:

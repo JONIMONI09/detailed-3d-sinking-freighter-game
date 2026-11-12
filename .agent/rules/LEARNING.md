@@ -43,9 +43,16 @@
 ### [RESOLVED] Recurring Fix and Documentation Workflow Was Only in Conversation
 - **Issue:** Error handling, fallback design, test updates and documentation rules were repeated in prompts but were not discoverable inside the project.
 - **Root Cause:** The process lived only in conversation memory; the repository had no project skills and no validation that skill files stayed intact.
-- **Fix:** Added three English project skills under `.claude/skills/` (`error-fix-document`, `ci-workflow-audit`, `documentation-maintenance`) with valid YAML frontmatter. Added a Python integrity check for presence, names, frontmatter fields, body length, absence of German umlauts and unfinished markers.
+- **Fix:** Added three English project skills under `.agents/skills/` (`error-fix-document`, `ci-workflow-audit`, `documentation-maintenance`) with valid YAML frontmatter. Added a Python integrity check for presence, names, frontmatter fields, body length, absence of German umlauts and unfinished markers.
 - **Verified:** `tools/ci_check.py` passes 10/10, skill frontmatter parses as YAML, and branch run `43212298392` passed on `cc32e2e` before the fast-forward merge.
 - **Lesson:** Encode recurring quality rules as tested, discoverable skills instead of relying on the next conversation remembering them.
+
+### [RESOLVED] Project Skills Were Invisible to Freebuff
+- **Issue:** The three project skills were in Git, but Freebuff did not list them, and `/brainstorming`, `/find-skills` and `/skill-creator` appeared not to work.
+- **Root Cause:** The skills lived only in `.claude/skills/`, which `npx skills list` reports under **Claude Code**; Freebuff's native project path is `.agents/skills/`. Freebuff also registers every skill as `/skill:<name>`, so the bare slash names were not commands.
+- **Fix:** Moved the three skills to `.agents/skills/`, updated `tools/ci_check.py`, `AGENTS.md`, `README.md` and `CI_DEPLOYMENT.md`, and documented `/skill:<name>` invocation.
+- **Verified:** `npx skills list` resolves the three skills from `.agents/skills/`; `python tools/ci_check.py` passes 10/10; `npm test` passes 5/5 physics, 14/14 browser guards and 10/10 Python. Remote delivery evidence is recorded in `CI_DEPLOYMENT.md` §17.
+- **Lesson:** A skill is discoverable only when it sits in a path the target runtime actually scans; Claude-only paths and bare slash names are not enough. Invocation syntax is part of discovery too.
 
 ### [RESOLVED] GitHub Pages Deploy Never Created a Site
 - **Issue:** The Pages workflow never published a site; the project URL stayed blank or 404.
