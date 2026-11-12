@@ -2739,12 +2739,22 @@ export class Game {
     eye.y += bobY + shk.y;
     const lookRight = V(Math.cos(p.yaw), 0, -Math.sin(p.yaw));
     eye.addScaledVector(lookRight, bobX + shk.x);
-    const ew = this.theatre === "orbital" ? eye : this.worldPos(eye, V());
+    const onBsDeck = this.battleships.some((bs) => {
+      const wx = p.body.x + this.ship.group.position.x;
+      const wz = p.body.z + this.ship.group.position.z;
+      return Math.abs(wx - bs.baseX) <= bs.deckBounds.maxX + 0.8 && Math.abs(wz - bs.baseZ) <= bs.deckBounds.maxZ + 0.8;
+    });
+    const ew =
+      this.theatre === "orbital"
+        ? eye
+        : onBsDeck
+          ? V(eye.x + this.ship.group.position.x, eye.y, eye.z + this.ship.group.position.z)
+          : this.worldPos(eye, V());
     cam.position.copy(ew);
     const lean = Math.sin(p.bob) * 0.004 * (p.speed > 1 ? 1 : 0);
     this.tmpE.set(p.pitch + (Math.random() - 0.5) * 0.02 * sk, p.yaw + (Math.random() - 0.5) * 0.02 * sk, lean + fall * 1.2 + (Math.random() - 0.5) * 0.02 * sk, "YXZ");
     this.tmpQ.setFromEuler(this.tmpE);
-    if (this.theatre === "orbital") cam.quaternion.copy(this.tmpQ);
+    if (this.theatre === "orbital" || onBsDeck) cam.quaternion.copy(this.tmpQ);
     else cam.quaternion.copy(this.ship.group.quaternion).multiply(this.tmpQ);
     cam.updateMatrixWorld(true);
   }
