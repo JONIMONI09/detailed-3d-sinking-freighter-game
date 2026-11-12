@@ -981,6 +981,54 @@ export class Game {
       const rate = this.supervisor.cycleFloodRate();
       this.say(`FLOOD RATE: ${rate}x (${rate === 0 ? "Frozen" : rate === 3 ? "Catastrophic" : "Standard"})`, "info");
     }
+
+    // Nachladen
+    if (inp.pressed("reload")) this.startReload();
+    if (this.reloading) {
+      this.reloadT -= dt;
+      const w = WEAPONS[this.cur];
+      if (this.reloadT <= 0) {
+        if (this.cur === "shotgun") {
+          const a = this.ammo.shotgun;
+          if (a.res > 0 && a.mag < w.mag) {
+            a.mag++;
+            a.res--;
+            this.audio.reload("shell");
+            if (a.mag < w.mag && a.res > 0) {
+              this.reloadT = w.reload;
+              this.vm.startReload(w.reload);
+            } else {
+              this.reloading = false;
+              this.audio.reload("pump");
+            }
+          } else this.reloading = false;
+        } else if (this.cur === "pistol" || this.cur === "rifle") {
+          const a = this.ammo[this.cur];
+          const need = w.mag - a.mag;
+          const take = Math.min(need, a.res);
+          a.mag += take;
+          a.res -= take;
+          this.reloading = false;
+        }
+      }
+    }
+    // Schießen & TNT
+    const wantFire = inp.fire;
+    if (this.cur === "tnt") {
+      if (inp.pressed("alt")) this.placeTnt();
+      if (wantFire && this.cooldown <= 0) {
+        if (!this.isTouch() && !this.lockOk) this.requestLock();
+        this.throwTnt();
+      }
+    } else {
+      const w = WEAPONS[this.cur];
+      inp.pressed("alt");
+      if (wantFire) {
+        if (!this.isTouch() && !this.lockOk) this.requestLock();
+        if (w.auto || !this.fireHeld) this.tryFire();
+        this.fireHeld = true;
+      } else this.fireHeld = false;
+    }
   }
 
   private handleHelm(dt: number) {
@@ -1016,53 +1064,6 @@ export class Game {
       helm.rudderCmd = Math.min(MAX_RUDDER_DEG, helm.rudderCmd + 28 * dt);
     } else {
       helm.rudderCmd += (0 - helm.rudderCmd) * Math.min(1, dt * 1.2);
-    }
-    // Nachladen
-    if (inp.pressed("reload")) this.startReload();
-    if (this.reloading) {
-      this.reloadT -= dt;
-      const w = WEAPONS[this.cur];
-      if (this.reloadT <= 0) {
-        if (this.cur === "shotgun") {
-          const a = this.ammo.shotgun;
-          if (a.res > 0 && a.mag < w.mag) {
-            a.mag++;
-            a.res--;
-            this.audio.reload("shell");
-            if (a.mag < w.mag && a.res > 0) {
-              this.reloadT = w.reload;
-              this.vm.startReload(w.reload);
-            } else {
-              this.reloading = false;
-              this.audio.reload("pump");
-            }
-          } else this.reloading = false;
-        } else if (this.cur === "pistol" || this.cur === "rifle") {
-          const a = this.ammo[this.cur];
-          const need = w.mag - a.mag;
-          const take = Math.min(need, a.res);
-          a.mag += take;
-          a.res -= take;
-          this.reloading = false;
-        }
-      }
-    }
-    // Schießen
-    const wantFire = inp.fire;
-    if (this.cur === "tnt") {
-      if (inp.pressed("alt")) this.placeTnt();
-      if (wantFire && this.cooldown <= 0) {
-        if (!this.isTouch() && !this.lockOk) this.requestLock();
-        this.throwTnt();
-      }
-    } else {
-      const w = WEAPONS[this.cur];
-      inp.pressed("alt");
-      if (wantFire) {
-        if (!this.isTouch() && !this.lockOk) this.requestLock();
-        if (w.auto || !this.fireHeld) this.tryFire();
-        this.fireHeld = true;
-      } else this.fireHeld = false;
     }
   }
   private fireHeld = false;
