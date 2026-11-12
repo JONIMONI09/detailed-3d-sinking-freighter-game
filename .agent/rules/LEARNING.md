@@ -43,8 +43,8 @@
 ### [RESOLVED] Recurring Fix and Documentation Workflow Was Only in Conversation
 - **Issue:** Error handling, fallback design, test updates and documentation rules were repeated in prompts but were not discoverable inside the project.
 - **Root Cause:** The process lived only in conversation memory; the repository had no project skills and no validation that skill files stayed intact.
-- **Fix:** Added three English project skills under `.claude/skills/` (`error-fix-document`, `ci-workflow-audit`, `documentation-maintenance`) with valid YAML frontmatter. Added a Python integrity check for presence, names, frontmatter, English text and unfinished markers.
-- **Verified:** `tools/ci_check.py` passes 10/10, skill frontmatter parses as YAML, and the skills are included in the same branch and CI gate as the code.
+- **Fix:** Added three English project skills under `.claude/skills/` (`error-fix-document`, `ci-workflow-audit`, `documentation-maintenance`) with valid YAML frontmatter. Added a Python integrity check for presence, names, frontmatter fields, body length, absence of German umlauts and unfinished markers.
+- **Verified:** `tools/ci_check.py` passes 10/10, skill frontmatter parses as YAML, and branch run `43212298392` passed on `cc32e2e` before the fast-forward merge.
 - **Lesson:** Encode recurring quality rules as tested, discoverable skills instead of relying on the next conversation remembering them.
 
 ### [RESOLVED] GitHub Pages Deploy Never Created a Site

@@ -5,6 +5,7 @@ fullscreen fix were verified on 2026-11-12. §14 records that delivery; sections
 3–12 keep the earlier local runs and their historical numbers.
 
 Fullscreen fix commit: `7e54232` — *Run CI on feature branches* on `main`.
+Project skills commit: `cc32e2e` — *Add project skills for fix, CI and documentation workflows* on `main`.
 Initial deployment fix: `410a321` — *Enable GitHub Pages provisioning*.
 
 ---
@@ -19,7 +20,7 @@ Initial deployment fix: `410a321` — *Enable GitHub Pages provisioning*.
 | Physics unit tests | Exit 0, 5/5 passed |
 | Browser-guard regression tests | Exit 0, 14/14 passed |
 | Python CI integrity suite | Exit 0, 10/10 passed |
-| Project skills | 3 `SKILL.md` files with YAML frontmatter, validated |
+| Project skills | 3 `SKILL.md` files; frontmatter structure checked by `tools/ci_check.py` |
 | Branch CI (`fix/fullscreen-pointer-capture`) | **success**, run `43119185236` |
 | Main CI (`7e54232`) | **success**, run `43119328266` |
 | GitHub Pages deploy (`7e54232`) | **success**, run `43119328360` |
@@ -418,15 +419,14 @@ The live root bundle contains `Enter fullscreen` and
 `Fullscreen is blocked by this browser`; the Sonnet bundle contains
 `Toggle Fullscreen` and the same blocked-request message.
 
-### Final local gate
+### Gate at the fullscreen fix delivery
 
 | Check | Result |
 | :--- | :--- |
 | `npm ci` | Exit 0, 104 packages |
 | Root `tsc --noEmit` | Exit 0 |
 | Sonnet `tsc --noEmit` | Exit 0 |
-| `npm test` | Exit 0: 5/5 physics, 14/14 browser guards, 10/10 Python |
-| Project skills | 3 `SKILL.md` files with valid YAML frontmatter and English guidance |
+| `npm test` | Exit 0 at the fix delivery; the suite was later extended to 10 Python checks (§16) |
 | Root build | 956.06 kB (gzip 251.25 kB), `b5908820…` |
 | Sonnet build (both paths) | 1,001.09 kB (gzip 275.92 kB), `7ea4957d…` |
 | Python YAML gate | 31/31 assertions, duplicate keys included |
@@ -436,6 +436,9 @@ The live root bundle contains `Enter fullscreen` and
 The Android crash path at `785x303` is covered by the pointer guard and the
 viewport measurements in §13. Real-device Android verification remains a manual
 hardware check; the Cloud browser uses Chromium with exact-size iframes.
+
+The Python suite grew to 10 checks when the project skills were added. §16
+records that later delivery; §14 keeps the result from the fix itself.
 
 ---
 
@@ -457,7 +460,43 @@ Each `SKILL.md` starts with YAML frontmatter containing `name`, `description`,
 Freebuff requires. The official format is documented at
 <https://docs.freebuff.page/working-with-the-agent/#skills>.
 
-`tools/ci_check.py` now validates the three skill files: presence, YAML
+`tools/ci_check.py` checks the three skill files for presence, frontmatter
 delimiters, directory/name match, a non-empty description, actionable body
-length, English-only text, and no unfinished markers. `npm test` therefore
-fails if a skill is deleted, renamed, or broken.
+length, absence of German umlauts, and no unfinished markers. Full YAML syntax
+was parsed separately with `yaml.safe_load` during delivery. `npm test` fails
+if a skill is deleted, renamed, or structurally broken.
+
+---
+
+## 16. Project-skills delivery (2026-11-12)
+
+- Branch: `skills/quality-workflow-gate`, based on `866a4e9`.
+- Commit: `cc32e2e` — *Add project skills for fix, CI and documentation workflows*.
+- Branch CI: run [`43212298392`](https://github.com/JONIMONI09/detailed-3d-sinking-freighter-game/actions/runs/43212298392),
+  commit `cc32e2e`, **success**.
+- Merge to `main`: fast-forward `866a4e9..cc32e2e`.
+- Main CI: run [`43212921120`](https://github.com/JONIMONI09/detailed-3d-sinking-freighter-game/actions/runs/43212921120),
+  commit `cc32e2e`, **success**.
+- GitHub Pages: run [`43212920586`](https://github.com/JONIMONI09/detailed-3d-sinking-freighter-game/actions/runs/43212920586),
+  commit `cc32e2e`, **success**.
+- Remote `main` and `FETCH_HEAD` were both at
+  `cc32e2ef67b680cf16239089524ee63561de7709` after the merge.
+
+Local gate at this commit:
+
+| Check | Result |
+| :--- | :--- |
+| `npm test` | Exit 0: 5/5 physics, 14/14 browser guards, 10/10 Python |
+| Root and Sonnet typechecks | Exit 0 |
+| Root build | 956.06 kB (gzip 251.25 kB), `b5908820…` |
+| Sonnet build (both paths) | 1,001.09 kB (gzip 275.92 kB), `7ea4957d…` |
+| Workflow YAML gate | 31/31 assertions, duplicate keys included |
+| Skill frontmatter | 3/3 parsed with `yaml.safe_load`; names match directories |
+| Live pages | HTTP 200 for `/` and `/sonnet/`; markers present |
+
+GitHub's anonymous REST API was rate-limited during this audit: `core.remaining`
+was 0 at `2026-11-12T11:56Z`, with reset at `12:23Z`. The exact-SHA results
+above were therefore verified from the official Actions run pages, which show
+commit `cc32e2e` and `completed successfully`; no run ID or status was invented.
+A later documentation-repair commit is CI-gated separately and does not change
+these historical results.

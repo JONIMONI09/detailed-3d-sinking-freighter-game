@@ -148,15 +148,15 @@ Three project skills under `.claude/skills/` encode the recurring workflow:
 reproduce, fix the root cause, add a fallback and regression tests, update the
 English documentation, and verify the feature branch through CI. Freebuff also
 discovers `.agents/skills/`; these skills follow the official
-[Freebuff skills format](https://docs.freebuff.page/working-with-the-agent/#skills)
-and the [SKILL.md template](https://github.com/CodebuffAI/freebuff/blob/main/common/src/templates/initial-agents-dir/skills/README.md).
+[Freebuff skills format](https://docs.freebuff.page/working-with-the-agent/#skills).
 
 - `error-fix-document` — bug and incident workflow with fallback and docs.
 - `ci-workflow-audit` — YAML validation, exact-SHA CI gate and Pages checks.
 - `documentation-maintenance` — stale-claim scan and evidence recording.
 
-`tools/ci_check.py` validates their presence, names, YAML frontmatter and
-English guidance.
+`tools/ci_check.py` checks their presence, names, frontmatter fields, body
+length, and absence of German umlauts or unfinished markers. Full YAML syntax
+is parsed separately during delivery.
 
 ---
 

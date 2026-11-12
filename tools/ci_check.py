@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 tools/ci_check.py - Automated CI and Physics Integrity Verification Suite
-Validates TypeScript compilation, physics math contracts, GitHub Actions workflows,
-and file structure consistency across both simulation targets.
+Validates physics math contracts, workflow wiring, project-skill structure, and
+file consistency across both simulation targets. TypeScript is checked separately.
 """
 
 import sys
@@ -152,7 +152,7 @@ def check_project_skills():
             log(f"Skill '{name}' contains unfinished markers.", "FAIL")
             return False
 
-    log("Project skills have valid frontmatter and complete English guidance.", "PASS")
+    log("Project skills are present, structurally valid and free of German umlauts.", "PASS")
     return True
 
 def check_branch_ci_trigger():
