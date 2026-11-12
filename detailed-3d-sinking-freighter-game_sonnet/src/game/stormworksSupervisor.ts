@@ -87,9 +87,9 @@ export class StormworksSupervisor {
 
     // Initialize standard 3-man Damage Control team
     this.crew.push(
-      createCrewMember("Chief Engineer", "chief-engineer", 0, -5.0, -50.0, 4),
-      createCrewMember("Boatswain", "boatswain", 0, 3.0, 10.0, 3),
-      createCrewMember("DC Sailor", "damage-control", 0, -5.0, 5.0, 5),
+      createCrewMember("Chief Engineer", "chief-engineer", 4.5, 3.0, -38.0, 4),
+      createCrewMember("Boatswain", "boatswain", -4.5, 3.0, -32.0, 3),
+      createCrewMember("DC Sailor", "damage-control", 2.0, 3.0, -24.0, 5),
     );
   }
 

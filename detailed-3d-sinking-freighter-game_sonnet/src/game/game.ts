@@ -20,6 +20,7 @@ import { stepTelegraph, MAX_RUDDER_DEG, TELEGRAPH_SPEED } from "./bridge";
 import { shouldWindowBurst } from "./ingress";
 import { v3 } from "./navmesh3d";
 import { CrewVisual } from "./crewVisual";
+import { Battleship, createBattleship, stepBattleship, damageBattleship } from "./battleships";
 
 export type Mode = "mission" | "sandbox";
 
@@ -212,6 +213,7 @@ export class Game {
   waterOverlay = false;
   godModeHoldProgress = 0;
   crewVisuals: CrewVisual[] = [];
+  battleships: Battleship[] = [];
   helmMode = false;
   helmThrottleCooldown = 0;
   engineExploded = false;
@@ -368,6 +370,10 @@ export class Game {
         this.ship.group.add(cv.group);
         this.crewVisuals.push(cv);
       }
+      const bs = createBattleship("bs-1", 46, -15);
+      this.scene.add(bs.group);
+      this.battleships.push(bs);
+      console.log("[NORDWIND/SANDBOX] Spawned 3 visible crew members on deck and 1 walkable Battleship at (46, 0, -15).");
     }
 
     // Spieler
@@ -706,6 +712,22 @@ export class Game {
     const forward = v3(-Math.sin(this.supervisor.helm.heading), 0, -Math.cos(this.supervisor.helm.heading));
     this.ship.group.position.addScaledVector(forward, this.supervisor.helm.speed * dt);
     this.ship.group.updateMatrixWorld(true);
+
+    // Step walkable Battleships & rotating turrets
+    const freighterTarget = this.ship.group.position.clone().add(V(0, 3, -10));
+    for (const bs of this.battleships) {
+      stepBattleship(
+        bs,
+        dt,
+        t,
+        freighterTarget,
+        (x, z, tt) => this.ocean.height(x, z, tt),
+        (muzzle, dir) => {
+          this.tracer(muzzle, muzzle.clone().addScaledVector(dir, 55), 0xff8833);
+          this.pn.emit(muzzle.x, muzzle.y, muzzle.z, dir.x * 3, 2, dir.z * 3, 1.4, 0.25, 0.8, 0.6, 0.6, 0.6, 0.7, -0.2, 0.4);
+        },
+      );
+    }
 
     // Engine room severe flooding (> 40%) triggers generator breakdown & explosion
     const engComp = this.ship.compartments[0];

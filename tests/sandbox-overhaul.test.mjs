@@ -512,6 +512,35 @@ function testWeaponFiringAndTntWithoutPointerLock() {
 }
 
 // ============================================================================
+// 10. Crew Ship-Bounds Clamping, Respawn Point & Walkable Battleship Test
+// ============================================================================
+function testCrewRespawnAndBattleship() {
+  const crewMod = load('crew');
+  const bsMod = load('battleships');
+
+  const member = crewMod.createCrewMember("Chief Engineer", "chief-engineer", 4.5, 3.0, -38.0, 4);
+  // Simulate crew clipping through hull bottom
+  member.y = -12.0;
+  member.x = 25.0;
+  crewMod.enforceShipBoundsAndRespawn(member);
+  assert.equal(member.x, 4.5, "Crew must respawn at ship spawn X");
+  assert.equal(member.y, 3.0, "Crew must respawn at ship spawn Y");
+  assert.equal(member.z, -38.0, "Crew must respawn at ship spawn Z");
+
+  const bs = bsMod.createBattleship("bs-test", 46, -15);
+  assert.equal(bs.turrets.length, 2, "Battleship must have 2 twin-barrel turrets");
+  assert.equal(bs.armorAbsorption, 0.3, "Battleship must have 30% armor absorption");
+  const sunkFirst = bsMod.damageBattleship(bs, 500);
+  assert.equal(sunkFirst, false);
+  assert.equal(bs.hp, 650, "500 raw damage * (1 - 0.3) = 350 effective damage -> 650 HP");
+  const sunkFinal = bsMod.damageBattleship(bs, 1000);
+  assert.equal(sunkFinal, true, "Battleship must sink when HP reaches 0");
+  assert.equal(bs.sunk, true);
+
+  console.log("  ok crew ship-bounds clamping/respawn and walkable Battleship turrets/armor verified");
+}
+
+// ============================================================================
 // Execution
 // ============================================================================
 testSandboxInfiniteAmmoAndTnt();
@@ -523,5 +552,6 @@ testSandboxCrew3DSpawningAndNoGuards();
 testPlayerCannotDieInSandboxMode();
 testDeckExplosionAboveMinusTwoMetersDoesNotBreach();
 testWeaponFiringAndTntWithoutPointerLock();
+testCrewRespawnAndBattleship();
 
-console.log('🎉 ALL 9 STORMWORKS SANDBOX OVERHAUL & WEAPON RELIABILITY TESTS PASSED!');
+console.log('🎉 ALL 10 STORMWORKS SANDBOX OVERHAUL & WEAPON RELIABILITY TESTS PASSED!');

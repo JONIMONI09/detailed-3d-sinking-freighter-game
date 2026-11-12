@@ -120,13 +120,16 @@ export function createCrewMember(
   y: number,
   z: number,
   patchKits = 4,
-): CrewMember {
+): CrewMember & { spawnX: number; spawnY: number; spawnZ: number } {
   return {
     name,
     role,
     x,
     y,
     z,
+    spawnX: x,
+    spawnY: y,
+    spawnZ: z,
     state: "patrol",
     targetId: null,
     patchKits,
@@ -135,6 +138,24 @@ export function createCrewMember(
     portableLadders: role === "damage-control" ? 2 : 1,
     deployedLadderId: null,
   };
+}
+
+/** Keeps crew strictly on the vessel deck/hull and respawns them at their ship spawn point if they clip out. */
+export function enforceShipBoundsAndRespawn(m: CrewMember & { spawnX?: number; spawnY?: number; spawnZ?: number }): void {
+  const sx = m.spawnX ?? 0;
+  const sy = m.spawnY ?? 3.0;
+  const sz = m.spawnZ ?? -36.0;
+  if (!Number.isFinite(m.x) || !Number.isFinite(m.y) || !Number.isFinite(m.z) || m.y < -5.5 || Math.abs(m.x) > 10.5 || m.z < -68 || m.z > 65) {
+    m.x = sx;
+    m.y = sy;
+    m.z = sz;
+    m.targetId = null;
+    m.state = "patrol";
+    return;
+  }
+  m.x = Math.max(-9.2, Math.min(9.2, m.x));
+  m.z = Math.max(-65.5, Math.min(62.0, m.z));
+  m.y = Math.max(-5.2, m.y);
 }
 
 const dist = (m: CrewMember, b: { x: number; y: number; z: number }) =>
@@ -228,6 +249,7 @@ export function stepCrew(
   ctx?: CrewStepContext,
 ): CrewEvent {
   m.stateTime += dt;
+  enforceShipBoundsAndRespawn(m);
 
   // 1. Dynamic Ragdoll Evaluation
   if (ctx) {

@@ -193,9 +193,9 @@ function testCrewAndRagdollSupervisorIntegration() {
   const compartments = createMockCompartments();
   const doors = createMockDoors();
 
-  // Create a breach in Hold 2 within engineer reach
+  // Create a breach on deck within damage control crew reach
   const hole = {
-    pos: { x: 0, y: -5.0, z: 10.0 },
+    pos: { x: 2.0, y: 3.0, z: -20.0 },
     area: 0.5,
     normal: { x: 0, y: 0, z: 1 },
     compartmentIndex: 2,
@@ -207,8 +207,8 @@ function testCrewAndRagdollSupervisorIntegration() {
 
   const mockOcean = { sample: () => 0 };
 
-  // Step supervisor loop for 200 iterations (10s)
-  for (let i = 0; i < 200 && hole.area > 0.01; i++) {
+  // Step supervisor loop for up to 600 iterations (30s) so deck-spawned crew reaches and seals breach
+  for (let i = 0; i < 600 && hole.area > 0.01; i++) {
     supervisor.step(0.05, i * 0.05, mockOcean, 1.0);
   }
 
