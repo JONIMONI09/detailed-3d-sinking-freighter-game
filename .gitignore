@@ -7,6 +7,10 @@ dist/
 dist-ssr/
 *.local
 
+# Python caches
+__pycache__/
+*.py[cod]
+
 # Generated layout verification screenshots
 artifacts/
 

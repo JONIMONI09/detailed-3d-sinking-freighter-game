@@ -2,6 +2,8 @@
 
 An advanced interactive maritime simulation built with **Vite**, **React 19**, **Three.js**, and **TypeScript**. Experience realistic multi-compartment hydrostatic flooding, structural beam bending stresses, localized explosive damage, and damage control operations on an ocean-going cargo freighter.
 
+**Live editions:** [Root game](https://jonimoni09.github.io/detailed-3d-sinking-freighter-game/) · [Sonnet edition](https://jonimoni09.github.io/detailed-3d-sinking-freighter-game/sonnet/)
+
 ---
 
 ## 🌊 Core Simulation Features
@@ -143,9 +145,9 @@ Details and measurements: [RESPONSIVE_UI.md](RESPONSIVE_UI.md).
 
 ## 🚀 CI & GitHub Pages Deployment
 
-Both editions are verified on every push to `main`. `npm test` runs the physics
-suite, the browser-guard regression suite and the Python integrity checks; CI
-invokes the same command:
+Both editions are verified on every feature-branch push and on every push to
+`main`. `npm test` runs 5 physics tests, 14 browser-guard tests and 9 Python
+integrity checks; CI invokes the same command:
 
 ```bash
 npm ci
@@ -167,10 +169,12 @@ Before installing, both workflow files are parsed and asserted with Python
 artifact paths, no `--force`), and `python tools/ci_check.py` verifies the
 workflow and physics contracts.
 
-The root app is published as a single-file bundle (`dist/index.html`), the Sonnet
-edition as a sub-site under `/sonnet/`. The deploy workflow requires
-**Settings → Pages → Source: GitHub Actions**; a private repository additionally
-needs a plan that includes GitHub Pages.
+Merge a feature branch only after its Actions run is green. The root app is
+published as a single-file bundle (`dist/index.html`), the Sonnet edition as a
+sub-site under `/sonnet/`. The deploy workflow requires
+**Settings → Pages → Source: GitHub Actions**. The repository is public and
+Pages deployments succeed; if it is ever made private, Pages requires a plan
+that includes it.
 
 Full verification record, measured results and known limitations:
 [CI_DEPLOYMENT.md](CI_DEPLOYMENT.md).

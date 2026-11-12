@@ -270,3 +270,6 @@ pointer id no longer throws or shows the crash screen. Real clicks enter
 fullscreen in both editions (`document.fullscreenElement === HTML`); a request
 from a background tab is rejected by the browser and is reported by the new
 status message. The layout counts above include the new fullscreen button.
+
+The fix was merged only after feature-branch CI run `43119185236` succeeded;
+the final delivery record is `CI_DEPLOYMENT.md` §14.

@@ -1,14 +1,15 @@
 # CI & Deployment Verification Record
 
-Status: **green** — locally reproduced on 2026-11-11. The GitHub Pages deployment
-failure was a workflow configuration problem, not an application defect.
+Status: **green** — branch CI, main CI and the GitHub Pages deployment for the
+fullscreen fix were verified on 2026-11-12. §14 records that delivery; sections
+3–12 keep the earlier local runs and their historical numbers.
 
-Related commit: `410a321` — *Enable GitHub Pages provisioning in the deploy workflow*
-(pushed as a fast-forward `02fc1b2..410a321` to `main`).
+Fullscreen fix commit: `7e54232` — *Run CI on feature branches* on `main`.
+Initial deployment fix: `410a321` — *Enable GitHub Pages provisioning*.
 
 ---
 
-## 1. Summary
+## 1. Summary (after the fullscreen fix, 2026-11-12)
 
 | Item | Result |
 | :--- | :--- |
@@ -16,13 +17,17 @@ Related commit: `410a321` — *Enable GitHub Pages provisioning in the deploy wo
 | Root TypeScript check | Exit 0, 0 errors |
 | Sonnet edition TypeScript check | Exit 0, 0 errors |
 | Physics unit tests | Exit 0, 5/5 passed |
-| Python CI integrity suite | Exit 0, 7/7 passed |
-| Root production build | Exit 0, `dist/index.html` 953.59 kB (gzip 250.56 kB) |
-| Sonnet production build | Exit 0, `dist/sonnet/index.html` 1,001.18 kB (gzip 276.57 kB) |
-| GitHub Pages sub-path simulation | HTTP 200 for `/` and `/sonnet/` |
+| Browser-guard regression tests | Exit 0, 14/14 passed |
+| Python CI integrity suite | Exit 0, 9/9 passed |
+| Branch CI (`fix/fullscreen-pointer-capture`) | **success**, run `43119185236` |
+| Main CI (`7e54232`) | **success**, run `43119328266` |
+| GitHub Pages deploy (`7e54232`) | **success**, run `43119328360` |
+| Root production build | Exit 0, 956.06 kB (gzip 251.25 kB), `b5908820…` |
+| Sonnet production build | Exit 0, 1,001.09 kB (gzip 275.92 kB), `7ea4957d…` |
+| Live pages | HTTP 200 for `/` and `/sonnet/` |
 
-No application, type or test defect was found. The deploy job could never
-publish because the Pages site was not provisioned (see section 5).
+The Pages failure described in §5 is fixed and the site is published. Sections
+3–12 document the earlier passes; §14 is the authoritative final record.
 
 ---
 
@@ -139,7 +144,7 @@ the build output before upload.
    `dist/sonnet/index.html` is missing.
 
 Verification of the change: the workflow YAML parses (11 steps in order,
-`enablement: True`), and `python tools/ci_check.py` still passes 7/7 afterwards.
+`enablement: True`), and `python tools/ci_check.py` passed 7/7 at the time.
 
 ---
 
@@ -157,12 +162,13 @@ compiled CSS, because `dist/` is git-ignored. The result is a blank page with a
 
 | Topic | Status |
 | :--- | :--- |
-| Live GitHub Actions run | **Not observed.** The repository is private, the GitHub API returns 404 anonymously and `gh` is not authenticated here. Only the remote ref (`main` → `410a321`) was verified. |
-| Private repository on GitHub Free | GitHub Pages for private repositories requires Pro/Team/Enterprise. If the account is on Free, `enablement: true` cannot succeed; the repository must be made public, the plan upgraded, or another host used. |
+| Live GitHub Actions run | **Verified on 2026-11-12.** Branch run `43119185236` (success), main CI `43119328266` (success) and Pages `43119328360` (success); see §14. Earlier observations in §11/§12 were made while the API was unreadable and are superseded. |
+| Private repository on GitHub Free | The repository is publicly readable and the Pages deployment succeeds. If it is ever made private, Pages requires a plan that includes it; `enablement: true` may then fail on GitHub Free. |
 | CI integrity suite depth | `check_watertight_dogging` greps for the strings `door.locked` and `0.85` anywhere in the file — `0.85` also matches `HemisphereLight(..., 0.85)`, so the check can pass even if the dogging timing regresses. `check_engine_room_collision_clearance` depends on the exact `addWallBox('diesel_engine_core', x, y, z)` formatting. Both are formatting checks, not behavioural tests. |
 | Sonnet dependency isolation | `detailed-3d-sinking-freighter-game_sonnet/` ships its own `package.json` and `package-lock.json`, but CI installs only the root dependencies. The build works because every Sonnet dependency also exists at the root; adding a Sonnet-only dependency will break CI. |
 | Node parity | CI uses Node 22, verification ran on Node 26. |
-| Visual verification | The built pages were checked by HTTP status and HTML content only; WebGL rendering and console output were not inspected in a browser. |
+| Dependency advisories | `npm audit --omit=dev` reports **0 production vulnerabilities**. Two dev-only advisories remain in Vite 7.3.2/esbuild; fixing them requires a Vite upgrade, so no dependency change was made in this delivery. |
+| Visual verification | Fullscreen, pointer and responsive HUD checks were run in the Cloud browser (§13 and `RESPONSIVE_UI.md`); the early runs in §3/§4 used HTTP status and HTML content only. |
 
 ---
 
@@ -242,10 +248,9 @@ workflow integrity check. The clean-room chain then passed with the numbers in
 §10; the root bundle is 953.59 kB and hashes to `2e69b066…`.
 
 The verified tree was pushed to `main` as `98d649f` (fast-forward
-`410a321..98d649f`). The GitHub Actions run itself could not be read from the
-Cloud sandbox: `gh` has no authenticated host and the anonymous Actions API
-returns HTTP 403 for the private repository. Read the status on the repository's
-**Actions** tab; both workflows trigger on a push to `main`.
+`410a321..98d649f`). At that time the Cloud sandbox could not read Actions
+(`gh` unauthenticated, anonymous API 403). That limitation is resolved: §14
+records the actual branch, main and Pages runs.
 
 ---
 
@@ -320,9 +325,9 @@ plus a duplicate-key constructor): **46/46 assertions passed**, including trigge
 Node 22, `npm ci`, both typechecks/builds, Pages permissions, `enablement: true`,
 artifact checks and no force flags. `python tools/ci_check.py` passed 7/7.
 
-The GitHub Actions run itself still cannot be read from this sandbox (`gh`
-unauthenticated, anonymous API 403 for the private repository); check the
-repository's **Actions** tab. Both workflows trigger on the push to `main`.
+At the time of this pass, Actions could not be read from the sandbox (`gh`
+unauthenticated, anonymous API 403). This is superseded by §14, which records
+the successful branch, main and Pages runs.
 
 ---
 
@@ -373,3 +378,59 @@ b590882086dbd9be6dba4e8fce0d5831ac03e1205211997196c728e11b67eb72  dist/index.htm
 
 Root build: 956.06 kB (gzip 251.25 kB). Sonnet build: 1,001.09 kB
 (gzip 275.92 kB).
+
+The feature branch was gated on run `43119185236` and merged only after it
+succeeded; §14 records the merge, main CI and Pages deployment.
+
+---
+
+## 14. Fullscreen fix delivery verification (2026-11-12)
+
+### Branch and merge
+
+- Branch: `fix/fullscreen-pointer-capture`, based on `7274830`.
+- `f0e8191` — **Guard fullscreen and pointer capture across editions**.
+- `7e54232` — **Run CI on feature branches** and document the branch gate.
+- Branch CI: run [`43119185236`](https://github.com/JONIMONI09/detailed-3d-sinking-freighter-game/actions/runs/43119185236),
+  commit `7e54232`, **success**.
+- Merge to `main`: fast-forward `7274830..7e54232`; worktree clean.
+- At the fix merge, remote `main` and `FETCH_HEAD` were both at
+  `7e54232e3b4b6b2a7101b787403e423bb760add6`.
+- This documentation follow-up is CI-gated on its own feature branch before
+  merge, so this section records the fix delivery rather than the latest repo tip.
+
+### Main workflows
+
+| Workflow | Run | Commit | Result |
+| :--- | :--- | :--- | :--- |
+| CI | [`43119328266`](https://github.com/JONIMONI09/detailed-3d-sinking-freighter-game/actions/runs/43119328266) | `7e54232` | **success** |
+| GitHub Pages | [`43119328360`](https://github.com/JONIMONI09/detailed-3d-sinking-freighter-game/actions/runs/43119328360) | `7e54232` | **success** |
+
+### Live deployment
+
+| URL | HTTP | Bytes |
+| :--- | :---: | ---: |
+| `https://jonimoni09.github.io/detailed-3d-sinking-freighter-game/` | 200 | 956,060 |
+| `https://jonimoni09.github.io/detailed-3d-sinking-freighter-game/sonnet/` | 200 | 1,001,088 |
+
+The live root bundle contains `Enter fullscreen` and
+`Fullscreen is blocked by this browser`; the Sonnet bundle contains
+`Toggle Fullscreen` and the same blocked-request message.
+
+### Final local gate
+
+| Check | Result |
+| :--- | :--- |
+| `npm ci` | Exit 0, 104 packages |
+| Root `tsc --noEmit` | Exit 0 |
+| Sonnet `tsc --noEmit` | Exit 0 |
+| `npm test` | Exit 0: 5/5 physics, 14/14 browser guards, 9/9 Python |
+| Root build | 956.06 kB (gzip 251.25 kB), `b5908820…` |
+| Sonnet build (both paths) | 1,001.09 kB (gzip 275.92 kB), `7ea4957d…` |
+| Python YAML gate | 31/31 assertions, duplicate keys included |
+| `npm audit --omit=dev` | 0 production vulnerabilities; 2 dev-only advisories documented in §7 |
+| Live pages | HTTP 200 for `/` and `/sonnet/` |
+
+The Android crash path at `785x303` is covered by the pointer guard and the
+viewport measurements in §13. Real-device Android verification remains a manual
+hardware check; the Cloud browser uses Chromium with exact-size iframes.

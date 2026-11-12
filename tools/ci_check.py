@@ -106,6 +106,38 @@ def check_test_suite_wiring():
     log("Physics, browser-guard and Python suites are wired into npm test.", "PASS")
     return True
 
+def check_branch_ci_trigger():
+    log("Verifying CI covers feature branches before merge...")
+    ci_path = WORKSPACE / ".github" / "workflows" / "ci.yml"
+    deploy_path = WORKSPACE / ".github" / "workflows" / "deploy-pages.yml"
+    if not ci_path.exists() or not deploy_path.exists():
+        log("CI or Pages workflow is missing!", "FAIL")
+        return False
+
+    ci = ci_path.read_text(encoding="utf-8")
+    deploy = deploy_path.read_text(encoding="utf-8")
+
+    try:
+        push_block = ci.split("  push:", 1)[1].split("  pull_request:", 1)[0]
+    except IndexError:
+        log("ci.yml has no bounded push trigger block.", "FAIL")
+        return False
+
+    if '"**"' not in push_block and "'**'" not in push_block:
+        log("ci.yml push trigger does not cover feature branches (missing '**').", "FAIL")
+        return False
+
+    if "npm test" not in ci:
+        log("ci.yml does not run npm test.", "FAIL")
+        return False
+
+    if '"**"' in deploy or "'**'" in deploy:
+        log("deploy-pages.yml must not deploy every branch.", "FAIL")
+        return False
+
+    log("CI runs on feature branches; Pages remains restricted to main.", "PASS")
+    return True
+
 def check_engine_room_collision_clearance():
     log("Validating engine room machinery vs stairwell clearance...")
     builder_path = WORKSPACE / "src" / "game" / "CargoShipBuilder.ts"
@@ -189,6 +221,7 @@ def main():
         check_git_ignore,
         check_vite_configs,
         check_workflows,
+        check_branch_ci_trigger,
         check_test_suite_wiring,
         check_engine_room_collision_clearance,
         check_physics_torricelli_math,
