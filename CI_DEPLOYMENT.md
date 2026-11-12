@@ -862,3 +862,87 @@ repository's Markdown and the corrected prose changes its generated CSS. The
 Sonnet bundle stayed byte-identical. The exact-SHA branch run is recorded
 below after it completes; main CI/Pages are reported with the delivery because
 an evidence-only commit changes their SHA again.
+
+---
+
+## 23. Skill governance, CodeGraph gate, and local website check (2026-11-12)
+
+This delivery makes skill maintenance and its evidence executable. It is based on
+`main` at `87a9cfc` and was developed on `feat/skill-governance`; the
+implementation commit verified by CI is `e00a232`, and this evidence section is
+a follow-up documentation commit.
+
+### 23.1 Delivered structure
+
+| Item | Result |
+| :--- | :--- |
+| Main skill | `.agents/skills/skill-index/SKILL.md` plus the Account copy |
+| Documentation index | `docs/SKILLS.md`: 5 project skills, 6 other Account skills, 11 total |
+| Tool inventory | `docs/AGENT_TOOLS.md`: current English tool list and CodeGraph commands |
+| Error ledger | `docs/ERRORS_AND_FIXES.md`: six incidents, including the CI failures below |
+| Documentation gate | `tools/check_skill_docs.py` + `npm run docs:check` |
+| CodeGraph | `@astudioplus/codegraph-mcp@0.21.0`, Apache-2.0, graph-only one-shot mode |
+| CI | `npm run docs:check` after `npm test` |
+| Agent scope | `AGENTS.md` declares **Freebuff AI agent only** and owns the durable rules |
+| Account registry | 11 entries, all `enabled:true` in two reads on 2026-11-12 |
+
+The five project skills have dated frontmatter (`metadata.last_updated:
+2026-11-12`) and Account copies. `brainstorming` and `skill-creator` are
+Account-only skills; their operating sequence for this repository is in
+`docs/SKILLS.md`. The web picker label remains `/<name>`; local CLI/Desktop uses
+`/skill:<name>`. `/skill` is a substring search, not a namespace.
+
+### 23.2 Local gate
+
+| Check | Result |
+| :--- | :--- |
+| `npm test` | 5/5 physics, 14/14 browser guards, 10/10 Python checks |
+| `npm run docs:check` | CodeGraph `codegraph_pr_context` valid JSON; all docs checks pass |
+| Root TypeScript | `npx tsc --noEmit` exit 0 |
+| Sonnet TypeScript | `npx tsc -p detailed-3d-sinking-freighter-game_sonnet/tsconfig.json --noEmit` exit 0 |
+| Root build | 956,117 bytes, SHA-256 `2841dd3980ca418cdaf5c4e0f0ec85a9ea7194878029041f9332ef92005855ab` |
+| Sonnet build | 1,001,088 bytes, SHA-256 `7ea4957dfe82f83ac489e159b5683d0a2f056424329399482cd1ffa5d1a9635f` |
+| Workflow YAML | Both files parse with duplicate-key detection, exit 0 |
+| `npm ci` | Reproducible install; CodeGraph engine 131,719,904 bytes fetched |
+| `npm audit --omit=dev` | 0 vulnerabilities |
+| `git diff --check` | exit 0 |
+
+The full development audit still reports two advisories in the Vite/esbuild
+toolchain. They are development-only; no `npm audit fix --force` was run.
+
+### 23.3 CI failures and the exact-SHA result
+
+The first run, `43255281208` on `517fe39`, failed the documentation step. The
+checkout was depth 1 and had no local `main`, so CodeGraph ran
+`git diff main...HEAD` and failed with `fatal: ambiguous argument 'main...HEAD'`.
+
+The second run, `43256147274` on `d905f63`, still failed: the gate needs an
+explicit `origin/main` ref and a local `main`, and an edited project skill must
+be committed with `docs/SKILLS.md` so the change-coupling check passes.
+
+The workflow now checks out with `fetch-depth: 0`, fetches
+`origin/main:refs/remotes/origin/main`, creates `main` when absent, and the
+script resolves `main`/`origin/main`/`master`/`origin/master`. Run
+`43256568234` on `e00a232` completed with **success**; all steps passed,
+including `Validate Skill and Documentation Governance`, both builds and both
+typechecks.
+
+### 23.4 Local website check
+
+The Cloud workspace reserves port `3000`. Vite was started bound to
+`0.0.0.0:3000`; `curl http://127.0.0.1:3000/` returned HTTP 200 (1,088 bytes)
+with `MS POSEIDON VII // 3D Freighter Sinking & Demolition Simulator`.
+
+The assigned preview host initially received a Vite 403:
+`Blocked request. This host (...) is not allowed.` Restarting with
+`__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS` set to the exact hostname returned HTTP
+200 and the same title. This is a host-allowlist configuration check, not a
+visual test: the agent did not click through the 3D scene or inspect the
+rendered canvas. The right-side preview panel was opened for the user.
+
+### 23.5 Main and Pages
+
+The feature branch is verified at `e00a232`. The fast-forward merge, main CI,
+Pages deployment and live URL checks are performed after this evidence is
+committed; their exact run IDs and HTTP results are reported in the delivery
+message because an evidence-only commit changes the SHA again.
