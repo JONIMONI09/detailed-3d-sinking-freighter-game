@@ -197,8 +197,9 @@ Use exact commands and real run IDs when they exist.
   index, README, AGENTS.md, and the Account copies, and added the index date and
   path consistency checks.
 - Verification: `npm run docs:check` and `npm test` pass; `npx skills list`
-  shows all seven project skills, including both creative skills. The branch
-  and live gate are recorded in `CI_DEPLOYMENT.md` section 24.
+  shows all seven project skills, including both creative skills. The branch,
+  local gate, and exact-SHA CI path are recorded in `CI_DEPLOYMENT.md`
+  section 24; final run IDs and live HTTP checks are in the delivery message.
 - Prevention: `skill-creator` now requires a project copy, an index row with a
   matching date, both Python registries, and an Account copy. The documentation
   gate rejects a project skill without an index row or with a mismatched date.
