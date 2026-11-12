@@ -154,23 +154,45 @@ for Claude Code compatibility. These skills follow the official
 
 In local CLI/Desktop sessions, invoke a skill as `/skill:<name>`. In the web
 client, choose the skill from the `/` picker; the picker inserts `/<name>`.
-The table shows the local handle:
+The same registry name is used in both clients:
 
-| Skill | Local `/skill:` handle |
-| :--- | :--- |
-| `error-fix-document` | `/skill:error-fix-document` |
-| `ci-workflow-audit` | `/skill:ci-workflow-audit` |
-| `documentation-maintenance` | `/skill:documentation-maintenance` |
-| `skill-discovery-audit` | `/skill:skill-discovery-audit` |
-| Built-in brainstorming | `/skill:brainstorming` |
-| Built-in skill discovery | `/skill:find-skills` |
-| Built-in skill creator | `/skill:skill-creator` |
+| Command in web picker | Local CLI/Desktop | Source |
+| :--- | :--- | :--- |
+| `/brainstorming` | `/skill:brainstorming` | Account skill |
+| `/find-skills` | `/skill:find-skills` | Account skill |
+| `/skill-creator` | `/skill:skill-creator` | Account skill |
+| `/ci-workflow-audit` | `/skill:ci-workflow-audit` | Project + Account skill |
+| `/documentation-maintenance` | `/skill:documentation-maintenance` | Project + Account skill |
+| `/error-fix-document` | `/skill:error-fix-document` | Project + Account skill |
+| `/skill-discovery-audit` | `/skill:skill-discovery-audit` | Project + Account skill |
 
 Locally, a bare `/brainstorming` or `/find-skills` is not a Freebuff command;
 the `/skill:` prefix is required. Local discovery happens at session start, so
 reload the chat (or start a new one) after adding, moving, or renaming a skill.
-In the web picker, type the start of the registry name (`/ci`, `/doc`,
-`/error`, `/skill`) rather than `/skill:`; the picker searches the names.
+
+In the web picker, the query is a **substring match**, not a namespace. The
+composer filters account skills with `name.includes(query)`. That means
+`/skill` is only the search text "skill"; it shows the names that contain that
+text (`/find-skills`, `/skill-creator`, `/skill-discovery-audit`) plus the
+`/skills` command that opens Settings → Skills. It does not show
+`/brainstorming` or the three workflows whose names do not contain "skill".
+This is expected picker behavior, not a missing skill.
+
+| Typed in the web composer | Skill rows it shows |
+| :--- | :--- |
+| `/` (bare slash) | all seven commands |
+| `/brain` | `/brainstorming` |
+| `/find` | `/find-skills` |
+| `/skill-creator` | `/skill-creator` |
+| `/ci` | `/ci-workflow-audit` |
+| `/documentation` | `/documentation-maintenance` |
+| `/error` | `/error-fix-document` |
+| `/skill-discovery` | `/skill-discovery-audit` |
+
+Type `/` alone or the exact command name. The old instruction to type `/skill`
+for every skill was wrong and is removed; `/skill` hides most of these names.
+See [CI_DEPLOYMENT.md](CI_DEPLOYMENT.md) §22 for the bundle lines and the
+two consecutive registry reads.
 
 A fresh `@codebuff/sdk@0.10.7` `loadSkills()` run against this repository
 returned all four project skills from `.agents/skills/` with their exact
@@ -180,13 +202,15 @@ local executions**, not the web Cloud client.
 The web Cloud client does not read a repository's `.agents/skills/` directory.
 It loads **Account skills** from **Settings → Skills** and **Cloud project
 skills** from **Settings → Project settings**. Account skills are available in
-every project; Cloud project skills are scoped to one project. All four
-workflows have also been registered as enabled account skills, so they appear
-in the web `/` skill picker after the next turn. The web picker inserts
-`/<name>`; the local CLI/Desktop form is `/skill:<name>`. The six built-in
-account skills remain present alongside them. The actual slash-menu rendering
-is the remaining UI-only check. See
-[CI_DEPLOYMENT.md](CI_DEPLOYMENT.md) §19 and §20.
+every project; Cloud project skills are scoped to one project. The four
+workflows have also been registered as enabled account skills, so the account
+copy is what a web chat can resolve. The registry has ten entries: the seven
+commands above plus `web-design-guidelines`, `performance`, and
+`github-actions-docs`. Two consecutive reads on 2026-11-12 returned all seven
+as enabled; the registry is not the reason a name is missing from `/skill`.
+The web picker inserts `/<name>`; the local CLI/Desktop form is
+`/skill:<name>`. The browser pixels are the remaining UI-only check. See
+[CI_DEPLOYMENT.md](CI_DEPLOYMENT.md) §19, §20 and §22.
 
 - `error-fix-document` — bug and incident workflow with fallback and docs.
 - `ci-workflow-audit` — YAML validation, exact-SHA CI gate and Pages checks.

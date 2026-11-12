@@ -697,22 +697,25 @@ Scope and shadowing:
 - the account copies are available in every project; use **Settings → Project
   settings** instead when a workflow must stay scoped to one project
 
-The web bundle builds skill insertion as `/${e.name}`; the web account menu
-displays `/find-skills`. The web label is therefore `/<name>`. The local CLI
-and Desktop still use `/skill:<name>`; both reference the same registry name.
-Do not type the local `/skill:` form into the web composer and expect the web
-picker to match it.
+The web bundle builds skill insertion as `/${e.name}` and renders the row as
+`/` plus the raw registry name, so the web label is `/<name>`. The local CLI and
+Desktop still use `/skill:<name>`; both reference the same registry name. Do
+not type the local `/skill:` form into the web composer and expect the picker
+to match it.
 
-Verified by the account skill listing:
+The web query is **not** a prefix search. The composer filters with
+`name.includes(query)`, so `/skill` is just the search text "skill" and shows
+only names containing that text. `/skills` in the same menu is the
+**Settings → Skills** command, not a skill, and `/skill` therefore hides
+`/brainstorming` and the workflows that do not contain "skill". This is the
+behavior the earlier screenshots exposed; the account entries were not
+missing. §22 records the exact bundle lines, the per-command query proof, and
+the two registry reads.
 
-- all four new names are present and enabled
-- the web labels are `/<name>`; the local handles are `/skill:<name>`
-- the existing six account skills remain present
-- no browser menu was available to the agent; the web slash-menu rendering
-  after the next turn remains the UI-only check
-
-The registry save is the web fix. A repository-only commit cannot make a
-project skill appear in a web Cloud chat.
+The account registry save is necessary for availability. It does not override
+the picker's substring filter. A repository-only commit cannot make a project
+skill appear in a web Cloud chat, and aliases must not be added just to make
+one search string show every name.
 
 The documentation and skill change altered the root bundle. The local build
 produced 956,117 bytes with SHA-256
@@ -736,7 +739,125 @@ and main runs for this change are recorded in §21.
 | Account registry | 10 skills; four new entries enabled |
 
 The code change is documentation and the discovery skill only; the runtime
-fix is the Account registry save. The final evidence-only commit adds this
+state is the Account registry save. The final evidence-only commit adds this
 section and is gated by its own branch run before the fast-forward merge. Main
 CI and Pages are verified after that merge; their run IDs are reported in the
-delivery message rather than rewritten into this file in a third cycle.
+delivery message rather than rewritten into this file in a third cycle. §22
+adds the picker-source audit and supersedes any earlier implication that
+`/skill` lists every account skill.
+
+---
+
+## 22. Web slash-picker source audit (2026-11-12)
+
+This section answers the recurring report that `/brainstorming`, `/find-skills`,
+`/skill-creator` and the four project workflows are "not recognized" in the web
+client. The report came from typing `/skill` and expecting it to be a
+namespace. It is not. The picker receives the Account registry, then applies a
+plain substring match.
+
+### 22.1 Exact client sources
+
+The three chunks below were fetched from the public web client on
+2026-11-12 at about 15:37 UTC. They are minified, so the line number is the
+served line, not a source-map line. Character offsets and SHA-256 hashes make
+the quoted code reproducible.
+
+| Served file | Line | SHA-256 / size | Finding |
+| :--- | :--- | :--- | :--- |
+| `https://freebuff.com/_next/static/chunks/1fonzmqk2_vl0.js` | 1 | `22638107416b5c48094a1890ab520962eacd9987d0cfd74cbff9cd9b14f7249b`, 42,714 bytes | `function x(e){return["workspace",e,"account-skills"]}`. `b()` queries `(0,l.c)("cloud/skills")` with `staleTime:6e4`; `C()` selects `e.settings.skills.filter(e=>!1!==e.enabled).map(e=>({name:e.name,description:e.description}))`. This is the Account registry source. |
+| `https://freebuff.com/_next/static/chunks/2e_eymjorgxa-.js` | 4 | `36d545f573e215385b8b251211f826ca0a4a0082617fc7da81bcf5ae02c12f05`, 345,601 bytes | `rY=(0,s6.C)(z?.id,!e)` at character 88,662. `e` is the component's `agenticAdsLab` flag (`function oG({agenticAdsLab:e=!1,...})`); normal web workspace passes `false`, so the account query is enabled with the signed-in user id. |
+| `https://freebuff.com/_next/static/chunks/2e_eymjorgxa-.js` | 10 | same file | The composer receives `skills:(0,am.$)(ak)?void 0:rY`. `am.$` only matches native-agent model strings (`agent:claude-code:<model>` / `agent:codex:<model>`); a normal web model passes the account list as `rY`. The Cloud `folderSkillsChatId` argument is separate and only affects merging folder skills, not this base list. |
+| `https://freebuff.com/_next/static/chunks/1h9wqfa9xnvfo.js` | 3 | `9fc28857c4db739f25f10a6ac61b9c81ecd4a31545f8c18ffd5592b4b690d320`, 306,405 bytes | `function ec(e,t){return e.filter(e=>e.name.includes(t)&&...).sort(...)}` at character 98,691. The filter is a **substring** match (`includes`), not `startsWith`. It also excludes command names in `er` (`plan`, `mission`, `goal`, `compact`, `skills`) and `et` (`pause`, `close`); none of the seven skill names collide. |
+| `https://freebuff.com/_next/static/chunks/1h9wqfa9xnvfo.js` | 3 | same file | `tb=tg?[...(tv?tc:[]).filter(...).map(...),...(U?[]:ec(q,tg.text)).map(...kind:"skill")]:[]` at character 104,159. `q` is the account list passed down from `rY`; `tg.text` is the text after `/`; every skill row is built from this call. |
+| `https://freebuff.com/_next/static/chunks/1h9wqfa9xnvfo.js` | 3 | same file | `function t$(e,t=!1)` at character 112,009 builds the inserted string from the text before the slash, then `/`, then `e.name`, then a space. Selecting a skill inserts `/<name> ` as text. The picker label and the inserted command are the registry name. |
+
+There is no repository path in this chain. `localExecution ?
+folderSkillsChatId : null` controls only the folder-skills query in module
+150739; the Account list is the separate `rY` base passed to the composer. A
+Cloud run passing `null` therefore does not explain a missing Account skill.
+
+### 22.2 Query-to-command proof
+
+The seven names below are the exact `name` values returned by the Account
+registry. Because `ec` uses `includes`, typing the exact name always leaves
+that name in the result set. None is in the excluded command lists.
+
+| Exact typed command | Row produced by `ec` | Source of the name |
+| :--- | :--- | :--- |
+| `/brainstorming` | `/brainstorming` | Account skill, `enabled:true` |
+| `/find-skills` | `/find-skills` | Account skill, `enabled:true` |
+| `/skill-creator` | `/skill-creator` | Account skill, `enabled:true` |
+| `/ci-workflow-audit` | `/ci-workflow-audit` | Account skill, `enabled:true` |
+| `/documentation-maintenance` | `/documentation-maintenance` | Account skill, `enabled:true` |
+| `/error-fix-document` | `/error-fix-document` | Account skill, `enabled:true` |
+| `/skill-discovery-audit` | `/skill-discovery-audit` | Account skill, `enabled:true` |
+
+A bare `/` has an empty `tg.text`; `includes("")` is true for every name, so
+the same code lists all seven (subject to the menu's normal enabled checks).
+The queries the user actually typed explain the earlier confusion:
+
+| Typed query | Skill rows | Why |
+| :--- | :--- | :--- |
+| `/skill` | `/find-skills`, `/skill-creator`, `/skill-discovery-audit` | Only these names contain "skill"; `/skills` is also shown as the **Settings → Skills** command. |
+| `/brain` | `/brainstorming` | `brainstorming` contains `brain`; it does not contain `skill`. |
+| `/ci` | `/ci-workflow-audit` | Unique substring. |
+| `/documentation` | `/documentation-maintenance` | Unique substring (`/doc` also matches `error-fix-document`). |
+| `/error` | `/error-fix-document` | Unique substring. |
+| `/skill-discovery` | `/skill-discovery-audit` | Unique substring. |
+
+This is why `/skill` looked like a broken namespace. `/skills` is not a skill
+category; it is the command that opens **Settings → Skills**. No aliases were
+created: duplicating a skill to make one query show it would create shadowing
+and would still not change the exact-name commands.
+
+### 22.3 Stable registry reads
+
+`cloud_manage_skills` was called twice with a time gap. Both reads returned the
+same ten entries; the seven commands above were `enabled:true` in both. The
+second read was after 2026-11-12T15:37:53Z. No `performance` flapping appeared in
+these two reads; the documentation no longer asserts a transient enabled state
+for that separate skill. The stable seven-command subset is:
+
+```text
+brainstorming             enabled
+find-skills               enabled
+skill-creator             enabled
+ci-workflow-audit         enabled
+documentation-maintenance enabled
+error-fix-document        enabled
+skill-discovery-audit     enabled
+```
+
+### 22.4 What is still UI-only
+
+The code proves the data source, the filter, and the insertion behavior. It
+does not prove the pixels in the user's current tab. The account query has a
+60-second stale time, so a tab that was open before the registry write can show
+the old list until it refetches. The remaining checklist is user-visible:
+
+1. Reload the web page or start a new chat.
+2. Type `/` alone and confirm the seven names appear; if the list is long, type
+   the exact name from §22.2 instead of `/skill`.
+3. If one is absent, open **Settings → Skills** (the `/skills` command) and
+   confirm the entry is still enabled; no repository or CI check can read the
+   user's browser session.
+
+### 22.5 Local gate for this evidence
+
+| Check | Result |
+| :--- | :--- |
+| `npm test` | 5/5 simulation physics, 14/14 browser guards, 10/10 Python checks |
+| Root TypeScript | `npx tsc --noEmit` exit 0 |
+| Sonnet TypeScript | `npx tsc --project detailed-3d-sinking-freighter-game_sonnet/tsconfig.json --noEmit` exit 0 |
+| Root build | 956,096 bytes, SHA-256 `092f298f472edcdc786f064420efc32d9e49b337fef792b6229864e8bc53f189` |
+| Sonnet build | 1,001,088 bytes, SHA-256 `7ea4957dfe82f83ac489e159b5683d0a2f056424329399482cd1ffa5d1a9635f` |
+| Workflow YAML | Both files parse with `yaml.safe_load`, exit 0 |
+| `npm audit --omit=dev` | 0 vulnerabilities |
+| `git diff --check` | exit 0 |
+
+The root bundle moved from 956,117 to 956,096 bytes because Tailwind scans the
+repository's Markdown and the corrected prose changes its generated CSS. The
+Sonnet bundle stayed byte-identical. The exact-SHA branch run is recorded
+below after it completes; main CI/Pages are reported with the delivery because
+an evidence-only commit changes their SHA again.

@@ -89,11 +89,19 @@ The invocation depends on the client:
   CLI command. The same rule applies to account skills there:
   `/skill:brainstorming`, `/skill:find-skills`, and
   `/skill:skill-creator`.
-- **Web composer:** the skill picker inserts `/<name>`; the web bundle builds
-  the insertion as `/${e.name}`; the current account menu displays
-  `/find-skills`. Select the skill from the `/` menu instead of typing the
-  local `/skill:<name>` form. A leading slash plus the registry name is the
-  web label.
+- **Web composer:** the skill picker inserts `/<name>`; it builds the
+  insertion from `/${e.name}`. A leading slash plus the registry name is the
+  web label. The picker **searches names with a substring match**, not with a
+  `/skill:` namespace: its filter is `name.includes(query)`. Typing `/skill`
+  therefore shows only names containing "skill" (`find-skills`,
+  `skill-creator`, `skill-discovery-audit`) plus the `/skills` command that
+  opens Settings → Skills. It does **not** show `brainstorming`, `ci-workflow-audit`,
+  `documentation-maintenance`, or `error-fix-document`.
+
+  Type `/` alone to list the account skills, or type the exact name
+  (`/brainstorming`, `/ci-workflow-audit`, and so on). Do not add aliases or
+  rename a skill to make `/skill` list everything; that creates shadowing and
+  breaks the exact command the user expects.
 
 The registry name is the same in both clients; only the command surface
 differs. Do not add an alias in the repository to make one client imitate the
@@ -112,9 +120,21 @@ uses two registries instead:
   scoped to the selected Cloud project.
 
 The web bundle passes `localExecution ? folderSkillsChatId : null` when it
-combines skills; a Cloud run passes `null`, so a committed `.agents/skills/`
-directory is not a web registration. Register the workflow in the matching
-registry before expecting it in the web `/` skill picker.
+combines folder skills; a Cloud run passes `null`, so a committed
+`.agents/skills/` directory is not a web registration. That null does not
+empty the Account list: the composer receives the account query result
+separately. The 2026-11-12 audit found:
+
+- `1fonzmqk2_vl0.js` line 1: `C()` fetches `cloud/skills` and keeps
+  `settings.skills.filter(e => !1 !== e.enabled)`.
+- `2e_eymjorgxa-.js` line 4: `rY=(0,s6.C)(z?.id,!e)` enables that query for
+  the signed-in user; line 10 passes `rY` as the composer's `skills` prop.
+- `1h9wqfa9xnvfo.js` line 3: `ec(e,t)` filters with `e.name.includes(t)`; the
+  `tb` list builds `kind:"skill"` rows from `ec(q,tg.text)`; `t$` inserts
+  `/${e.name} `.
+
+Register the workflow in the matching registry before expecting it in the web
+`/` picker. Then verify the exact typed name, not the `/skill` substring.
 
 Use the narrowest scope that fits: project settings for one repository,
 account skills only when the workflow should follow the user into every
@@ -133,8 +153,10 @@ repository state; they do not prove what a stale session displays.
 
 ## 6. Diagnose the remaining cases
 
-If the path is native, the YAML parses, and the session was reloaded but the
-skill is still absent:
+First separate a search-filter result from a missing registration. In the web
+composer, type `/` alone. If the name appears there, it is registered; a
+`/skill` query that hides it is the substring filter, not a missing skill. If
+it does not appear at all after a reload, continue:
 
 1. Confirm the project root is the directory that contains `.agents/`.
 2. Confirm the name matches the directory and contains only lowercase letters,
@@ -155,6 +177,8 @@ State:
 - the exact skill path
 - the skill name and the exact invocation for the client (`/skill:<name>`
   locally, `/<name>` in the web picker)
+- whether the web picker query was the exact name or only `/skill`; state the
+  substring result instead of calling the skill missing
 - the output of `npx skills list` and `python tools/ci_check.py`
 - whether the session was reloaded or the web registry was saved
 - which client source was used: project path, account registry, or Cloud
