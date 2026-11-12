@@ -540,7 +540,7 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
   wall("x", BZ.b3, -WI, WI, FLOOR_Y, CEIL_Y, 0.5, "steel");
   // Decke der Räume wird durch das Deck gebildet. Decken-Unterseite sichtbar (steel)
 
-  const compartments: Compartment[] = COMP_DEF.map((c, i) => {
+  const compartments: Compartment[] = COMP_DEF.map((c) => {
     const min = v3(-WI, FLOOR_Y, c.z0),
       max = v3(WI, CEIL_Y, c.z1);
     const volume = (max.x - min.x) * (max.y - min.y) * (max.z - min.z) * 0.78;
