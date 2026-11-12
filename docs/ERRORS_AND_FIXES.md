@@ -228,6 +228,18 @@ Use exact commands and real run IDs when they exist.
 - Related files / skills: `tools/check_skill_docs.py`, `docs/SKILLS.md`,
   `skill-index`.
 
+### ERR-2026-11-12-10 - CodeGraph execution failed on Windows with WinError 193
+
+- Date (Europe/Berlin): 2026-11-12
+- Area: CodeGraph MCP documentation check on Windows
+- Status: Resolved
+- Symptom: `npm run docs:check` on Windows failed with `OSError: [WinError 193] %1 ist keine zulässige Win32-Anwendung` in `tools/check_skill_docs.py`.
+- Root cause: On Windows, `node_modules/.bin/codegraph-mcp` is an extensionless shell script for Unix. Because it was checked first in `candidates`, `subprocess.run` called Windows `CreateProcess` directly without a shell, failing to execute the bash wrapper.
+- Solution: Updated `tools/check_skill_docs.py` to prioritize `codegraph-mcp.cmd` on Windows (`sys.platform == "win32"`), and pass `shell=(sys.platform == "win32")` so the command script wrapper executes correctly.
+- Verification: `npm run docs:check` runs cleanly on Windows and passes the CodeGraph MCP documentation context check with exit code 0 (`changed_files=0`).
+- Prevention: Any CLI tool invoked via `node_modules/.bin` in Python scripts on Windows must target `.cmd` with `shell=True` or invoke Node directly on the package JS entry point.
+- Related files / skills: `tools/check_skill_docs.py`, `docs/AGENT_TOOLS.md`, `ci-workflow-audit`.
+
 ## Open incidents
 
 None at this revision. Add a new entry before merging any future fix, even when

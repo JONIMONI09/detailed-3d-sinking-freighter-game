@@ -87,7 +87,22 @@ def check_test_suite_wiring():
     physics_path = WORKSPACE / "tests" / "physics.test.mjs"
     browser_path = WORKSPACE / "tests" / "browser-guards.test.mjs"
 
-    if not package_path.exists() or not physics_path.exists() or not browser_path.exists():
+    door_sec_path = WORKSPACE / "tests" / "door-security.test.mjs"
+    stormworks_path = WORKSPACE / "tests" / "stormworks-prototypes.test.mjs"
+    crew_nav_path = WORKSPACE / "tests" / "crew-navigation.test.mjs"
+    ragdoll_path = WORKSPACE / "tests" / "ragdoll-physics.test.mjs"
+    supervisor_path = WORKSPACE / "tests" / "stormworks-supervisor.test.mjs"
+
+    if (
+        not package_path.exists()
+        or not physics_path.exists()
+        or not browser_path.exists()
+        or not door_sec_path.exists()
+        or not stormworks_path.exists()
+        or not crew_nav_path.exists()
+        or not ragdoll_path.exists()
+        or not supervisor_path.exists()
+    ):
         log("Test suite files are missing!", "FAIL")
         return False
 
@@ -96,6 +111,11 @@ def check_test_suite_wiring():
     required = [
         "tests/physics.test.mjs",
         "tests/browser-guards.test.mjs",
+        "tests/door-security.test.mjs",
+        "tests/stormworks-prototypes.test.mjs",
+        "tests/crew-navigation.test.mjs",
+        "tests/ragdoll-physics.test.mjs",
+        "tests/stormworks-supervisor.test.mjs",
         "tools/ci_check.py",
     ]
     missing = [item for item in required if item not in test_script]
@@ -103,7 +123,7 @@ def check_test_suite_wiring():
         log(f"package.json test script misses: {', '.join(missing)}", "FAIL")
         return False
 
-    log("Physics, browser-guard and Python suites are wired into npm test.", "PASS")
+    log("Physics, browser-guard, door security, Stormworks prototypes, crew navigation, ragdoll physics, supervisor and Python suites are wired into npm test.", "PASS")
     return True
 
 def check_project_skills():

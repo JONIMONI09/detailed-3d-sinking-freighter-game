@@ -268,10 +268,17 @@ def check_change_coupling(paths: set[str]) -> None:
 
 
 def codegraph_binary() -> Path:
-    candidates = [
-        WORKSPACE / "node_modules" / ".bin" / "codegraph-mcp",
-        WORKSPACE / "node_modules" / ".bin" / "codegraph-mcp.cmd",
-    ]
+    candidates = (
+        [
+            WORKSPACE / "node_modules" / ".bin" / "codegraph-mcp.cmd",
+            WORKSPACE / "node_modules" / ".bin" / "codegraph-mcp",
+        ]
+        if sys.platform == "win32"
+        else [
+            WORKSPACE / "node_modules" / ".bin" / "codegraph-mcp",
+            WORKSPACE / "node_modules" / ".bin" / "codegraph-mcp.cmd",
+        ]
+    )
     for candidate in candidates:
         if candidate.exists():
             return candidate
@@ -305,6 +312,7 @@ def check_codegraph(base: str) -> None:
             text=True,
             capture_output=True,
             timeout=120,
+            shell=(sys.platform == "win32"),
         )
     except subprocess.TimeoutExpired:
         fail("CodeGraph MCP timed out after 120 seconds")

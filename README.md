@@ -27,10 +27,10 @@ An advanced interactive maritime simulation built with **Vite**, **React 19**, *
   $$M_{\text{bending}} = \text{Load}_{\text{mid}} - 0.6 \cdot (\text{Load}_{\text{fore}} + \text{Load}_{\text{aft}})$$
 - Asymmetrically flooded holds create sagging or hogging stresses. Exceeding structural yield strain triggers catastrophic hull deformation and keel failure.
 
-### 5. Watertight Door Dogging & Damage Control
-- Hold **`[L]`** for 0.85s to dog down watertight bulkheads and doors.
-- Visual circular SVG progress indicator around the crosshair displays dogging progress.
-- Fully dogged doors provide a **100% watertight seal** ($0.0$ water transfer coefficient), allowing compartmental damage control to save the vessel.
+### 5. Watertight Bulkhead Interlock, Dogging & Door Security
+- Watertight bulkheads monitor hydrostatic pressure differentials and compartment flooding. Opening a door into a compartment with $\ge 35\%$ flooding or $\ge 15\%$ pressure differential requires double-press confirmation (`[E]` twice within 3 seconds) to prevent accidental downflooding cascades. Closing is always permitted immediately.
+- Keycard access security protects restricted compartments, and bounded terminal logging (`TerminalLog`) tracks all security events, overrides, and bulkhead state transitions. Toggle logs with **`[T]`**.
+- Hold **`[L]`** for 0.85s to dog down watertight bulkheads and doors. A visual circular SVG progress ring around the crosshair displays dogging progress. Fully dogged doors provide a **100% watertight seal** ($0.0$ water transfer coefficient).
 
 ### 6. Engine Room Stairwell Clearance
 - Fully accessible mid-aft stairwell (`stair_mid_hold`) leading to the lower engine spaces.
@@ -50,8 +50,13 @@ An advanced interactive maritime simulation built with **Vite**, **React 19**, *
 | **`Mouse`** | Look / Aim (Pointer Lock) |
 | **`Space`** | Jump / Swim Upward |
 | **`Shift`** | Sprint |
-| **`E`** | Toggle Door Open / Close |
+| **`E`** | Toggle Door (Double-tap within 3s overrides flooded bulkhead interlock) / Take Helm |
 | **`Hold L` (0.85s)** | Dog Down / Lock Watertight Door |
+| **`B`** | Master Bulkhead Lockdown (Emergency seal all watertight doors) |
+| **`G`** | Toggle God Mode (Sandbox immortality & infinite oxygen) |
+| **`N`** | Toggle Noclip (Free flight navigation) |
+| **`F`** | Cycle Flood Dial (0x frozen / 0.5x / 1x / 3x flood speed) |
+| **`T`** | Toggle Damage Control & Door Security Terminal Logs |
 | **`1` - `5`** | Select Weapon / Damage Control Tool |
 | **`Left Mouse Click`**| Use Selected Tool / Place TNT |
 | **`Right Mouse Click`**| Detonate Remote Charges |
@@ -246,7 +251,7 @@ YAML syntax is parsed separately during delivery.
 ## 🚀 CI & GitHub Pages Deployment
 
 Both editions are verified on every feature-branch push and on every push to
-`main`. `npm test` runs 5 physics tests, 14 browser-guard tests and 10 Python
+`main`. `npm test` runs 9 physics tests, 14 browser-guard tests, 5 door-security tests, 7 Stormworks prototype tests, 4 crew-navigation tests, 3 ragdoll-physics tests, 4 stormworks-supervisor tests and 10 Python
 integrity checks; CI invokes the same command and adds the documentation gate:
 
 ```bash

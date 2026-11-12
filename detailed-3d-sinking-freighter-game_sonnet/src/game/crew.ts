@@ -1,0 +1,393 @@
+/**
+ * Damage control crew: autonomous friendly NPC state machine,
+ * integrated with 3D multi-deck navigation, anti-clipping steering,
+ * door traversal, ladder climbing, and hydrodynamic ragdoll physics.
+ */
+
+import {
+  Vector3Like,
+  v3,
+  computeAntiClippingSteering,
+  DoorInteractionTracker,
+  LadderClimbTracker,
+  NavMesh3D,
+  RaycastFn,
+  startLadderClimb,
+  updateDoorInteraction,
+  updateLadderClimb,
+} from "./navmesh3d";
+
+import {
+  ArticulatedRagdoll,
+  shouldTriggerRagdoll,
+  RagdollTriggerSensors,
+} from "./ragdoll";
+
+export type CrewRole = "chief-engineer" | "boatswain" | "damage-control";
+export type CrewState =
+  | "patrol"
+  | "alert"
+  | "moving"
+  | "repairing"
+  | "climbing_ladder"
+  | "traversing_door"
+  | "deploying_ladder"
+  | "ragdoll";
+
+export interface CrewBreach {
+  id: number;
+  x: number;
+  y: number;
+  z: number;
+  /** Open area in m^2; patched down to 0. */
+  area: number;
+}
+
+export interface CrewMember {
+  name: string;
+  role: CrewRole;
+  x: number;
+  y: number;
+  z: number;
+  state: CrewState;
+  targetId: number | null;
+  /** Remaining patch kits; one kit seals up to PATCH_KIT_AREA m^2. */
+  patchKits: number;
+  /** Seconds spent in the current state. */
+  stateTime: number;
+  patrolIndex: number;
+
+  // Extended navigation & physics states
+  ragdoll?: ArticulatedRagdoll;
+  isRagdoll?: boolean;
+  activeLadder?: LadderClimbTracker;
+  activeDoor?: DoorInteractionTracker;
+  navPath?: Vector3Like[];
+  portableLadders?: number;
+  deployedLadderId?: string | null;
+}
+
+export interface CrewConfig {
+  walkSpeed: number;
+  detectRadius: number;
+  reactionTime: number;
+  /** m^2 of breach area sealed per second while welding. */
+  repairRate: number;
+  patrol: readonly { x: number; y: number; z: number }[];
+}
+
+export interface CrewStepContext {
+  navmesh?: NavMesh3D;
+  raycast?: RaycastFn;
+  waterVelocity?: Vector3Like;
+  waterLevelY?: number;
+  blastImpulse?: number;
+  vesselRollDeg?: number;
+  deckFloorY?: number;
+}
+
+export const PATCH_KIT_AREA = 1.5;
+export const REPAIR_REACH = 1.4;
+export const HIGH_BREACH_THRESHOLD_Y = 2.0;
+
+export const DEFAULT_CREW_CONFIG: CrewConfig = {
+  walkSpeed: 2.4,
+  detectRadius: 30,
+  reactionTime: 1,
+  repairRate: 0.35,
+  patrol: [],
+};
+
+export type CrewEvent =
+  | "spotted"
+  | "arrived"
+  | "sealed"
+  | "out-of-kits"
+  | "ragdoll_triggered"
+  | "ladder_mounted"
+  | "ladder_dismounted"
+  | "door_traversed"
+  | "portable_ladder_deployed"
+  | null;
+
+export function createCrewMember(
+  name: string,
+  role: CrewRole,
+  x: number,
+  y: number,
+  z: number,
+  patchKits = 4,
+): CrewMember {
+  return {
+    name,
+    role,
+    x,
+    y,
+    z,
+    state: "patrol",
+    targetId: null,
+    patchKits,
+    stateTime: 0,
+    patrolIndex: 0,
+    portableLadders: role === "damage-control" ? 2 : 1,
+    deployedLadderId: null,
+  };
+}
+
+const dist = (m: CrewMember, b: { x: number; y: number; z: number }) =>
+  Math.hypot(m.x - b.x, m.y - b.y, m.z - b.z);
+
+function enter(m: CrewMember, state: CrewState) {
+  m.state = state;
+  m.stateTime = 0;
+}
+
+function nearestBreach(
+  m: CrewMember,
+  breaches: readonly CrewBreach[],
+  radius: number,
+): CrewBreach | null {
+  let best: CrewBreach | null = null;
+  let bestD = radius;
+  for (const b of breaches) {
+    if (b.area <= 0) continue;
+    const d = dist(m, b);
+    if (d <= bestD) {
+      best = b;
+      bestD = d;
+    }
+  }
+  return best;
+}
+
+function walkToward(
+  m: CrewMember,
+  tx: number,
+  ty: number,
+  tz: number,
+  step: number,
+  raycast?: RaycastFn,
+) {
+  const dx = tx - m.x,
+    dy = ty - m.y,
+    dz = tz - m.z;
+  const d = Math.hypot(dx, dy, dz);
+  if (d <= 1e-6) return;
+
+  let desiredStep: Vector3Like = v3((dx / d) * step, (dy / d) * step, (dz / d) * step);
+
+  // Apply 5-ray anti-clipping steering if raycast function is provided
+  if (raycast) {
+    const steering = computeAntiClippingSteering(
+      v3(m.x, m.y, m.z),
+      desiredStep,
+      raycast,
+      0.5,
+    );
+    desiredStep = steering.vel;
+  }
+
+  m.x += desiredStep.x;
+  m.y += desiredStep.y;
+  m.z += desiredStep.z;
+}
+
+/** Advances one crew member by dt seconds; mutates the member and the breach it repairs. */
+export function stepCrew(
+  m: CrewMember,
+  dt: number,
+  breaches: readonly CrewBreach[],
+  cfg: CrewConfig = DEFAULT_CREW_CONFIG,
+  ctx?: CrewStepContext,
+): CrewEvent {
+  m.stateTime += dt;
+
+  // 1. Dynamic Ragdoll Evaluation
+  if (ctx) {
+    const sensors: RagdollTriggerSensors = {
+      waterVelocity: ctx.waterVelocity || v3(0, 0, 0),
+      blastImpulse: ctx.blastImpulse || 0,
+      vesselRollDeg: ctx.vesselRollDeg || 0,
+    };
+    const triggered = shouldTriggerRagdoll(sensors);
+    if (triggered && m.state !== "ragdoll") {
+      if (!m.ragdoll) {
+        m.ragdoll = new ArticulatedRagdoll(v3(m.x, m.y, m.z));
+      }
+      m.ragdoll.activate(ctx.waterVelocity || v3(0, 0, 0));
+      m.isRagdoll = true;
+      enter(m, "ragdoll");
+      return "ragdoll_triggered";
+    }
+  }
+
+  // 2. Active Ragdoll State Processing
+  if (m.state === "ragdoll" && m.ragdoll && m.ragdoll.active) {
+    m.ragdoll.step(
+      dt,
+      ctx?.waterVelocity ?? v3(0, 0, 0),
+      ctx?.waterLevelY ?? -999,
+      ctx?.deckFloorY ?? -5.0,
+    );
+    // Track position to pelvis center of mass
+    const pelvis = m.ragdoll.limbs.get("pelvis");
+    if (pelvis) {
+      m.x = pelvis.pos.x;
+      m.y = pelvis.pos.y;
+      m.z = pelvis.pos.z;
+    }
+
+    // Recover if motion settles and time >= 4.0s
+    const pelvisSpeed = Math.hypot(pelvis?.vel.x ?? 0, pelvis?.vel.y ?? 0, pelvis?.vel.z ?? 0);
+    if (m.stateTime >= 4.0 && pelvisSpeed < 0.25) {
+      m.isRagdoll = false;
+      m.ragdoll.active = false;
+      enter(m, "patrol");
+    }
+    return null;
+  }
+
+  // 3. Vertical Ladder Navigation Processing
+  if (m.state === "climbing_ladder" && m.activeLadder) {
+    const update = updateLadderClimb(m.activeLadder, dt);
+    m.y = update.currentY;
+
+    if (update.finished) {
+      m.activeLadder = undefined;
+      enter(m, "moving");
+      return "ladder_dismounted";
+    }
+    return null;
+  }
+
+  // 4. Portal Door Traversal Processing
+  if (m.state === "traversing_door" && m.activeDoor) {
+    const res = updateDoorInteraction(m.activeDoor, v3(m.x, m.y, m.z), dt);
+    if (res.canMove && res.targetPos) {
+      walkToward(m, res.targetPos.x, res.targetPos.y, res.targetPos.z, cfg.walkSpeed * dt, ctx?.raycast);
+    }
+    if (res.state === "complete") {
+      m.activeDoor = undefined;
+      enter(m, "moving");
+      return "door_traversed";
+    }
+    return null;
+  }
+
+  // 5. Standard Finite State Machine with Waypoint & Repair Logic
+  const target =
+    m.targetId === null
+      ? null
+      : (breaches.find((b) => b.id === m.targetId && b.area > 0) ?? null);
+
+  switch (m.state) {
+    case "patrol": {
+      const found = m.patchKits > 0 ? nearestBreach(m, breaches, cfg.detectRadius) : null;
+      if (found) {
+        m.targetId = found.id;
+        enter(m, "alert");
+        return "spotted";
+      }
+      if (cfg.patrol.length > 0) {
+        const wp = cfg.patrol[m.patrolIndex % cfg.patrol.length];
+        walkToward(m, wp.x, wp.y, wp.z, cfg.walkSpeed * 0.5 * dt, ctx?.raycast);
+        if (dist(m, wp) < 0.5) m.patrolIndex = (m.patrolIndex + 1) % cfg.patrol.length;
+      }
+      return null;
+    }
+
+    case "alert": {
+      if (!target) {
+        m.targetId = null;
+        enter(m, "patrol");
+      } else if (m.stateTime >= cfg.reactionTime) {
+        enter(m, "moving");
+      }
+      return null;
+    }
+
+    case "moving": {
+      if (!target) {
+        m.targetId = null;
+        enter(m, "patrol");
+        return null;
+      }
+
+      // Check for High Breach Requiring Portable Ladder
+      const verticalDiff = target.y - m.y;
+      const horizontalDist = Math.hypot(target.x - m.x, target.z - m.z);
+
+      if (verticalDiff >= HIGH_BREACH_THRESHOLD_Y && horizontalDist < 2.5 && (m.portableLadders ?? 0) > 0 && !m.deployedLadderId) {
+        enter(m, "deploying_ladder");
+        return null;
+      }
+
+      walkToward(m, target.x, target.y, target.z, cfg.walkSpeed * dt, ctx?.raycast);
+
+      if (dist(m, target) <= REPAIR_REACH) {
+        enter(m, "repairing");
+        return "arrived";
+      }
+      return null;
+    }
+
+    case "deploying_ladder": {
+      if (!target) {
+        enter(m, "patrol");
+        return null;
+      }
+      if (m.stateTime >= 1.0) {
+        const ladderId = `portable_ladder_${target.id}_${Date.now()}`;
+        const base = v3(target.x, m.y, target.z);
+        const top = v3(target.x, target.y, target.z);
+
+        if (ctx?.navmesh) {
+          ctx.navmesh.deployPortableLadder(ladderId, base, top, 0);
+        }
+
+        m.deployedLadderId = ladderId;
+        m.portableLadders = Math.max(0, (m.portableLadders ?? 1) - 1);
+
+        const ladderLink = {
+          id: ladderId,
+          bottom: base,
+          top: top,
+          facingYaw: 0,
+          kind: "portable" as const,
+          climbSpeed: 1.1,
+        };
+        m.activeLadder = startLadderClimb(ladderLink, "up");
+        enter(m, "climbing_ladder");
+        return "portable_ladder_deployed";
+      }
+      return null;
+    }
+
+    case "repairing": {
+      if (!target) {
+        m.targetId = null;
+        enter(m, "patrol");
+        return null;
+      }
+      if (m.patchKits <= 0) {
+        m.targetId = null;
+        enter(m, "patrol");
+        return "out-of-kits";
+      }
+      const before = target.area;
+      target.area = Math.max(0, target.area - cfg.repairRate * dt);
+      // A kit is consumed in proportion to the area it sealed
+      m.patchKits = Math.max(0, m.patchKits - (before - target.area) / PATCH_KIT_AREA);
+      if (target.area <= 1e-3) {
+        target.area = 0;
+        m.targetId = null;
+        enter(m, "patrol");
+        return "sealed";
+      }
+      return null;
+    }
+
+    default:
+      return null;
+  }
+}

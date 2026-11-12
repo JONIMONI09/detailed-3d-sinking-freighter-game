@@ -14,7 +14,11 @@ export type Action =
   | "jump"
   | "alt"
   | "status"
-  | "terminal";
+  | "terminal"
+  | "lockdown"
+  | "godmode"
+  | "noclip"
+  | "floodDial";
 
 export class Input {
   keys = new Set<string>();
@@ -106,6 +110,8 @@ export class Input {
       KeyQ: "last",
       KeyF: "flash",
       KeyG: "detonate",
+      KeyB: "lockdown",
+      KeyN: "noclip",
       Escape: "pause",
       KeyP: "pause",
       Space: "jump",
@@ -114,6 +120,8 @@ export class Input {
     };
     const a = map[e.code];
     if (a) this.queue.add(a);
+    if (e.code === "KeyG") this.queue.add("godmode");
+    if (e.code === "KeyF") this.queue.add("floodDial");
     if (["Space", "Tab", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) e.preventDefault();
   }
 

@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "node tests/physics.test.mjs && node tests/browser-guards.test.mjs && node tests/door-security.test.mjs && python tools/ci_check.py",
+    "test": "node tests/physics.test.mjs && node tests/browser-guards.test.mjs && node tests/door-security.test.mjs && node tests/stormworks-prototypes.test.mjs && node tests/crew-navigation.test.mjs && node tests/ragdoll-physics.test.mjs && node tests/stormworks-supervisor.test.mjs && python tools/ci_check.py",
     "docs:check": "python tools/check_skill_docs.py",
     "docs:check:offline": "python tools/check_skill_docs.py --no-codegraph"
   },

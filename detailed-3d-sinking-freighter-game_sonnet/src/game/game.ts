@@ -15,6 +15,9 @@ import { Guard } from "./enemies";
 import { rayAABB } from "./physics";
 import { DoorSecurity, TerminalEntry, TerminalLog } from "./doorSecurity";
 import type { SecurityContext } from "./doorSecurity";
+import { StormworksSupervisor } from "./stormworksSupervisor";
+import { stepTelegraph } from "./bridge";
+import { v3 } from "./navmesh3d";
 
 export type Mode = "mission" | "sandbox";
 
@@ -118,6 +121,7 @@ export class Game {
   env!: Env;
   ship!: ShipModel;
   sim!: ShipSim;
+  supervisor!: StormworksSupervisor;
   audio = new AudioEngine();
   input = new Input();
   player = new Player();
@@ -307,6 +311,7 @@ export class Game {
     this.scene.add(this.ship.group, this.ship.waterGroup);
     this.ship.group.add(this.ship.holeGroup);
     this.sim = new ShipSim(this.ship.group, this.ship.compartments);
+    this.supervisor = new StormworksSupervisor(this.sim, this.ship.compartments, this.ship.doors);
     this.ship.doors.forEach((d) => {
       d.onEvent = (e, door) => {
         const pos = this.posAudio(door.center);
@@ -654,7 +659,22 @@ export class Game {
     const st = this.settings;
 
     // Schiff
-    this.sim.update(dt, t, this.ocean, st.floodSpeed);
+    this.supervisor.step(
+      dt,
+      t,
+      this.ocean,
+      st.floodSpeed,
+      (orig, dir, maxD) => {
+        const hit = this.ship.world.raycast(orig.x, orig.y, orig.z, dir.x, dir.y, dir.z, maxD);
+        return {
+          hit: !!hit,
+          distance: hit ? hit.dist : maxD,
+          normal: hit ? v3(hit.nx, hit.ny, hit.nz) : v3(0, 0, 0),
+          point: hit ? v3(orig.x + dir.x * hit.dist, orig.y + dir.y * hit.dist, orig.z + dir.z * hit.dist) : v3(0, 0, 0),
+        };
+      },
+      this.shake * 180,
+    );
     if (this.sim.firstBreach && !this.alarm && !this.sim.sunk) {
       this.alarm = true;
     }
@@ -696,7 +716,8 @@ export class Game {
     }
     // Sauerstoff
     if (p.submerged && p.alive) {
-      p.oxygen -= dt / 30;
+      const drain = this.supervisor.filterOxygenDrain(dt / 30);
+      p.oxygen -= drain;
       if (p.oxygen <= 0) {
         p.oxygen = 0;
         this.damagePlayer(14 * dt, "Ertrunken", true);
@@ -808,6 +829,23 @@ export class Game {
     if (inp.pressed("terminal")) {
       this.terminalPinned = !this.terminalPinned;
       this.audio.click();
+    }
+    if (inp.pressed("lockdown")) {
+      const closed = this.supervisor.lockdownBulkheads();
+      this.alarm = true;
+      this.say(`MASTER LOCKDOWN: ${closed} watertight bulkheads sealed!`, "alert");
+    }
+    if (inp.pressed("godmode")) {
+      const god = this.supervisor.toggleGodMode();
+      this.say(god ? "GOD MODE: ON (Immortal, infinite oxygen)" : "GOD MODE: OFF", god ? "good" : "warn");
+    }
+    if (inp.pressed("noclip")) {
+      const noclip = this.supervisor.toggleNoclip();
+      this.say(noclip ? "NOCLIP: ON (Free flight navigation)" : "NOCLIP: OFF", noclip ? "good" : "warn");
+    }
+    if (inp.pressed("floodDial")) {
+      const rate = this.supervisor.cycleFloodRate();
+      this.say(`FLOOD RATE: ${rate}x (${rate === 0 ? "Frozen" : rate === 3 ? "Catastrophic" : "Standard"})`, "info");
     }
     // Nachladen
     if (inp.pressed("reload")) this.startReload();
@@ -1453,6 +1491,7 @@ export class Game {
   // ------------------------------------------------------------------ Schaden / Tod
   damagePlayer(amount: number, cause: string, silent = false) {
     const p = this.player;
+    amount = this.supervisor.filterDamage(amount);
     if (!p.alive || amount <= 0) return;
     let a = amount;
     if (p.armor > 0) {
@@ -1560,6 +1599,24 @@ export class Game {
           bestText = ok ? "Board the lifeboat" : "Lifeboat – sink the ship first!";
           bestAct = () => this.boardLifeboat(lb);
         }
+      }
+    }
+    // Wheelhouse Bridge Helm & Telegraph Station
+    const bridgeHelmPos = new THREE.Vector3(0, 12.6, -46.5);
+    const toHelm = bridgeHelmPos.clone().sub(eye);
+    const distHelm = toHelm.length();
+    if (distHelm < 2.8) {
+      const score = 4.5 - distHelm;
+      if (score > best) {
+        best = score;
+        bestKind = "normal";
+        const helm = this.supervisor.helm;
+        bestText = `Take the Helm / Set Telegraph [E] (${helm.telegraph.toUpperCase()} · Rudder ${helm.rudderDeg.toFixed(0)}°)`;
+        bestAct = () => {
+          this.supervisor.helm.telegraph = stepTelegraph(this.supervisor.helm.telegraph, 1);
+          this.audio.click();
+          this.say(`Telegraph order: ${this.supervisor.helm.telegraph.toUpperCase()} (Ship speed: ${this.supervisor.helm.speed.toFixed(1)} m/s)`, "info");
+        };
       }
     }
     this.prompt = bestText;
