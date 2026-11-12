@@ -53,7 +53,7 @@ An advanced interactive maritime simulation built with **Vite**, **React 19**, *
 | **`E`** | Toggle Door (Double-tap within 3s overrides flooded bulkhead interlock) / Take Helm |
 | **`Hold L` (0.85s)** | Dog Down / Lock Watertight Door |
 | **`B`** | Master Bulkhead Lockdown (Emergency seal all watertight doors) |
-| **`G`** | Toggle God Mode (Sandbox immortality & infinite oxygen) |
+| **`G`** | Detonate TNT (when holding TNT) / Toggle God Mode (Tap to enable; hold 1.5s with circular SVG progress ring to disable) |
 | **`N`** | Toggle Noclip (Free flight navigation) |
 | **`F`** | Cycle Flood Dial (0x frozen / 0.5x / 1x / 3x flood speed) |
 | **`T`** | Toggle Damage Control & Door Security Terminal Logs |
@@ -251,8 +251,8 @@ YAML syntax is parsed separately during delivery.
 ## 🚀 CI & GitHub Pages Deployment
 
 Both editions are verified on every feature-branch push and on every push to
-`main`. `npm test` runs 9 physics tests, 14 browser-guard tests, 5 door-security tests, 7 Stormworks prototype tests, 4 crew-navigation tests, 3 ragdoll-physics tests, 4 stormworks-supervisor tests and 10 Python
-integrity checks; CI invokes the same command and adds the documentation gate:
+`main`. `npm test` runs 9 physics tests, 14 browser-guard tests, 5 door-security tests, 11 Stormworks prototype tests, 4 crew-navigation tests, 3 ragdoll-physics tests, 4 stormworks-supervisor tests, 4 deck-explosion & window-burst tests, 4 sandbox-overhaul tests and 10 Python
+integrity checks (58 unit tests total across 9 test suites + 10 CI integrity checks); CI invokes the same command and adds the documentation gate:
 
 ```bash
 npm ci

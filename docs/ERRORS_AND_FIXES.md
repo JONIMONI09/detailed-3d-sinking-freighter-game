@@ -240,6 +240,23 @@ Use exact commands and real run IDs when they exist.
 - Prevention: Any CLI tool invoked via `node_modules/.bin` in Python scripts on Windows must target `.cmd` with `shell=True` or invoke Node directly on the package JS entry point.
 - Related files / skills: `tools/check_skill_docs.py`, `docs/AGENT_TOOLS.md`, `ci-workflow-audit`.
 
+### ERR-2026-11-12-11 - Open-air deck explosion breached dry engine room and KeyG God Mode conflict
+
+- Date (Europe/Berlin): 2026-11-12
+- Area: Ship simulation breach logic, input handling, and damage control AI
+- Status: Resolved
+- Symptom: Explosions on the weather deck (`pos.y >= -0.2`) created exterior underwater hull breaches into the engine room even when the deck was dry above sea level. Additionally, tapping KeyG while holding TNT risked toggling God Mode rather than detonating charges, and single-tap KeyG accidentally deactivated God Mode.
+- Root cause: `ShipSim.addBreach` allowed breaches up to `pos.y = 1.0` without checking whether the world coordinate of the blast point was actually submerged below the sea surface (`worldY < oceanHeight`). Furthermore, `KeyG` was overloaded between TNT detonation and God Mode without precedence rules or hold thresholds.
+- Solution:
+  1. In `shipSim.ts`: Guarded `addBreach` with `if (pos.y >= -0.2 && wy >= oceanHeight) return null`.
+  2. In `game.ts` & `Hud.tsx`: Enforced TNT detonation precedence on `KeyG` whenever holding TNT (`cur === "tnt" || dyns.length > 0`). When God Mode is ON, single tap does not deactivate; deactivation requires holding `KeyG` continuously for 1.5s with a circular SVG progress ring on the crosshair.
+  3. In `ingress.ts`: Added hydrostatic window burst thresholds (2.5m lower deck, 6.0m reinforced bridge) producing water ingress breaches.
+  4. In `crew.ts`: Added threat prioritization `Priority = InflowRate * (isEngineRoom ? 2.5 : 1.0) / (1 + 0.1 * distance)` and automatic welding dispatch for shattered windows and hull breaches.
+  5. Added regression test suites in `tests/deck-explosion-and-window-burst.test.mjs` and `tests/stormworks-prototypes.test.mjs`.
+- Verification: `npm test` (all 8 test suites pass 100%), `npx tsc --noEmit` (0 errors), `npm run docs:check` (CodeGraph pass), `npm run build` (clean 1,029 kB build).
+- Prevention: Geometric boundary conditions for exterior hull punctures must always evaluate against dynamic waterline elevation rather than un-submerged local height offsets.
+- Related files / skills: `detailed-3d-sinking-freighter-game_sonnet/src/game/shipSim.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/game.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/ingress.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/crew.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/ui/Hud.tsx`, `tests/deck-explosion-and-window-burst.test.mjs`, `error-fix-document`.
+
 ## Open incidents
 
 None at this revision. Add a new entry before merging any future fix, even when

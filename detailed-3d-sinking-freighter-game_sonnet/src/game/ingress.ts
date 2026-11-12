@@ -89,3 +89,18 @@ export function inflowFactor(pocket: AirPocket, water: number, openingDepth: num
   if (cap <= 0) return 0;
   return Math.min(1, Math.max(0, 1 - water / cap));
 }
+
+/** Hydrostatic depth thresholds for window glass failure under water head pressure. */
+export const LOWER_DECK_WINDOW_BURST_DEPTH = 2.5; // metres
+export const BRIDGE_WINDOW_BURST_DEPTH = 6.0; // metres (reinforced marine safety glass)
+
+/**
+ * Evaluates whether glass pane bursts under water head pressure.
+ * @param headImmersionDepth Depth of water surface above the window center in metres.
+ * @param isReinforcedBridge Whether this is a heavy reinforced bridge window.
+ */
+export function shouldWindowBurst(headImmersionDepth: number, isReinforcedBridge = false): boolean {
+  const threshold = isReinforcedBridge ? BRIDGE_WINDOW_BURST_DEPTH : LOWER_DECK_WINDOW_BURST_DEPTH;
+  return headImmersionDepth >= threshold;
+}
+

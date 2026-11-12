@@ -41,6 +41,9 @@ export interface CrewBreach {
   z: number;
   /** Open area in m^2; patched down to 0. */
   area: number;
+  inflowRate?: number;
+  isEngineRoom?: boolean;
+  kind?: "hull-breach" | "broken-window";
 }
 
 export interface CrewMember {
@@ -142,22 +145,46 @@ function enter(m: CrewMember, state: CrewState) {
   m.stateTime = 0;
 }
 
-function nearestBreach(
+/**
+ * Intelligent threat prioritization:
+ * Priority = InflowRate * (isEngineRoom ? 2.5 : 1.0) / (1 + 0.1 * distance)
+ */
+export function calculateBreachPriority(
+  m: { x: number; y: number; z: number },
+  b: CrewBreach,
+): number {
+  const distance = Math.hypot(m.x - b.x, m.y - b.y, m.z - b.z);
+  const inflow = b.inflowRate ?? (b.area * 2.0);
+  const engineMultiplier = b.isEngineRoom ? 2.5 : 1.0;
+  return (inflow * engineMultiplier) / (1 + 0.1 * distance);
+}
+
+export function selectBestBreach(
   m: CrewMember,
   breaches: readonly CrewBreach[],
   radius: number,
 ): CrewBreach | null {
   let best: CrewBreach | null = null;
-  let bestD = radius;
+  let highestPriority = -Infinity;
   for (const b of breaches) {
     if (b.area <= 0) continue;
     const d = dist(m, b);
-    if (d <= bestD) {
+    if (d > radius) continue;
+    const priority = calculateBreachPriority(m, b);
+    if (priority > highestPriority) {
+      highestPriority = priority;
       best = b;
-      bestD = d;
     }
   }
   return best;
+}
+
+function nearestBreach(
+  m: CrewMember,
+  breaches: readonly CrewBreach[],
+  radius: number,
+): CrewBreach | null {
+  return selectBestBreach(m, breaches, radius);
 }
 
 function walkToward(

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
+import * as THREE from 'three';
 
 const DIR = 'detailed-3d-sinking-freighter-game_sonnet/src/game/';
 const cache = new Map();
@@ -15,6 +16,7 @@ function load(name) {
   }).outputText;
   const mod = { exports: {} };
   const req = (id) => {
+    if (id === 'three') return THREE;
     const clean = id.replace(/^\.\//, '').replace(/\.ts$/, '') + '.ts';
     return load(clean);
   };
@@ -164,6 +166,123 @@ console.log('Starting Stormworks prototype tests...');
   assert.equal(sandbox.effectiveDamage(o, 40), 0);
   assert.equal(sandbox.effectiveOxygenDrain(o, 0.1), 0);
   console.log('  ok sandbox god mode and flood dial');
+}
+
+// 8. Hydrostatic Window Burst
+{
+  assert.equal(ingress.shouldWindowBurst(2.4, false), false, 'lower deck window intact at 2.4m');
+  assert.equal(ingress.shouldWindowBurst(2.5, false), true, 'lower deck window bursts at >= 2.5m');
+  assert.equal(ingress.shouldWindowBurst(5.9, true), false, 'reinforced bridge window intact at 5.9m');
+  assert.equal(ingress.shouldWindowBurst(6.0, true), true, 'reinforced bridge window bursts at >= 6.0m');
+  console.log('  ok hydrostatic window burst at 2.5m (lower) and 6.0m (bridge)');
+}
+
+// 9. Intelligent Crew Threat Prioritization
+{
+  const member = { x: 0, y: 0, z: 0 };
+  const cargoBreach = { id: 1, x: 10, y: 0, z: 0, area: 1.0, inflowRate: 2.0, isEngineRoom: false };
+  const engineBreach = { id: 2, x: 10, y: 0, z: 0, area: 1.0, inflowRate: 2.0, isEngineRoom: true };
+
+  const pCargo = crew.calculateBreachPriority(member, cargoBreach);
+  const pEngine = crew.calculateBreachPriority(member, engineBreach);
+  near(pEngine / pCargo, 2.5, 1e-9, 'engine room breach prioritized 2.5x higher than cargo hold');
+
+  // Distance penalty check
+  const farCargoBreach = { id: 3, x: 50, y: 0, z: 0, area: 1.0, inflowRate: 2.0, isEngineRoom: false };
+  const pFar = crew.calculateBreachPriority(member, farCargoBreach);
+  assert.ok(pCargo > pFar, 'closer breach has higher priority due to distance scaling');
+
+  // selectBestBreach selection
+  const testCrew = crew.createCrewMember('Chief', 'chief-engineer', 0, 0, 0, 4);
+  const selected = crew.selectBestBreach(testCrew, [cargoBreach, engineBreach], 30);
+  assert.equal(selected.id, 2, 'crew selects highest priority engine room breach');
+  console.log('  ok intelligent crew threat prioritization');
+}
+
+// 10. God Mode Hold Deactivation & TNT Detonator Precedence
+{
+  function updateGodModeState(state, dt, keys, isHoldingTNT) {
+    if (isHoldingTNT) {
+      state.holdProgress = 0;
+      return 'detonate_tnt';
+    }
+    if (!state.godMode) {
+      if (keys.has('KeyG')) {
+        state.godMode = true;
+        state.holdProgress = 0;
+        return 'activated';
+      }
+    } else {
+      if (keys.has('KeyG')) {
+        state.holdProgress = Math.min(1.0, state.holdProgress + dt / 1.5);
+        if (state.holdProgress >= 0.999) {
+          state.godMode = false;
+          state.holdProgress = 0;
+          return 'deactivated';
+        }
+      } else {
+        state.holdProgress = Math.max(0, state.holdProgress - dt * 3.0);
+      }
+    }
+    return 'idle';
+  }
+
+  const state = { godMode: false, holdProgress: 0 };
+  const keys = new Set();
+
+  // 1. Holding TNT: KeyG triggers TNT detonate, never God Mode
+  keys.add('KeyG');
+  assert.equal(updateGodModeState(state, 0.1, keys, true), 'detonate_tnt');
+  assert.equal(state.godMode, false, 'holding TNT never toggles God Mode');
+
+  // 2. Not holding TNT: KeyG activates God Mode
+  assert.equal(updateGodModeState(state, 0.1, keys, false), 'activated');
+  assert.equal(state.godMode, true);
+  keys.clear();
+
+  // 3. Single tap while God Mode is ON (held for 0.1s then released)
+  keys.add('KeyG');
+  updateGodModeState(state, 0.1, keys, false);
+  near(state.holdProgress, 0.1 / 1.5, 1e-4, 'partial progress accumulated');
+  assert.equal(state.godMode, true, 'single tap must not deactivate God Mode');
+  keys.clear();
+  updateGodModeState(state, 0.1, keys, false);
+  assert.equal(state.godMode, true);
+  assert.ok(state.holdProgress < 0.1 / 1.5, 'progress drains when key released');
+
+  // 4. Continuous hold for 1.5s deactivates God Mode
+  keys.add('KeyG');
+  for (let i = 0; i < 14; i++) {
+    updateGodModeState(state, 0.1, keys, false);
+    assert.equal(state.godMode, true, 'still active before 1.5s threshold');
+  }
+  const result = updateGodModeState(state, 0.1, keys, false); // 1.5s reached
+  assert.equal(result, 'deactivated');
+  assert.equal(state.godMode, false);
+  assert.equal(state.holdProgress, 0);
+  console.log('  ok god mode 1.5s hold deactivation and TNT KeyG precedence');
+}
+
+// 11. Deck Explosion Dry Engine Room Guard
+{
+  const simMod = load('shipSim.ts');
+  const group = new THREE.Group();
+  group.updateMatrixWorld(true);
+  const comp = { holes: [], min: { z: -40 }, max: { z: -20 }, level: 0 };
+  const sim = new simMod.ShipSim(group, [comp]);
+
+  // Dry deck explosion at pos.y = 0.5, x = 8.0, seaLevel = 0.0 -> must return null
+  const dryBreach = sim.addBreach(comp, new THREE.Vector3(8.0, 0.5, -30), 1.0, 0.0);
+  assert.equal(dryBreach, null, 'dry deck explosion must not breach engine room');
+
+  // Submerged hull explosion at pos.y = -2.0, x = 8.0, seaLevel = 0.0 -> creates breach
+  const submergedHullBreach = sim.addBreach(comp, new THREE.Vector3(8.0, -2.0, -30), 1.0, 0.0);
+  assert.ok(submergedHullBreach, 'submerged hull explosion must create breach');
+
+  // Submerged deck explosion (oceanHeight = 2.0 > worldY = 0.5) -> creates breach
+  const submergedDeckBreach = sim.addBreach(comp, new THREE.Vector3(8.0, 0.5, -30), 1.0, 2.0);
+  assert.ok(submergedDeckBreach, 'submerged deck explosion must create breach');
+  console.log('  ok deck explosion dry engine room guard');
 }
 
 console.log('Stormworks prototype tests passed.');

@@ -133,13 +133,19 @@ export class StormworksSupervisor {
     const breaches: CrewBreach[] = [];
     let breachId = 1;
     for (const c of this.compartments) {
+      const isEngine = c.id === "engine";
       for (const h of c.holes) {
+        const wy = this.sim.worldY(h.pos.x, h.pos.y, h.pos.z);
+        const head = Math.max(0.5, -wy);
+        const qh = 0.6 * h.area * Math.sqrt(2 * 9.81 * head);
         breaches.push({
           id: breachId++,
           x: h.pos.x,
           y: h.pos.y,
           z: h.pos.z,
           area: h.area,
+          inflowRate: qh,
+          isEngineRoom: isEngine,
         });
       }
     }

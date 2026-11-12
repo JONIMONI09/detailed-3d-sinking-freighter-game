@@ -15,7 +15,10 @@ function Bar({ value, color, label, icon }: { value: number; color: string; labe
   );
 }
 
-function Crosshair({ type, hit }: { type: Settings["crosshair"]; hit: number }) {
+function Crosshair({ type, hit, holdProgress }: { type: Settings["crosshair"]; hit: number; holdProgress: number }) {
+  const r = 18;
+  const circ = 2 * Math.PI * r;
+  const offset = circ * (1 - Math.max(0, Math.min(1, holdProgress)));
   return (
     <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
       {type === "dot" && <div className="h-1.5 w-1.5 rounded-full bg-white shadow-[0_0_3px_#000]" />}
@@ -32,6 +35,27 @@ function Crosshair({ type, hit }: { type: Settings["crosshair"]; hit: number }) 
       {hit > 0 && (
         <div className="absolute left-1/2 top-1/2 h-9 w-9 -translate-x-1/2 -translate-y-1/2 rotate-45" style={{ opacity: hit }}>
           <div className="absolute inset-0 border-2 border-red-500" style={{ clipPath: "polygon(0 0,30% 0,30% 10%,10% 10%,10% 30%,0 30%, 0 0, 100% 0,100% 30%,90% 30%,90% 10%,70% 10%,70% 0, 100% 100%,70% 100%,70% 90%,90% 90%,90% 70%,100% 70%, 0 100%,0 70%,10% 70%,10% 90%,30% 90%,30% 100%)" }} />
+        </div>
+      )}
+      {holdProgress > 0 && (
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center">
+          <svg className="h-12 w-12 -rotate-90">
+            <circle cx="24" cy="24" r={r} stroke="rgba(255,255,255,0.25)" strokeWidth="3" fill="none" />
+            <circle
+              cx="24"
+              cy="24"
+              r={r}
+              stroke="#f59e0b"
+              strokeWidth="3"
+              fill="none"
+              strokeDasharray={circ}
+              strokeDashoffset={offset}
+              strokeLinecap="round"
+            />
+          </svg>
+          <span className="text-[9px] font-mono font-bold text-amber-300 drop-shadow -mt-1 tracking-wider whitespace-nowrap">
+            HOLD [G] TO DEACTIVATE GOD MODE
+          </span>
         </div>
       )}
     </div>
@@ -152,7 +176,7 @@ export default function Hud({ h, settings, touch }: { h: HudState; settings: Set
       {h.alarm && !dead && <div className="absolute inset-0 animate-pulse" style={{ boxShadow: "inset 0 0 90px rgba(255,0,0,0.35)" }} />}
       {dead && <div className="absolute inset-0 bg-red-950/50" />}
 
-      {!h.escape && <Crosshair type={settings.crosshair} hit={h.hit} />}
+      {!h.escape && <Crosshair type={settings.crosshair} hit={h.hit} holdProgress={h.godModeHoldProgress} />}
 
       {/* Oben links: Auftrag */}
       <div className="absolute left-2 top-2 origin-top-left" style={{ transform: `scale(${sc})` }}>
@@ -163,14 +187,31 @@ export default function Hud({ h, settings, touch }: { h: HudState; settings: Set
               {String(mm).padStart(2, "0")}:{String(ss).padStart(2, "0")}
             </span>
           </div>
-          <ul className="space-y-0.5">
-            {h.objectives.map((o, i) => (
-              <li key={i} className={`flex gap-1.5 leading-snug ${o.done ? "text-emerald-300 line-through opacity-70" : "text-slate-100"}`}>
-                <span>{o.done ? "☑" : "☐"}</span>
-                <span>{o.text}</span>
+          {h.mode === "sandbox" ? (
+            <ul className="space-y-0.5 text-xs">
+              <li className="flex gap-1.5 leading-snug font-semibold text-emerald-300">
+                <span>✔</span>
+                <span>Free Stormworks Sandbox</span>
               </li>
-            ))}
-          </ul>
+              <li className="flex gap-1.5 leading-snug text-sky-200">
+                <span>•</span>
+                <span>All weapons free · Infinite ammo (∞)</span>
+              </li>
+              <li className="flex gap-1.5 leading-snug text-amber-200">
+                <span>•</span>
+                <span>Auto-regeneration · God Mode [G]</span>
+              </li>
+            </ul>
+          ) : (
+            <ul className="space-y-0.5">
+              {h.objectives.map((o, i) => (
+                <li key={i} className={`flex gap-1.5 leading-snug ${o.done ? "text-emerald-300 line-through opacity-70" : "text-slate-100"}`}>
+                  <span>{o.done ? "☑" : "☐"}</span>
+                  <span>{o.text}</span>
+                </li>
+              ))}
+            </ul>
+          )}
           <div className="mt-1.5 flex flex-wrap gap-2 text-[11px]">
             <span className={h.keys.blue ? "text-sky-300" : "text-slate-500"}>▮ Blue</span>
             <span className={h.keys.red ? "text-red-400" : "text-slate-500"}>▮ Red</span>
@@ -245,61 +286,74 @@ export default function Hud({ h, settings, touch }: { h: HudState; settings: Set
       )}
 
       {/* Unten links: Gesundheit */}
-      <div className="absolute bottom-2 left-2 origin-bottom-left space-y-1" hidden={h.escape} style={{ transform: `scale(${sc})`, bottom: touch ? undefined : 8, top: touch ? 96 : undefined, display: touch && vp.h < 420 ? "none" : undefined }}>
-        <Bar value={h.hp} color={h.hp > 50 ? "linear-gradient(90deg,#16a34a,#4ade80)" : h.hp > 25 ? "linear-gradient(90deg,#d97706,#fbbf24)" : "linear-gradient(90deg,#b91c1c,#f87171)"} label={`${Math.ceil(h.hp)}`} icon="❤" />
-        {h.armor > 0 && <Bar value={h.armor} color="linear-gradient(90deg,#1d4ed8,#60a5fa)" label={`${Math.ceil(h.armor)}`} icon="🛡" />}
-        {(h.sprint || h.crouch || h.wading) && <div className="text-[11px] font-semibold text-slate-200">{h.sprint ? "Sprinting" : h.crouch ? "Crouched" : "In water"}</div>}
-      </div>
+      {(() => {
+        const isInfinite = h.godMode || h.mode === "sandbox";
+        return (
+          <div className="absolute bottom-2 left-2 origin-bottom-left space-y-1" hidden={h.escape} style={{ transform: `scale(${sc})`, bottom: touch ? undefined : 8, top: touch ? 96 : undefined, display: touch && vp.h < 420 ? "none" : undefined }}>
+            <Bar value={isInfinite ? 100 : h.hp} color={h.hp > 50 ? "linear-gradient(90deg,#16a34a,#4ade80)" : h.hp > 25 ? "linear-gradient(90deg,#d97706,#fbbf24)" : "linear-gradient(90deg,#b91c1c,#f87171)"} label={isInfinite ? "∞" : `${Math.ceil(h.hp)}`} icon="❤" />
+            {(h.armor > 0 || isInfinite) && <Bar value={isInfinite ? 100 : h.armor} color="linear-gradient(90deg,#1d4ed8,#60a5fa)" label={isInfinite ? "∞" : `${Math.ceil(h.armor)}`} icon="🛡" />}
+            {(h.sprint || h.crouch || h.wading) && <div className="text-[11px] font-semibold text-slate-200">{h.sprint ? "Sprinting" : h.crouch ? "Crouched" : "In water"}</div>}
+          </div>
+        );
+      })()}
 
       {/* Unten rechts: Munition & Waffen */}
-      <div className="absolute bottom-2 right-2 origin-bottom-right text-right" style={{ transform: `scale(${sc})`, display: touch || h.escape ? "none" : undefined }}>
-        <div className="mb-1 flex justify-end gap-1">
-          {WEAP.map((w) => (
-            <div
-              key={w.id}
-              className={`rounded-md border px-2 py-1 text-[11px] font-bold ${h.weapon === w.id ? "border-orange-400 bg-orange-500/80" : h.owned[w.id] ? "border-white/30 bg-black/55" : "border-white/10 bg-black/30 text-slate-500"}`}
-            >
-              <span className="mr-1 text-slate-300">{w.k}</span>
-              {w.n}
+      {(() => {
+        const isInfiniteAmmo = h.godMode || h.mode === "sandbox";
+        return (
+          <div className="absolute bottom-2 right-2 origin-bottom-right text-right" style={{ transform: `scale(${sc})`, display: touch || h.escape ? "none" : undefined }}>
+            <div className="mb-1 flex justify-end gap-1">
+              {WEAP.map((w) => (
+                <div
+                  key={w.id}
+                  className={`rounded-md border px-2 py-1 text-[11px] font-bold ${h.weapon === w.id ? "border-orange-400 bg-orange-500/80" : h.owned[w.id] ? "border-white/30 bg-black/55" : "border-white/10 bg-black/30 text-slate-500"}`}
+                >
+                  <span className="mr-1 text-slate-300">{w.k}</span>
+                  {w.n}
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-        <div className="inline-block rounded-xl border border-white/15 bg-black/55 px-4 py-2 backdrop-blur-sm">
-          {h.weapon === "tnt" ? (
-            <div className="text-3xl font-extrabold leading-none">
-              <span className="text-red-400">{h.tnt}</span>
-              <span className="ml-1 text-sm font-semibold text-slate-300">TNT</span>
+            <div className="inline-block rounded-xl border border-white/15 bg-black/55 px-4 py-2 backdrop-blur-sm">
+              {h.weapon === "tnt" ? (
+                <div className="text-3xl font-extrabold leading-none">
+                  <span className="text-red-400">{isInfiniteAmmo ? "∞" : h.tnt}</span>
+                  <span className="ml-1 text-sm font-semibold text-slate-300">TNT</span>
+                </div>
+              ) : (
+                <div className="text-3xl font-extrabold leading-none">
+                  <span className={!isInfiniteAmmo && h.mag === 0 ? "text-red-400" : "text-white"}>{isInfiniteAmmo ? "∞" : h.mag}</span>
+                  <span className="mx-1 text-lg text-slate-400">/</span>
+                  <span className="text-xl text-slate-300">{isInfiniteAmmo ? "∞" : h.reserve}</span>
+                </div>
+              )}
+              <div className="mt-0.5 text-[11px] font-semibold uppercase tracking-wider text-slate-300">{h.reloading ? "Reloading …" : h.weaponName}</div>
+              {h.weapon !== "tnt" && <div className="text-[11px] text-slate-400">TNT: {isInfiniteAmmo ? "∞" : h.tnt}</div>}
+              {h.weapon === "tnt" && <div className="text-[10px] text-slate-400">LMB throw · RMB place · G detonate</div>}
             </div>
-          ) : (
-            <div className="text-3xl font-extrabold leading-none">
-              <span className={h.mag === 0 ? "text-red-400" : "text-white"}>{h.mag}</span>
-              <span className="mx-1 text-lg text-slate-400">/</span>
-              <span className="text-xl text-slate-300">{h.reserve}</span>
-            </div>
-          )}
-          <div className="mt-0.5 text-[11px] font-semibold uppercase tracking-wider text-slate-300">{h.reloading ? "Reloading …" : h.weaponName}</div>
-          {h.weapon !== "tnt" && <div className="text-[11px] text-slate-400">TNT: {h.tnt}</div>}
-          {h.weapon === "tnt" && <div className="text-[10px] text-slate-400">LMB throw · RMB place · G detonate</div>}
-        </div>
-        {h.detonatable && <div className="mt-1 animate-pulse text-xs font-bold text-orange-300">💥 Charge active – [G] detonator</div>}
-      </div>
-      {touch && !h.escape && (
-        <div className="absolute left-1/2 origin-bottom text-center" style={{ transform: `translateX(-50%) scale(${sc})`, bottom: 6 }}>
-          <div className="rounded-lg border border-white/15 bg-black/55 px-3 py-1 text-sm font-extrabold">
-            {h.weapon === "tnt" ? (
-              <>
-                <span className="text-red-400">{h.tnt}</span> TNT
-              </>
-            ) : (
-              <>
-                {h.mag}
-                <span className="text-slate-400"> / {h.reserve}</span>
-              </>
-            )}
-            <span className="ml-2 text-[10px] font-semibold uppercase text-slate-300">{h.weaponName}</span>
+            {h.detonatable && <div className="mt-1 animate-pulse text-xs font-bold text-orange-300">💥 Charge active – [G] detonator</div>}
           </div>
-        </div>
-      )}
+        );
+      })()}
+      {touch && !h.escape && (() => {
+        const isInfiniteAmmo = h.godMode || h.mode === "sandbox";
+        return (
+          <div className="absolute left-1/2 origin-bottom text-center" style={{ transform: `translateX(-50%) scale(${sc})`, bottom: 6 }}>
+            <div className="rounded-lg border border-white/15 bg-black/55 px-3 py-1 text-sm font-extrabold">
+              {h.weapon === "tnt" ? (
+                <>
+                  <span className="text-red-400">{isInfiniteAmmo ? "∞" : h.tnt}</span> TNT
+                </>
+              ) : (
+                <>
+                  {isInfiniteAmmo ? "∞" : h.mag}
+                  <span className="text-slate-400"> / {isInfiniteAmmo ? "∞" : h.reserve}</span>
+                </>
+              )}
+              <span className="ml-2 text-[10px] font-semibold uppercase text-slate-300">{h.weaponName}</span>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

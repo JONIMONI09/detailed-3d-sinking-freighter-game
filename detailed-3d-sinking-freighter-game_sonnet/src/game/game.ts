@@ -17,6 +17,7 @@ import { DoorSecurity, TerminalEntry, TerminalLog } from "./doorSecurity";
 import type { SecurityContext } from "./doorSecurity";
 import { StormworksSupervisor } from "./stormworksSupervisor";
 import { stepTelegraph } from "./bridge";
+import { shouldWindowBurst } from "./ingress";
 import { v3 } from "./navmesh3d";
 
 export type Mode = "mission" | "sandbox";
@@ -66,6 +67,8 @@ export interface HudState {
   guardsAlive: number;
   terminal: TerminalEntry[];
   terminalPinned: boolean;
+  godMode: boolean;
+  godModeHoldProgress: number;
 }
 
 export interface EndInfo {
@@ -194,7 +197,7 @@ export class Game {
   doorSecurity = new DoorSecurity(this.terminal);
   terminalPinned = false;
   tracers: { line: THREE.Line; t: number }[] = [];
-  holes: THREE.Mesh[] = [];
+  holes: THREE.Object3D[] = [];
   holeIdx = 0;
   scorch: THREE.Mesh[] = [];
   scorchIdx = 0;
@@ -206,6 +209,7 @@ export class Game {
   lastLookDX = 0;
   lastLookDY = 0;
   waterOverlay = false;
+  godModeHoldProgress = 0;
   private tmpV = V();
   private tmpQ = new THREE.Quaternion();
   private tmpE = new THREE.Euler();
@@ -520,12 +524,18 @@ export class Game {
 
   private buildDecalPools() {
     const holeMat = new THREE.MeshBasicMaterial({ color: 0x050505, transparent: true, opacity: 0.85, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
+    const scratchMat = new THREE.MeshBasicMaterial({ color: 0x71717a, transparent: true, opacity: 0.8, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
     const hg = new THREE.CircleGeometry(0.045, 8);
+    const ringGeom = new THREE.RingGeometry(0.04, 0.085, 8);
     for (let i = 0; i < 70; i++) {
-      const m = new THREE.Mesh(hg, holeMat);
-      m.visible = false;
-      this.ship.group.add(m);
-      this.holes.push(m);
+      const g = new THREE.Group();
+      const mHole = new THREE.Mesh(hg, holeMat);
+      const mScratch = new THREE.Mesh(ringGeom, scratchMat);
+      mScratch.position.z = 0.001;
+      g.add(mHole, mScratch);
+      g.visible = false;
+      this.ship.group.add(g);
+      this.holes.push(g);
     }
     const sm = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.55, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
     const sg = new THREE.CircleGeometry(1, 20);
@@ -675,6 +685,42 @@ export class Game {
       },
       this.shake * 180,
     );
+
+    // Hydrostatic window burst under water immersion depth
+    for (const pane of this.ship.glass) {
+      if (!pane.broken) {
+        const wp = this.worldPos(pane.pos, V());
+        const oceanH = this.ocean.height(wp.x, wp.z, t);
+        const head = oceanH - wp.y;
+        const isBridge = pane.pos.y >= 5.0;
+        if (shouldWindowBurst(head, isBridge)) {
+          this.breakGlass(pane);
+          this.say("WINDOW BURST under water pressure!", "alert");
+          const comp = this.ship.compartments.find(
+            (c) =>
+              pane.pos.z >= c.min.z - 2.5 &&
+              pane.pos.z <= c.max.z + 2.5 &&
+              pane.pos.y >= c.min.y - 1 &&
+              pane.pos.y <= c.max.y + 4,
+          );
+          if (comp) {
+            const holeArea = Math.min(1.5, pane.w * pane.h * 0.7);
+            const hole = {
+              pos: pane.pos.clone(),
+              area: holeArea,
+              side: Math.sign(pane.pos.x) || 1,
+              nx: -(Math.sign(pane.pos.x) || 1),
+              ny: 0,
+              nz: 0,
+            };
+            comp.holes.push(hole);
+            this.makeHoleVisual(hole);
+            this.sim.firstBreach = true;
+          }
+        }
+      }
+    }
+
     if (this.sim.firstBreach && !this.alarm && !this.sim.sunk) {
       this.alarm = true;
     }
@@ -726,6 +772,12 @@ export class Game {
     } else p.oxygen = Math.min(1, p.oxygen + dt * 0.7);
     if (p.wading && !this.escapeState) {
       // Kälteschock leicht
+    }
+
+    // In Sandbox Mode or God Mode: Health and armor continuously auto-regenerate
+    if ((this.mode === "sandbox" || this.supervisor.isGodMode()) && p.alive) {
+      p.health = Math.min(100, p.health + 35 * dt);
+      p.armor = Math.min(100, p.armor + 35 * dt);
     }
 
     // Innenraum-Faktor
@@ -824,7 +876,42 @@ export class Game {
       this.flashOn = !this.flashOn;
       this.audio.click();
     }
+    const isHoldingTNT = this.cur === "tnt" || this.dyns.length > 0;
+
     if (inp.pressed("detonate")) this.detonateAll();
+
+    // God Mode logic:
+    // When holding TNT, KeyG exclusively detonates TNT (never toggles God Mode).
+    // Once God Mode is ON, disabling it requires holding KeyG continuously for 1.5s.
+    if (!isHoldingTNT) {
+      if (!this.supervisor.isGodMode()) {
+        if (inp.pressed("godmode")) {
+          this.supervisor.toggleGodMode();
+          this.godModeHoldProgress = 0;
+          this.player.health = 100;
+          this.player.armor = 100;
+          this.player.alive = true;
+          this.dead = false;
+          this.say("GOD MODE: ON (Immortal, infinite oxygen)", "good");
+        }
+      } else {
+        inp.pressed("godmode"); // consume single tap
+        if (inp.keys.has("KeyG")) {
+          this.godModeHoldProgress = Math.min(1.0, this.godModeHoldProgress + dt / 1.5);
+          if (this.godModeHoldProgress >= 0.999) {
+            this.supervisor.toggleGodMode();
+            this.godModeHoldProgress = 0;
+            this.say("GOD MODE: OFF", "warn");
+          }
+        } else {
+          this.godModeHoldProgress = Math.max(0, this.godModeHoldProgress - dt * 3.0);
+        }
+      }
+    } else {
+      inp.pressed("godmode");
+      this.godModeHoldProgress = 0;
+    }
+
     inp.pressed("status");
     if (inp.pressed("terminal")) {
       this.terminalPinned = !this.terminalPinned;
@@ -834,10 +921,6 @@ export class Game {
       const closed = this.supervisor.lockdownBulkheads();
       this.alarm = true;
       this.say(`MASTER LOCKDOWN: ${closed} watertight bulkheads sealed!`, "alert");
-    }
-    if (inp.pressed("godmode")) {
-      const god = this.supervisor.toggleGodMode();
-      this.say(god ? "GOD MODE: ON (Immortal, infinite oxygen)" : "GOD MODE: OFF", god ? "good" : "warn");
     }
     if (inp.pressed("noclip")) {
       const noclip = this.supervisor.toggleNoclip();
@@ -923,13 +1006,19 @@ export class Game {
         this.vm.cancelReload();
       } else return;
     }
-    if (a.mag <= 0) {
+    const isInfiniteAmmo = this.mode === "sandbox" || this.supervisor.isGodMode();
+    if (!isInfiniteAmmo && a.mag <= 0) {
       this.audio.empty();
       this.cooldown = 0.3;
       if (a.res > 0) this.startReload();
       return;
     }
-    a.mag--;
+    if (!isInfiniteAmmo) {
+      a.mag--;
+    } else {
+      a.mag = w.mag;
+      a.res = 999;
+    }
     this.cooldown = 60 / w.rpm;
     this.vm.fireKick(w.recoil);
     this.audio.shot(this.cur as "pistol" | "shotgun" | "rifle");
@@ -1437,7 +1526,9 @@ export class Game {
     const comp = this.compAt(p.x, p.y, p.z);
     if (comp) {
       const before = comp.holes.length;
-      const hole = this.sim.addBreach(comp, p, power * (src === "barrel" ? 0.5 : 1));
+      const wp = this.worldPos(p, V());
+      const seaH = this.ocean.height(wp.x, wp.z, this.time);
+      const hole = this.sim.addBreach(comp, p, power * (src === "barrel" ? 0.5 : 1), seaH);
       if (hole) {
         if (comp.holes.length > before) this.makeHoleVisual(hole);
         this.say(`HULL BREACH in ${comp.name}! Water is flooding in!`, "alert");
@@ -2228,6 +2319,8 @@ export class Game {
       guardsAlive: this.guards.filter((g) => !g.dead).length,
       terminal: this.terminal.recent(10),
       terminalPinned: this.terminalPinned,
+      godMode: this.supervisor.isGodMode(),
+      godModeHoldProgress: this.godModeHoldProgress,
     };
     this.cb.onHud(hud);
   }

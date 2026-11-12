@@ -42,11 +42,17 @@ export class ShipSim {
     return c.level + (m[1] * (cx - x) + m[9] * (cz - z)) / Math.max(0.2, m[5]);
   }
 
-  addBreach(c: Compartment, pos: THREE.Vector3, power: number): Hole | null {
+  addBreach(c: Compartment, pos: THREE.Vector3, power: number, oceanHeight = 0): Hole | null {
     const dS = WI - Math.abs(pos.x);
     const dB = pos.y - FLOOR_Y;
     const d = Math.min(dS, dB);
     if (pos.y > 1.0 || d > 3.4) return null;
+
+    // Deck explosions (pos.y >= -0.2) must NOT create an underwater exterior breach
+    // unless that deck coordinate is actually submerged below sea level (worldY < oceanHeight).
+    const wy = this.worldY(pos.x, pos.y, pos.z);
+    if (pos.y >= -0.2 && wy >= oceanHeight) return null;
+
     const area = Math.max(0.6, power * (2.8 - d * 0.55));
     let hole: Hole;
     if (dS <= dB) {
