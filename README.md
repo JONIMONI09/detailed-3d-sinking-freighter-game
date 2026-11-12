@@ -152,9 +152,11 @@ is Freebuff's native project discovery path; `.claude/skills/` is also supported
 for Claude Code compatibility. These skills follow the official
 [Freebuff skills format](https://docs.freebuff.page/working-with-the-agent/#skills).
 
-Invoke every skill as `/skill:<name>`:
+In local CLI/Desktop sessions, invoke a skill as `/skill:<name>`. In the web
+client, choose the skill from the `/` picker; the picker inserts `/<name>`.
+The table shows the local handle:
 
-| Skill | Command |
+| Skill | Local `/skill:` handle |
 | :--- | :--- |
 | `error-fix-document` | `/skill:error-fix-document` |
 | `ci-workflow-audit` | `/skill:ci-workflow-audit` |
@@ -164,21 +166,32 @@ Invoke every skill as `/skill:<name>`:
 | Built-in skill discovery | `/skill:find-skills` |
 | Built-in skill creator | `/skill:skill-creator` |
 
-A bare `/brainstorming` or `/find-skills` is not a Freebuff command; the
-`/skill:` prefix is required. Skill discovery happens at session start, so
+Locally, a bare `/brainstorming` or `/find-skills` is not a Freebuff command;
+the `/skill:` prefix is required. Local discovery happens at session start, so
 reload the chat (or start a new one) after adding, moving, or renaming a skill.
+In the web picker, type the start of the registry name (`/ci`, `/doc`,
+`/error`, `/skill`) rather than `/skill:`; the picker searches the names.
 
 A fresh `@codebuff/sdk@0.10.7` `loadSkills()` run against this repository
 returned all four project skills from `.agents/skills/` with their exact
-`/skill:<name>` handles and no duplicate or shadowing warning. The six account
-skills are enabled in the account registry and use the same `/skill:` form.
-The Desktop slash-menu rendering after a reload remains the UI-only check; the
-loader proof does not cover it. See [CI_DEPLOYMENT.md](CI_DEPLOYMENT.md) §19.
+`/skill:<name>` handles. That loader proof covers **local CLI/Desktop and
+local executions**, not the web Cloud client.
+
+The web Cloud client does not read a repository's `.agents/skills/` directory.
+It loads **Account skills** from **Settings → Skills** and **Cloud project
+skills** from **Settings → Project settings**. Account skills are available in
+every project; Cloud project skills are scoped to one project. All four
+workflows have also been registered as enabled account skills, so they appear
+in the web `/` skill picker after the next turn. The web picker inserts
+`/<name>`; the local CLI/Desktop form is `/skill:<name>`. The six built-in
+account skills remain unchanged; `performance` is disabled. The actual
+slash-menu rendering is the remaining UI-only check. See
+[CI_DEPLOYMENT.md](CI_DEPLOYMENT.md) §19 and §20.
 
 - `error-fix-document` — bug and incident workflow with fallback and docs.
 - `ci-workflow-audit` — YAML validation, exact-SHA CI gate and Pages checks.
 - `documentation-maintenance` — stale-claim scan and evidence recording.
-- `skill-discovery-audit` — native path, YAML, `/skill:<name>` invocation and reload checks.
+- `skill-discovery-audit` — native path, YAML, client-specific invocation and reload checks.
 
 `tools/ci_check.py` checks their presence, names, frontmatter fields, body
 length, and absence of German umlauts or unfinished markers. Full YAML syntax

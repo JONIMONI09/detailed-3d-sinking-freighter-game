@@ -618,7 +618,8 @@ skills map. The run used both `includeHomeSkills: false` and
 | `skill-discovery-audit` | `/skill:skill-discovery-audit` | `.agents/skills/skill-discovery-audit/SKILL.md` |
 
 The account registry was checked separately because account skills are not
-stored in the project tree. All six account skills were enabled:
+stored in the project tree. At the time of this loader run it contained six
+skills; five were enabled and `performance` was disabled:
 
 | Account skill | Exact handle | State |
 | :--- | :--- | :--- |
@@ -626,15 +627,17 @@ stored in the project tree. All six account skills were enabled:
 | `find-skills` | `/skill:find-skills` | enabled |
 | `skill-creator` | `/skill:skill-creator` | enabled |
 | `web-design-guidelines` | `/skill:web-design-guidelines` | enabled |
-| `performance` | `/skill:performance` | enabled |
+| `performance` | `/skill:performance` | disabled |
 | `github-actions-docs` | `/skill:github-actions-docs` | enabled |
 
 Freebuff registers each loaded name with `getSlashCommandsWithSkills()` as
 `skill:${name}` and inserts `/skill:${name}`. The loader returned no warnings;
 project/account name intersection was empty, so there was no shadowing. The
-project count was 4, the account count was 6, the home-inclusive count stayed
-4, and `.claude/skills` was absent. The temporary SDK install was removed and
-no dependency was added to the repository.
+project count was 4, the account count was 6 at that point, the home-inclusive
+count stayed 4, and `.claude/skills` was absent. The temporary SDK install was
+removed and no dependency was added to the repository. This section proves the
+local SDK loader only; it does not prove web registration. See §20 for the web
+client's separate registry.
 
 Verified by execution:
 
@@ -642,7 +645,7 @@ Verified by execution:
 - names, paths and `/skill:<name>` handles match
 - the home-inclusive load does not change the project result
 - no duplicate, shadowing or loader warnings
-- all six account skills are enabled separately
+- six account skills were present separately; five were enabled
 
 Only the UI can verify:
 
@@ -652,3 +655,68 @@ Only the UI can verify:
 A loader process cannot prove those pixels or the state of a chat that has not
 been reloaded. `npx skills find` is catalog search and does not load local
 skills; it was used only for the requested ecosystem search.
+
+---
+
+## 20. Web client skill registry (2026-11-12)
+
+The web Cloud client is not a local skill loader. Its composer combines skills
+as `localExecution ? folderSkillsChatId : null`; a Cloud run passes `null`, so
+a committed `.agents/skills/` directory is not read. The web settings expose two
+separate registries instead:
+
+- **Settings → Skills** manages Account skills. The page states: "Synced across
+  web and Desktop. Available in every project."
+- **Settings → Project settings** manages Cloud project settings, including
+  project-scoped skills for the selected Cloud project.
+
+The browser tooltip that mentions "this folder's .agents/skills" applies to
+local execution; it is not evidence that a Cloud chat loaded the repository
+directory.
+
+To make the four project workflows available in the web client, they were also
+saved to the Account registry through the account skill manager. The registry
+now contains ten skills; the four new entries are enabled:
+
+| Account skill | Web picker | Local handle | State |
+| :--- | :--- | :--- | :--- |
+| `ci-workflow-audit` | `/ci-workflow-audit` | `/skill:ci-workflow-audit` | enabled |
+| `documentation-maintenance` | `/documentation-maintenance` | `/skill:documentation-maintenance` | enabled |
+| `error-fix-document` | `/error-fix-document` | `/skill:error-fix-document` | enabled |
+| `skill-discovery-audit` | `/skill-discovery-audit` | `/skill:skill-discovery-audit` | enabled |
+
+The pre-existing six account skills are unchanged: `brainstorming`,
+`find-skills`, `skill-creator`, `web-design-guidelines`, `performance`
+(disabled), and `github-actions-docs`.
+
+Scope and shadowing:
+
+- the four names now exist in both `.agents/skills/` and the Account registry;
+  a local run prefers the project copy, while a web run reads the account copy
+- both copies are the same content, so there is no conflicting shadowing
+- the account copies are available in every project; use **Settings → Project
+  settings** instead when a workflow must stay scoped to one project
+
+The web bundle builds skill insertion as `/${e.name}`; the web account menu
+displays `/find-skills`. The web label is therefore `/<name>`. The local CLI
+and Desktop still use `/skill:<name>`; both reference the same registry name.
+Do not type the local `/skill:` form into the web composer and expect the web
+picker to match it.
+
+Verified by the account skill listing:
+
+- all four new names are present and enabled
+- the web labels are `/<name>`; the local handles are `/skill:<name>`
+- the existing six account skills remain present
+- no browser menu was available to the agent; the web slash-menu rendering
+  after the next turn remains the UI-only check
+
+The registry save is the web fix. A repository-only commit cannot make a
+project skill appear in a web Cloud chat.
+
+The documentation and skill change altered the root bundle. The local build
+produced 956,117 bytes with SHA-256
+`2841dd3980ca418cdaf5c4e0f0ec85a9ea7194878029041f9332ef92005855ab`; the Sonnet
+bundle stayed at 1,001,088 bytes with SHA-256
+`7ea4957dfe82f83ac489e159b5683d0a2f056424329399482cd1ffa5d1a9635f`. The branch
+and main runs for this change are recorded in §21.

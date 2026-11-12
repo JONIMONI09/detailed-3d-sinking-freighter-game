@@ -65,8 +65,15 @@
 - **Issue:** The repository could show four `SKILL.md` files and a passing YAML check while still leaving open whether a fresh Freebuff process actually loaded them.
 - **Root Cause:** Earlier verification stopped at the filesystem and CI layer; it did not call the real SDK loader or compare project names against the account registry.
 - **Fix:** Ran `@codebuff/sdk@0.10.7` `loadSkills()` in a fresh Node process with both project-only and home-inclusive options. No repository change was needed; §19 records the method and the UI-only gap.
-- **Verified:** Four project skills loaded from `.agents/skills/`, each with its exact `/skill:<name>` handle; six account skills were enabled; project/account intersection was empty; no warnings; `.claude/skills` absent. The temporary SDK install was removed.
+- **Verified:** Four project skills loaded from `.agents/skills/`, each with its exact `/skill:<name>` local handle; six account skills were present (five enabled); project/account intersection was empty; no warnings; `.claude/skills` absent. The temporary SDK install was removed.
 - **Lesson:** Loader execution and account-registry comparison are separate evidence from file listing and CI; UI rendering after reload remains a separate, unprovable-from-CLI layer.
+
+### [RESOLVED] Web Cloud Client Did Not Read Project Skills
+- **Issue:** The four workflows existed in `.agents/skills/` and loaded in a local SDK process, but they never appeared in the freebuff.com web slash menu.
+- **Root Cause:** The web composer combines `localExecution ? folderSkillsChatId : null` with the skill registry. A Cloud run passes `null`, so it does not scan the repository's `.agents/skills/` or `.claude/skills/`. The web client reads Account skills from Settings → Skills and project-scoped skills from Settings → Project settings instead.
+- **Fix:** Registered the four workflows as enabled Account skills and updated the discovery skill, README, AGENTS.md and CI_DEPLOYMENT.md to distinguish the web registry from the local loader.
+- **Verified:** `cloud_manage_skills` lists all four new names as enabled, alongside the six existing account skills. The web picker label is `/<name>`; the local CLI/Desktop handle is `/skill:<name>`. The browser slash menu itself was not available to the agent, so its next-turn rendering remains UI-only.
+- **Lesson:** A green local loader and a committed skill file do not prove web registration. Identify the client source first: local path for CLI/Desktop/local execution, Account or Cloud Project registry for the web client.
 
 ### [RESOLVED] GitHub Pages Deploy Never Created a Site
 - **Issue:** The Pages workflow never published a site; the project URL stayed blank or 404.
