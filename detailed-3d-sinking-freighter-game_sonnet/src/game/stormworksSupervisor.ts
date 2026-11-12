@@ -58,6 +58,15 @@ export class StormworksSupervisor {
   keelFractured = false;
   fractureJoint = -1;
   activeWaterVelocity = v3(0, 0, 0);
+  engineDestroyed = false;
+
+  destroyEngine(): void {
+    this.engineDestroyed = true;
+  }
+
+  isEngineDestroyed(): boolean {
+    return this.engineDestroyed;
+  }
 
   constructor(
     public sim: ShipSim,
@@ -126,8 +135,12 @@ export class StormworksSupervisor {
 
     // 5. Wheelhouse Navigation & Rudder Dynamics
     const engineRoom = this.compartments[0];
-    const engineAvailable = !this.sim.sunk && (engineRoom ? engineRoom.fill < 0.6 : true);
+    if (engineRoom && engineRoom.fill > 0.4) {
+      this.engineDestroyed = true;
+    }
+    const engineAvailable = !this.sim.sunk && !this.engineDestroyed && (engineRoom ? engineRoom.fill <= 0.4 : true);
     stepHelm(this.helm, dt, 140, engineAvailable);
+    this.sim.heading = this.helm.heading;
 
     // 6. Gather active hull breaches for crew repairs
     const breaches: CrewBreach[] = [];

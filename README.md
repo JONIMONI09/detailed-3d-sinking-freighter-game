@@ -251,8 +251,8 @@ YAML syntax is parsed separately during delivery.
 ## 🚀 CI & GitHub Pages Deployment
 
 Both editions are verified on every feature-branch push and on every push to
-`main`. `npm test` runs 9 physics tests, 14 browser-guard tests, 5 door-security tests, 11 Stormworks prototype tests, 4 crew-navigation tests, 3 ragdoll-physics tests, 4 stormworks-supervisor tests, 4 deck-explosion & window-burst tests, 4 sandbox-overhaul tests and 10 Python
-integrity checks (58 unit tests total across 9 test suites + 10 CI integrity checks); CI invokes the same command and adds the documentation gate:
+`main`. `npm test` runs 9 physics tests, 14 browser-guard tests, 5 door-security tests, 11 Stormworks prototype tests, 4 crew-navigation tests, 3 ragdoll-physics tests, 4 stormworks-supervisor tests, 4 deck-explosion & window-burst tests, 8 sandbox-overhaul tests, 3 vessel steering & engine breakdown tests and 10 Python
+integrity checks (65 unit tests total across 10 test suites + 10 CI integrity checks); CI invokes the same command and adds the documentation gate:
 
 ```bash
 npm ci

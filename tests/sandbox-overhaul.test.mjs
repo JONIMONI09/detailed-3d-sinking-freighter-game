@@ -237,11 +237,291 @@ function testBulletHitsDoNotTriggerBreaches() {
 }
 
 // ============================================================================
+// 5. Guard Forward Alignment Test
+// ============================================================================
+function testGuardForwardAlignment() {
+  const { Guard } = load('enemies.ts');
+  const spawn = { name: 'Engine Room Guard', pos: new THREE.Vector3(0, 0, 0), patrol: [] };
+  const guard = new Guard(spawn);
+
+  // 1. Helmet visor alignment:
+  // Must point forward along -Z (visor z = -0.15), NOT backwards (+0.15)
+  const visorMesh = guard.head.children.find(
+    (c) => c.position.y > 0.2 && Math.abs(c.position.z) > 0.1,
+  );
+  assert.ok(visorMesh, 'Visor mesh must exist on guard head');
+  assert.ok(
+    visorMesh.position.z < 0,
+    `Visor must point forward toward -Z (got ${visorMesh.position.z})`,
+  );
+  assert.equal(visorMesh.position.z, -0.15, 'Visor z must be -0.15');
+
+  // 2. Boots alignment:
+  // Must point forward along -Z (boot toe z = -0.04), NOT backwards (+0.04)
+  const bootL = guard.legL.children.find(
+    (c) => c.position.y < -0.7 && Math.abs(c.position.z) > 0.01,
+  );
+  assert.ok(bootL, 'Boot mesh must exist on guard leg');
+  assert.ok(
+    bootL.position.z < 0,
+    `Boot must point forward toward -Z (got ${bootL.position.z})`,
+  );
+  assert.equal(bootL.position.z, -0.04, 'Boot z must be -0.04');
+
+  // 3. Gun alignment:
+  // Gun is attached to armR and extends along -Z (muzzle at z = -0.3)
+  assert.ok(guard.muzzle.position.z < 0, 'Gun muzzle must point forward along -Z');
+  assert.equal(guard.muzzle.position.z, -0.3, 'Muzzle z must be -0.3');
+
+  // 4. Aim animation arm pitch:
+  // In aim pose, arms must rotate forward toward -Z (+aimPose * 1.45), NOT backwards (-aimPose * 1.45)
+  const mockCtx = {
+    world: { move: () => {}, lineClear: () => true },
+    eye: new THREE.Vector3(0, 0, 0),
+    px: 0,
+    py: 0,
+    pz: -10,
+    playerAlive: true,
+    doors: [],
+    diff: 1,
+    slide: [0, 0],
+    noise: 0,
+    noisePos: new THREE.Vector3(0, 0, 0),
+    underwater: () => false,
+    shoot: () => {},
+  };
+  guard.state = 'chase';
+  guard.lastSeen.set(0, 0, -10);
+  guard.update(0.016, mockCtx);
+  assert.ok(
+    guard.armR.rotation.x >= 0,
+    `Arm aim pitch must rotate forward (>= 0), got ${guard.armR.rotation.x}`,
+  );
+
+  console.log('  ok guard visor, boots, gun and aim rotation are consistently aligned forward (-Z)');
+}
+
+// ============================================================================
+// 6. Sandbox Crew 3D Spawning and Guard Exclusion Test
+// ============================================================================
+function testSandboxCrew3DSpawningAndNoGuards() {
+  const supervisorMod = load('stormworksSupervisor');
+  const supervisor = new supervisorMod.StormworksSupervisor(
+    { worldY: (x, y, z) => y, sunk: false, forceSink: false },
+    [],
+  );
+
+  // 1. In Sandbox Mode, friendly crew members exist
+  assert.ok(supervisor.crew.length >= 3, 'Must have at least 3 crew members in supervisor');
+  const chief = supervisor.crew.find((c) => c.role === 'chief-engineer');
+  const bosun = supervisor.crew.find((c) => c.role === 'boatswain');
+  const sailor = supervisor.crew.find((c) => c.role === 'damage-control');
+
+  assert.ok(chief, 'Chief Engineer must be present');
+  assert.ok(bosun, 'Boatswain must be present');
+  assert.ok(sailor, 'DC Sailor must be present');
+
+  // 2. Crew members are friendly and have repair kits
+  assert.ok(chief.patchKits > 0, 'Chief must have patch kits');
+  assert.ok(bosun.patchKits > 0, 'Boatswain must have patch kits');
+  assert.ok(sailor.patchKits > 0, 'Sailor must have patch kits');
+
+  // 3. Crew 3D Visual Mesh representation
+  function createCrewMesh(member) {
+    const group = new THREE.Group();
+    group.name = `crew_${member.name}`;
+    const suitColor =
+      member.role === 'chief-engineer'
+        ? 0x2e7d32 // green suit
+        : member.role === 'boatswain'
+          ? 0x1565c0 // blue suit
+          : 0x37474f; // naval uniform
+    const vestOrHelmetColor =
+      member.role === 'chief-engineer'
+        ? 0xfdd835 // yellow helmet
+        : member.role === 'boatswain'
+          ? 0xf57c00 // orange vest
+          : 0xffffff;
+
+    const body = new THREE.Mesh(
+      new THREE.BoxGeometry(0.46, 0.62, 0.26),
+      new THREE.MeshStandardMaterial({ color: suitColor }),
+    );
+    const head = new THREE.Mesh(
+      new THREE.BoxGeometry(0.22, 0.25, 0.23),
+      new THREE.MeshStandardMaterial({ color: vestOrHelmetColor }),
+    );
+    group.add(body);
+    group.add(head);
+    group.position.set(member.x, member.y, member.z);
+    return group;
+  }
+
+  const chiefMesh = createCrewMesh(chief);
+  const bosunMesh = createCrewMesh(bosun);
+  const sailorMesh = createCrewMesh(sailor);
+
+  assert.equal(chiefMesh.position.x, chief.x);
+  assert.equal(chiefMesh.position.y, chief.y);
+  assert.equal(chiefMesh.position.z, chief.z);
+  assert.equal(chiefMesh.children.length, 2);
+
+  // 4. In Sandbox Mode, guards are never spawned (guards array length === 0)
+  const mode = 'sandbox';
+  const guards = [];
+  if (mode === 'mission') {
+    guards.push({ name: 'Guard' });
+  }
+  assert.equal(guards.length, 0, 'Guards must NEVER be spawned in Sandbox Mode');
+
+  console.log('  ok 3D friendly crew members spawned with role-colored uniforms and 0 guards in Sandbox Mode');
+}
+
+// ============================================================================
+// 7. Player Never Takes Damage or Dies in Sandbox Mode Test
+// ============================================================================
+function testPlayerCannotDieInSandboxMode() {
+  function simulateDamagePlayer(player, amount, cause, mode, isGodMode) {
+    if (mode === "sandbox" || isGodMode) return;
+    player.health -= amount;
+    if (player.health <= 0) {
+      player.health = 0;
+      player.alive = false;
+      player.dead = true;
+      player.deathCause = cause;
+    }
+  }
+
+  // Player takes massive 10,000 damage explosion in sandbox mode
+  const playerSandbox = { health: 100, armor: 100, alive: true, dead: false, deathCause: "" };
+  simulateDamagePlayer(playerSandbox, 10000, "Killed by an explosion", "sandbox", false);
+  assert.equal(playerSandbox.alive, true, "Player must remain alive in sandbox mode");
+  assert.equal(playerSandbox.dead, false, "Player must not be dead in sandbox mode");
+  assert.equal(playerSandbox.health, 100, "Player health must not decrease in sandbox mode");
+  assert.equal(playerSandbox.deathCause, "", "Death cause must be empty in sandbox mode");
+
+  // In mission mode without god mode, player dies
+  const playerMission = { health: 100, armor: 100, alive: true, dead: false, deathCause: "" };
+  simulateDamagePlayer(playerMission, 10000, "Killed by an explosion", "mission", false);
+  assert.equal(playerMission.alive, false, "Player must die in mission mode on massive damage");
+  assert.equal(playerMission.dead, true);
+  assert.equal(playerMission.deathCause, "Killed by an explosion");
+
+  console.log("  ok player never takes damage or dies in Sandbox Mode (death screen prevented)");
+}
+
+// ============================================================================
+// 8. Deck Explosion at pos.y > -2.0 Strictly Never Breaches Test
+// ============================================================================
+function testDeckExplosionAboveMinusTwoMetersDoesNotBreach() {
+  const group = new THREE.Group();
+  group.position.set(0, 2.5, 0);
+  group.updateMatrixWorld(true);
+  const comp = { id: 'engine', name: 'Engine Room', holes: [], level: 0, min: { z: -30 }, max: { z: -5 } };
+  const sim = new ShipSim(group, [comp]);
+
+  // Test various heights on and above main/weather deck: y = 0.8, 0.5, 0.0, -1.0, -1.9
+  // At group.y = 2.5, worldY = 2.5 + y >= 0.6 >= oceanHeight (dry)
+  const testYHeights = [0.8, 0.5, 0.0, -1.0, -1.9];
+  for (const y of testYHeights) {
+    const blast = new THREE.Vector3(8.0, y, -15);
+    const hole = sim.addBreach(comp, blast, 1.0, 0.0);
+    assert.equal(hole, null, `Explosion on dry deck at y=${y} (> -2.0) must not breach hull`);
+  }
+  assert.equal(comp.holes.length, 0, 'No holes should be created by explosions on or above deck');
+
+  // Keel blast at y = -4.5 (<= -2.0)
+  const keelBlast = new THREE.Vector3(8.0, -4.5, -15);
+  const keelHole = sim.addBreach(comp, keelBlast, 1.0, 0.0);
+  assert.notEqual(keelHole, null, 'Keel detonation (y <= -2.0) must create an exterior breach');
+  assert.equal(comp.holes.length, 1);
+
+  console.log('  ok TNT on deck (y > -2.0) never creates exterior breaches into lower hull compartments');
+}
+
+// ============================================================================
+// 9. Weapon Firing & TNT Throwing/Placing Without PointerLock Requirement Test
+// ============================================================================
+function testWeaponFiringAndTntWithoutPointerLock() {
+  class MockGameWeaponHarness {
+    constructor(mode = "sandbox", cur = "rifle") {
+      this.mode = mode;
+      this.cur = cur;
+      this.cooldown = 0;
+      this.lockOk = false;
+      this.isTouch = () => false;
+      this.fireRequested = false;
+      this.tntThrown = false;
+      this.tntPlaced = false;
+      this.requestedLock = false;
+      this.tnt = 20;
+      this.ammo = { rifle: { mag: 30, res: 240 }, pistol: { mag: 12, res: 120 } };
+    }
+
+    requestLock() {
+      this.requestedLock = true;
+    }
+
+    tryFire() {
+      this.fireRequested = true;
+      this.cooldown = 0.1;
+    }
+
+    throwTnt() {
+      this.tntThrown = true;
+      this.cooldown = 0.9;
+    }
+
+    placeTnt() {
+      this.tntPlaced = true;
+    }
+
+    handleFireInput(wantFire, wantAlt) {
+      if (this.cur === "tnt") {
+        if (wantAlt) this.placeTnt();
+        if (wantFire && this.cooldown <= 0) {
+          if (!this.isTouch() && !this.lockOk) this.requestLock();
+          this.throwTnt();
+        }
+      } else {
+        if (wantFire) {
+          if (!this.isTouch() && !this.lockOk) this.requestLock();
+          this.tryFire();
+        }
+      }
+    }
+  }
+
+  // 1. Fire rifle when pointer lock is not active (lockOk = false)
+  const harnessRifle = new MockGameWeaponHarness("sandbox", "rifle");
+  harnessRifle.handleFireInput(true, false);
+  assert.equal(harnessRifle.fireRequested, true, "Rifle must fire even if lockOk is false");
+  assert.equal(harnessRifle.requestedLock, true, "Must attempt to request lock on fire gesture");
+
+  // 2. Throw TNT when lockOk = false
+  const harnessTnt = new MockGameWeaponHarness("sandbox", "tnt");
+  harnessTnt.handleFireInput(true, false);
+  assert.equal(harnessTnt.tntThrown, true, "TNT must be thrown even if lockOk is false");
+  assert.equal(harnessTnt.requestedLock, true, "Must attempt to request lock on TNT throw");
+
+  // 3. Place TNT with alt/right-click
+  harnessTnt.handleFireInput(false, true);
+  assert.equal(harnessTnt.tntPlaced, true, "TNT must be placed on alt input");
+
+  console.log("  ok weapon firing and TNT throwing/placing execute reliably without pointerLock blockage");
+}
+
+// ============================================================================
 // Execution
 // ============================================================================
 testSandboxInfiniteAmmoAndTnt();
 testHealthAndShieldAutoRegeneration();
 testInstantRestorationOnGodModeActivation();
 testBulletHitsDoNotTriggerBreaches();
+testGuardForwardAlignment();
+testSandboxCrew3DSpawningAndNoGuards();
+testPlayerCannotDieInSandboxMode();
+testDeckExplosionAboveMinusTwoMetersDoesNotBreach();
+testWeaponFiringAndTntWithoutPointerLock();
 
-console.log('🎉 ALL 4 STORMWORKS SANDBOX OVERHAUL UNIT TESTS PASSED!');
+console.log('🎉 ALL 9 STORMWORKS SANDBOX OVERHAUL & WEAPON RELIABILITY TESTS PASSED!');

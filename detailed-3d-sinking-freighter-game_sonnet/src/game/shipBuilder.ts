@@ -363,6 +363,8 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
     stairSteps(bX0, bX1, zMid, zTop, yMid, yBot, yBot - 0.1);
     // Spindel (verhindert Seitwärts-Sturz zwischen den Läufen)
     rectBox("steelDark", aX1, bX0, yBot, yTop + 1.1, zMid - land, zTop);
+    // Unterer Treppen-Austritt / Podest nahtlos an den Boden
+    rectBox("steelDark", bX0, bX1, yBot - 0.2, yBot, zTop, zTop + 1.8);
     return { aX0, aX1, bX0, bX1, zMid, zBack: zMid - land };
   };
 
@@ -562,7 +564,6 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
     waterGroup.add(wm);
     zones.push(new THREE.Box3(min.clone().add(v3(-0.5, -1, 0)), max.clone().add(v3(0.5, 0.5, 0))));
     return { id: c.id, name: c.name, min, max, volume, water: 0, holes: [], planes, waterMesh: wm, fill: 0, level: FLOOR_Y, worldLevel: -99, sideBias: 0, flow: 0 };
-    void i;
   });
 
   // ---------------------------------------------------- Maschinenraum

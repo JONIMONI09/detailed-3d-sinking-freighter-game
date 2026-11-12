@@ -16,9 +16,10 @@ import { rayAABB } from "./physics";
 import { DoorSecurity, TerminalEntry, TerminalLog } from "./doorSecurity";
 import type { SecurityContext } from "./doorSecurity";
 import { StormworksSupervisor } from "./stormworksSupervisor";
-import { stepTelegraph } from "./bridge";
+import { stepTelegraph, MAX_RUDDER_DEG, TELEGRAPH_SPEED } from "./bridge";
 import { shouldWindowBurst } from "./ingress";
 import { v3 } from "./navmesh3d";
+import { CrewVisual } from "./crewVisual";
 
 export type Mode = "mission" | "sandbox";
 
@@ -210,6 +211,10 @@ export class Game {
   lastLookDY = 0;
   waterOverlay = false;
   godModeHoldProgress = 0;
+  crewVisuals: CrewVisual[] = [];
+  helmMode = false;
+  helmThrottleCooldown = 0;
+  engineExploded = false;
   private tmpV = V();
   private tmpQ = new THREE.Quaternion();
   private tmpE = new THREE.Euler();
@@ -347,7 +352,7 @@ export class Game {
     this.vmScene.add(vl);
     this.vmScene.add(this.vmCam);
 
-    // Wachen
+    // Wachen (mission mode only)
     if (this.mode === "mission" && s.guards) {
       for (const sp of this.ship.guardSpawns) {
         const g = new Guard(sp);
@@ -356,14 +361,25 @@ export class Game {
       }
     }
 
+    // Friendly Damage Control Crew (sandbox mode)
+    if (this.mode === "sandbox") {
+      for (const m of this.supervisor.crew) {
+        const cv = new CrewVisual(m);
+        this.ship.group.add(cv.group);
+        this.crewVisuals.push(cv);
+      }
+    }
+
     // Spieler
     this.player.teleport(9.8, DECK_Y, -42, Math.PI);
     if (this.mode === "sandbox") {
+      this.supervisor.sandbox.godMode = true;
       this.owned = { pistol: true, shotgun: true, rifle: true, tnt: true };
       this.ammo = { pistol: { mag: 12, res: 120 }, shotgun: { mag: 6, res: 48 }, rifle: { mag: 30, res: 240 } };
       this.tnt = 20;
       this.hasKey = { red: true, blue: true };
       this.player.armor = 100;
+      console.log("[NORDWIND/SANDBOX] Initialized Sandbox Mode: All weapons unlocked, God Mode enabled, 20 TNT, all access cards granted.");
     }
     this.vm.select(this.cur, true);
 
@@ -686,6 +702,17 @@ export class Game {
       this.shake * 180,
     );
 
+    // Real vessel propulsion and rudder steering
+    const forward = v3(-Math.sin(this.supervisor.helm.heading), 0, -Math.cos(this.supervisor.helm.heading));
+    this.ship.group.position.addScaledVector(forward, this.supervisor.helm.speed * dt);
+    this.ship.group.updateMatrixWorld(true);
+
+    // Engine room severe flooding (> 40%) triggers generator breakdown & explosion
+    const engComp = this.ship.compartments[0];
+    if (engComp && engComp.id === "engine" && engComp.fill > 0.4 && !this.engineExploded) {
+      this.triggerEngineExplosion("severe flooding > 40%");
+    }
+
     // Hydrostatic window burst under water immersion depth
     for (const pane of this.ship.glass) {
       if (!pane.broken) {
@@ -732,7 +759,7 @@ export class Game {
 
     const p = this.player;
     const b = p.body;
-    const controls = !this.dead && !this.escapeState && !this.ended;
+    const controls = !this.dead && !this.escapeState && !this.ended && !this.helmMode;
 
     // Spieler
     const ev = p.update(
@@ -741,6 +768,7 @@ export class Game {
       { world: this.ship.world, slide: this.sim.tiltDeg > 6 ? this.sim.slideVector() : [0, 0], water: this.waterAt, sens: st.sens, touchSens: st.touchSens, invertY: st.invertY },
       controls,
     );
+    if (this.helmMode) this.handleHelm(dt);
     this.lastLookDX = 0;
     if (ev.step) {
       const inB = this.indoor > 0.5;
@@ -797,6 +825,29 @@ export class Game {
     // Türen
     const bodies: { x: number; y: number; z: number; r: number; h: number }[] = [b];
     for (const g of this.guards) if (!g.dead) bodies.push({ x: g.body.x, y: g.body.y, z: g.body.z, r: g.body.r, h: g.body.h });
+    for (const cv of this.crewVisuals) {
+      cv.update(dt, (sparkPos) => {
+        const wp = this.worldPos(sparkPos, V());
+        this.pa.emit(
+          wp.x,
+          wp.y,
+          wp.z,
+          (Math.random() - 0.5) * 2.5,
+          Math.random() * 2.0,
+          (Math.random() - 0.5) * 2.5,
+          0.25,
+          0.04,
+          0.015,
+          1,
+          0.85,
+          0.4,
+          1,
+          8,
+          0.3,
+        );
+      });
+      bodies.push({ x: cv.member.x, y: cv.member.y, z: cv.member.z, r: 0.32, h: 1.75 });
+    }
     for (const d of this.ship.doors) d.update(dt, bodies);
 
     this.updateGuards(dt);
@@ -930,6 +981,42 @@ export class Game {
       const rate = this.supervisor.cycleFloodRate();
       this.say(`FLOOD RATE: ${rate}x (${rate === 0 ? "Frozen" : rate === 3 ? "Catastrophic" : "Standard"})`, "info");
     }
+  }
+
+  private handleHelm(dt: number) {
+    if (!this.helmMode) return;
+    const inp = this.input;
+    const helm = this.supervisor.helm;
+    this.helmThrottleCooldown = Math.max(0, this.helmThrottleCooldown - dt);
+
+    if (inp.pressed("interact")) {
+      this.helmMode = false;
+      this.say("Exited Helm Mode – walking freely", "info");
+      this.audio.click();
+      return;
+    }
+
+    if (this.helmThrottleCooldown <= 0) {
+      if (inp.keys.has("KeyW") || inp.keys.has("ArrowUp")) {
+        helm.telegraph = stepTelegraph(helm.telegraph, 1);
+        this.helmThrottleCooldown = 0.35;
+        this.audio.click();
+        this.say(`Engine Telegraph: ${helm.telegraph.toUpperCase()} (Target: ${TELEGRAPH_SPEED[helm.telegraph]} m/s)`, "good");
+      } else if (inp.keys.has("KeyS") || inp.keys.has("ArrowDown")) {
+        helm.telegraph = stepTelegraph(helm.telegraph, -1);
+        this.helmThrottleCooldown = 0.35;
+        this.audio.click();
+        this.say(`Engine Telegraph: ${helm.telegraph.toUpperCase()} (Target: ${TELEGRAPH_SPEED[helm.telegraph]} m/s)`, "warn");
+      }
+    }
+
+    if (inp.keys.has("KeyA") || inp.keys.has("ArrowLeft")) {
+      helm.rudderCmd = Math.max(-MAX_RUDDER_DEG, helm.rudderCmd - 28 * dt);
+    } else if (inp.keys.has("KeyD") || inp.keys.has("ArrowRight")) {
+      helm.rudderCmd = Math.min(MAX_RUDDER_DEG, helm.rudderCmd + 28 * dt);
+    } else {
+      helm.rudderCmd += (0 - helm.rudderCmd) * Math.min(1, dt * 1.2);
+    }
     // Nachladen
     if (inp.pressed("reload")) this.startReload();
     if (this.reloading) {
@@ -965,14 +1052,14 @@ export class Game {
     if (this.cur === "tnt") {
       if (inp.pressed("alt")) this.placeTnt();
       if (wantFire && this.cooldown <= 0) {
-        if (!this.isTouch() && !this.lockOk && !this.dragMode) return;
+        if (!this.isTouch() && !this.lockOk) this.requestLock();
         this.throwTnt();
       }
     } else {
       const w = WEAPONS[this.cur];
       inp.pressed("alt");
       if (wantFire) {
-        if (!this.isTouch() && !this.lockOk && !this.dragMode) return;
+        if (!this.isTouch() && !this.lockOk) this.requestLock();
         if (w.auto || !this.fireHeld) this.tryFire();
         this.fireHeld = true;
       } else this.fireHeld = false;
@@ -1020,6 +1107,7 @@ export class Game {
       a.res = 999;
     }
     this.cooldown = 60 / w.rpm;
+    console.log(`[NORDWIND/WEAPON] Fired ${this.cur}. Ammo: ${a.mag}/${w.mag} (res: ${a.res}), Infinite: ${isInfiniteAmmo}`);
     this.vm.fireKick(w.recoil);
     this.audio.shot(this.cur as "pistol" | "shotgun" | "rifle");
     this.player.pitch += 0.006 * w.recoil + Math.random() * 0.003;
@@ -1272,13 +1360,18 @@ export class Game {
   }
 
   private throwTnt() {
-    if (this.tnt <= 0) {
+    const isInfiniteTnt = this.mode === "sandbox" || this.supervisor.isGodMode();
+    if (!isInfiniteTnt && this.tnt <= 0) {
       this.audio.empty();
       this.cooldown = 0.4;
       this.say("No TNT left!", "warn");
       return;
     }
-    this.tnt--;
+    if (!isInfiniteTnt) {
+      this.tnt--;
+    } else {
+      this.tnt = 99;
+    }
     this.cooldown = 0.9;
     this.vm.throwT = 1;
     this.audio.throw();
@@ -1287,13 +1380,15 @@ export class Game {
     const pb = this.player.body;
     const v = dir.clone().multiplyScalar(11).add(V(pb.vx * 0.6, 2.4, pb.vz * 0.6));
     this.spawnDyn(o, v, this.fuseTime());
+    console.log(`[NORDWIND/TNT] Thrown charge. Remaining TNT: ${this.tnt}, Infinite: ${isInfiniteTnt}`);
     this.noiseT = 0.2;
     this.noisePos.copy(o);
     if (this.tnt === 0) this.say("Last TNT thrown.", "warn");
   }
 
   private placeTnt() {
-    if (this.tnt <= 0) {
+    const isInfiniteTnt = this.mode === "sandbox" || this.supervisor.isGodMode();
+    if (!isInfiniteTnt && this.tnt <= 0) {
       this.audio.empty();
       this.say("No TNT left!", "warn");
       return;
@@ -1306,11 +1401,16 @@ export class Game {
     // nicht in Wände legen
     const hit = this.ship.world.raycast(e.x, e.y - 0.5, e.z, fwd.x, 0, fwd.z, 0.8);
     if (hit) o.copy(e).addScaledVector(fwd, Math.max(0.2, hit.dist - 0.25)).setY(this.player.body.y + 0.35);
-    this.tnt--;
+    if (!isInfiniteTnt) {
+      this.tnt--;
+    } else {
+      this.tnt = 99;
+    }
     this.cooldown = 0.6;
     this.vm.throwT = 0.6;
     this.audio.step("metal", 0.5);
     const d = this.spawnDyn(o, fwd.multiplyScalar(0.8).setY(0.2), this.fuseTime() + 4);
+    console.log(`[NORDWIND/TNT] Placed charge at [${o.x.toFixed(2)}, ${o.y.toFixed(2)}, ${o.z.toFixed(2)}]. Total active charges: ${this.dyns.length}`);
     this.say("TNT placed. Detonate with G (remote) – or let the fuse burn down!", "info");
     return d;
   }
@@ -1327,6 +1427,7 @@ export class Game {
     }
     this.audio.detonator();
     this.detonated = true;
+    console.log(`[NORDWIND/TNT] Detonating all ${this.dyns.length} charges!`);
     let i = 0;
     for (const d of this.dyns) {
       d.remote = 0.25 + i * 0.22;
@@ -1417,7 +1518,7 @@ export class Game {
 
   // ------------------------------------------------------------------ Explosionen
   explode(p: THREE.Vector3, power: number, src: string) {
-    const R = 11 * power;
+    const R = (src === "tnt" ? 14 : 11) * power;
     const wp = this.worldPos(p, V());
     const pa = this.posAudio(p);
     this.audio.explosion(pa, Math.max(0.6, power));
@@ -1525,6 +1626,9 @@ export class Game {
     // Hüllenbruch
     const comp = this.compAt(p.x, p.y, p.z);
     if (comp) {
+      if (comp.id === "engine") {
+        this.triggerEngineExplosion("detonation in engine spaces");
+      }
       const before = comp.holes.length;
       const wp = this.worldPos(p, V());
       const seaH = this.ocean.height(wp.x, wp.z, this.time);
@@ -1579,8 +1683,33 @@ export class Game {
     }
   }
 
+  private triggerEngineExplosion(reason: string) {
+    if (this.engineExploded) return;
+    this.engineExploded = true;
+    this.supervisor.destroyEngine();
+    this.alarm = true;
+
+    // Diesel generator room at x=0, y=-3.5, z=-50
+    const engPos = V(0, -3.5, -50);
+    const wp = this.worldPos(engPos, V());
+
+    for (let i = 0; i < 70; i++) {
+      const v = V((Math.random() - 0.5) * 8, 3 + Math.random() * 8, (Math.random() - 0.5) * 8);
+      this.pa.emit(wp.x, wp.y, wp.z, v.x, v.y, v.z, 0.8 + Math.random(), 0.15, 0.04, 1, 0.8, 0.2, 1, 10, 0.4);
+    }
+    for (let i = 0; i < 60; i++) {
+      const v = V((Math.random() - 0.5) * 4, 1 + Math.random() * 4, (Math.random() - 0.5) * 4);
+      this.pn.emit(wp.x, wp.y, wp.z, v.x, v.y, v.z, 4 + Math.random() * 4, 0.6, 2.5, 0.15, 0.15, 0.15, 0.85, -0.6, 0.8);
+    }
+
+    this.audio.explosion(this.posAudio(engPos), 1.5);
+    this.shake = Math.min(2.0, this.shake + 1.2);
+    this.say(`ENGINE ROOM GENERATOR EXPLODED (${reason})! Motor breakdown – propulsion lost!`, "alert");
+  }
+
   // ------------------------------------------------------------------ Schaden / Tod
   damagePlayer(amount: number, cause: string, silent = false) {
+    if (this.mode === "sandbox" || this.supervisor.isGodMode()) return;
     const p = this.player;
     amount = this.supervisor.filterDamage(amount);
     if (!p.alive || amount <= 0) return;
@@ -1696,18 +1825,27 @@ export class Game {
     const bridgeHelmPos = new THREE.Vector3(0, 12.6, -46.5);
     const toHelm = bridgeHelmPos.clone().sub(eye);
     const distHelm = toHelm.length();
-    if (distHelm < 2.8) {
-      const score = 4.5 - distHelm;
-      if (score > best) {
+    if (distHelm < 3.2 || this.helmMode) {
+      const score = 5.0;
+      if (score > best || this.helmMode) {
         best = score;
-        bestKind = "normal";
+        bestKind = this.helmMode ? "confirm" : "normal";
         const helm = this.supervisor.helm;
-        bestText = `Take the Helm / Set Telegraph [E] (${helm.telegraph.toUpperCase()} · Rudder ${helm.rudderDeg.toFixed(0)}°)`;
-        bestAct = () => {
-          this.supervisor.helm.telegraph = stepTelegraph(this.supervisor.helm.telegraph, 1);
-          this.audio.click();
-          this.say(`Telegraph order: ${this.supervisor.helm.telegraph.toUpperCase()} (Ship speed: ${this.supervisor.helm.speed.toFixed(1)} m/s)`, "info");
-        };
+        if (!this.helmMode) {
+          bestText = `Take the Helm [E] (${helm.telegraph.toUpperCase()} · Rudder ${helm.rudderDeg.toFixed(0)}°)`;
+          bestAct = () => {
+            this.helmMode = true;
+            this.audio.click();
+            this.say("HELM ACTIVE: [W/S] Telegraph · [A/D] Rudder · [E] Exit", "good");
+          };
+        } else {
+          bestText = `HELM ACTIVE: [W/S] ${helm.telegraph.toUpperCase()} (${helm.speed.toFixed(1)} m/s) · [A/D] Rudder ${helm.rudderDeg.toFixed(0)}° · [E] Exit`;
+          bestAct = () => {
+            this.helmMode = false;
+            this.audio.click();
+            this.say("Exited Helm Mode – walking freely", "info");
+          };
+        }
       }
     }
     this.prompt = bestText;
@@ -2232,7 +2370,7 @@ export class Game {
     const engPos = V(0, -3, -50);
     const dist = this.eyeLocal().distanceTo(engPos);
     const eng = this.ship.compartments[0];
-    const engineRun = eng.fill < 0.6 && !this.sim.sunk ? 1 : 0;
+    const engineRun = eng.fill < 0.4 && !this.sim.sunk && !this.supervisor.isEngineDestroyed() ? 1 : 0;
     const engineVol = engineRun * Math.max(0.1, Math.min(1, 1.2 - dist / 45));
     this.audio.update(dt, {
       engine: engineVol * (this.indoor > 0.5 ? 1 : 0.5),

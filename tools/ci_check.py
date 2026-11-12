@@ -94,6 +94,7 @@ def check_test_suite_wiring():
     supervisor_path = WORKSPACE / "tests" / "stormworks-supervisor.test.mjs"
     deck_exp_path = WORKSPACE / "tests" / "deck-explosion-and-window-burst.test.mjs"
     sandbox_path = WORKSPACE / "tests" / "sandbox-overhaul.test.mjs"
+    steering_path = WORKSPACE / "tests" / "vessel-steering-and-engine-breakdown.test.mjs"
 
     if (
         not package_path.exists()
@@ -106,6 +107,7 @@ def check_test_suite_wiring():
         or not supervisor_path.exists()
         or not deck_exp_path.exists()
         or not sandbox_path.exists()
+        or not steering_path.exists()
     ):
         log("Test suite files are missing!", "FAIL")
         return False
@@ -122,6 +124,7 @@ def check_test_suite_wiring():
         "tests/stormworks-supervisor.test.mjs",
         "tests/deck-explosion-and-window-burst.test.mjs",
         "tests/sandbox-overhaul.test.mjs",
+        "tests/vessel-steering-and-engine-breakdown.test.mjs",
         "tools/ci_check.py",
     ]
     missing = [item for item in required if item not in test_script]
@@ -129,7 +132,7 @@ def check_test_suite_wiring():
         log(f"package.json test script misses: {', '.join(missing)}", "FAIL")
         return False
 
-    log("Physics, browser-guard, door security, Stormworks prototypes, crew navigation, ragdoll physics, supervisor, deck explosion/window burst, sandbox overhaul and Python suites are wired into npm test.", "PASS")
+    log("Physics, browser-guard, door security, Stormworks prototypes, crew navigation, ragdoll physics, supervisor, deck explosion/window burst, sandbox overhaul, steering/engine breakdown and Python suites are wired into npm test.", "PASS")
     return True
 
 def check_project_skills():

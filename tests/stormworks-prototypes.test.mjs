@@ -275,14 +275,14 @@ console.log('Starting Stormworks prototype tests...');
   const dryBreach = sim.addBreach(comp, new THREE.Vector3(8.0, 0.5, -30), 1.0, 0.0);
   assert.equal(dryBreach, null, 'dry deck explosion must not breach engine room');
 
-  // Submerged hull explosion at pos.y = -2.0, x = 8.0, seaLevel = 0.0 -> creates breach
-  const submergedHullBreach = sim.addBreach(comp, new THREE.Vector3(8.0, -2.0, -30), 1.0, 0.0);
+  // Submerged hull explosion at pos.y = -2.5, x = 8.0, seaLevel = 0.0 -> creates breach
+  const submergedHullBreach = sim.addBreach(comp, new THREE.Vector3(8.0, -2.5, -30), 1.0, 0.0);
   assert.ok(submergedHullBreach, 'submerged hull explosion must create breach');
 
-  // Submerged deck explosion (oceanHeight = 2.0 > worldY = 0.5) -> creates breach
-  const submergedDeckBreach = sim.addBreach(comp, new THREE.Vector3(8.0, 0.5, -30), 1.0, 2.0);
-  assert.ok(submergedDeckBreach, 'submerged deck explosion must create breach');
-  console.log('  ok deck explosion dry engine room guard');
+  // Deck explosion (pos.y = 0.5 > -2.0) strictly returns null to protect ship from deck detonations
+  const deckBreach = sim.addBreach(comp, new THREE.Vector3(8.0, 0.5, -30), 1.0, 2.0);
+  assert.equal(deckBreach, null, 'deck explosions (pos.y > -2.0) must never breach lower compartments');
+  console.log('  ok deck explosion strictly never breaches engine room');
 }
 
 console.log('Stormworks prototype tests passed.');

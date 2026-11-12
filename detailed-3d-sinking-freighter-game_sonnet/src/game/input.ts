@@ -62,12 +62,18 @@ export class Input {
         this.lookY += e.movementY || 0;
       }
     });
-    on(target, "mousedown", (e: MouseEvent) => {
+    const handleMouseDown = (e: MouseEvent) => {
       if (e.button === 0) {
         this.mouseDown = true;
         this.held.add("fire");
-      } else if (e.button === 2) this.queue.add("alt");
-    });
+        console.log("[NORDWIND/INPUT] Mouse down (FIRE triggered)");
+      } else if (e.button === 2) {
+        this.queue.add("alt");
+        console.log("[NORDWIND/INPUT] Mouse down (ALT/PLACE triggered)");
+      }
+    };
+    on(target, "mousedown", handleMouseDown);
+    on(window, "mousedown", handleMouseDown);
     on(window, "mouseup", (e: MouseEvent) => {
       if (e.button === 0) {
         this.mouseDown = false;

@@ -77,42 +77,42 @@ function testDeckExplosionDoesNotBreachDryEngineRoom() {
     'Engine room must have 0 holes after dry deck explosion',
   );
 
-  // Scenario 2: Vessel swamped/listing so the deck coordinate is submerged below ocean surface (worldY = -0.8m < 0.0m)
+  // Scenario 2: Vessel swamped/listing - blast on deck (pos.y = 0.2 > -2.0) strictly returns null so TNT on deck never sinks the vessel
   group.position.set(0, -1.0, 0);
   group.updateMatrixWorld(true);
 
-  const submergedHole = sim.addBreach(engineComp, deckBlast, 1.0, 0.0);
-  assert.notEqual(
-    submergedHole,
+  const deckBlastSwamped = sim.addBreach(engineComp, deckBlast, 1.0, 0.0);
+  assert.equal(
+    deckBlastSwamped,
     null,
-    'Submerged deck explosion (worldY < oceanHeight) must create a hull breach',
+    'Explosion on deck level (pos.y > -2.0) must strictly return null to prevent TNT on deck from sinking ship',
   );
   assert.equal(
     engineComp.holes.length,
-    1,
-    'Engine room must record a breach when deck coordinate is submerged',
+    0,
+    'Engine room must have 0 holes from deck explosions',
   );
-  assert.ok(submergedHole.area > 0, 'Breach area must be positive');
 
-  // Scenario 3: Detonation on lower hull plating at another frame (pos.y = -1.5 < -0.2, z = -22)
+  // Scenario 3: Detonation on lower hull plating (pos.y = -2.5 <= -2.0, z = -22)
   group.position.set(0, 1.5, 0);
   group.updateMatrixWorld(true);
 
-  const lowerHullBlast = new THREE.Vector3(8.0, -1.5, -22);
+  const lowerHullBlast = new THREE.Vector3(8.0, -2.5, -22);
   const lowerHole = sim.addBreach(engineComp, lowerHullBlast, 1.0, 0.0);
 
   assert.notEqual(
     lowerHole,
     null,
-    'Underwater side shell blast (pos.y < -0.2) must create an exterior breach',
+    'Underwater side shell blast (pos.y <= -2.0) must create an exterior breach',
   );
   assert.equal(
     engineComp.holes.length,
-    2,
-    'Engine room must have 2 holes now (1 submerged deck + 1 lower hull)',
+    1,
+    'Engine room must record exactly 1 hole from lower hull detonation',
   );
+  assert.ok(lowerHole.area > 0, 'Breach area must be positive');
 
-  console.log('  ok deck explosion does not breach dry engine room, but breaches when submerged');
+  console.log('  ok deck explosion strictly never breaches engine room (y > -2.0 returns null), lower hull breaches cleanly');
 }
 
 // ============================================================================

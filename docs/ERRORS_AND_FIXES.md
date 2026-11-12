@@ -257,6 +257,48 @@ Use exact commands and real run IDs when they exist.
 - Prevention: Geometric boundary conditions for exterior hull punctures must always evaluate against dynamic waterline elevation rather than un-submerged local height offsets.
 - Related files / skills: `detailed-3d-sinking-freighter-game_sonnet/src/game/shipSim.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/game.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/ingress.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/crew.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/ui/Hud.tsx`, `tests/deck-explosion-and-window-burst.test.mjs`, `error-fix-document`.
 
+### ERR-2026-11-12-12 - Sandbox explosion player death, deck TNT breach, guard orientation, and static vessel steering
+
+- Date (Europe/Berlin): 2026-11-12
+- Area: Sandbox player immortality, weather deck breach safety, enemy visuals, and bridge helm kinematics
+- Status: Resolved
+- Symptom: Player could die in Sandbox Mode from an explosion ("FAILED - Killed by an explosion"). TNT on deck punctured hull breaches that sank the freighter. Guard NPC meshes walked and shot backwards relative to their helmet visors and boots. Ship helm calculated heading and speed but vessel 3D position and yaw never moved.
+- Root cause:
+  1. `damagePlayer` in `game.ts` only filtered damage if `this.supervisor.isGodMode()` was explicitly active; entering sandbox mode without manually toggling god mode left player vulnerable to death.
+  2. `addBreach` in `shipSim.ts` allowed deck explosions at `pos.y > -2.0` to puncture exterior hull breaches into compartments below.
+  3. `Guard` in `enemies.ts` positioned helmet visor at `z = +0.15` and boots at `z = +0.04`, while walking and aiming rotated toward `-Z` with a inverted arm pitch `-aimPose * 1.45`.
+  4. `Game.update` never updated `this.ship.group.position` or `this.ship.group.rotation.y` from `supervisor.helm`.
+- Solution:
+  1. In `game.ts`: Added early exit `if (this.mode === "sandbox" || this.supervisor.isGodMode()) return;` at top of `damagePlayer`.
+  2. In `shipSim.ts`: Guarded `addBreach` with `if (pos.y > -2.0) return null;` so weather deck blasts never breach lower compartments.
+  3. In `enemies.ts`: Inverted visor to `z = -0.15`, boots to `z = -0.04`, and aim rotation to `+aimPose * 1.45` (+-Z forward alignment).
+  4. In `game.ts`: Applied vessel kinematics `this.ship.group.rotation.y = this.supervisor.helm.heading` and advanced position along forward vector `v3(-sin(yaw), 0, -cos(yaw)) * speed * dt`. Spawned 3D friendly crew members (`crewVisual.ts`) in sandbox mode and excluded guards.
+  5. Added comprehensive test suites in `tests/sandbox-overhaul.test.mjs` and `tests/vessel-steering-and-engine-breakdown.test.mjs`.
+- Verification: `npm test` (all 10 test suites pass 100%, 65 unit tests + 10 Python CI checks), `npx tsc --noEmit` (0 errors), `npm run docs:check` (CodeGraph MCP pass), `npm run build` (clean 1,035 kB build).
+- Prevention: Player immortality in sandbox modes must be enforced unconditionally at the damage pipeline entry point. Spatial features on humanoid characters must strictly adhere to the engine's canonical forward axis (-Z).
+- Related files / skills: `detailed-3d-sinking-freighter-game_sonnet/src/game/game.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/shipSim.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/enemies.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/crewVisual.ts`, `tests/sandbox-overhaul.test.mjs`, `tests/vessel-steering-and-engine-breakdown.test.mjs`, `error-fix-document`.
+
+### ERR-2026-11-12-13 - Weapon firing and TNT blockage from pointer lock guard, unreachable code, and missing engine stair landing
+
+- Date (Europe/Berlin): 2026-11-12
+- Area: Player weapon firing, TNT throwing/placement, engine room stair landing, and console debugging
+- Status: Resolved
+- Symptom: Player could not fire weapons or throw TNT in sandbox mode; console reported "unreachable code after return statement shipBuilder.ts:565:5". The base of the U-stairwell in the engine room terminated abruptly above the floor without a walkable bottom landing step.
+- Root cause:
+  1. `handleInput` in `game.ts` checked `if (!this.isTouch() && !this.lockOk && !this.dragMode) return;` prior to invoking `tryFire()` or `throwTnt()`. When pointer lock was not active or was delayed by the browser, all mouse-click firing gestures were dropped silently.
+  2. In `input.ts`, `mousedown` was listened on `target` canvas instead of `window`, causing clicks on HUD or parent containers to be missed.
+  3. In `shipBuilder.ts`, line 565 contained `void i;` immediately following a `return` statement.
+  4. In `uStair` (`shipBuilder.ts`), Flight B ended at `zTop = -58.0` with no bottom landing platform, leaving a step drop down to the engine floor.
+- Solution:
+  1. In `game.ts`: Removed the blocking `lockOk` guard from `tryFire()` and `throwTnt()`. Added auto-request of pointer lock on click while continuing the firing pipeline immediately.
+  2. In `input.ts`: Bound `mousedown` to `window` and `target` so all left/right clicks register reliably, and added English console debugging (`[NORDWIND/INPUT]`).
+  3. In `game.ts`: Added English console debug messages for weapon firing (`[NORDWIND/WEAPON]`), TNT throwing/placing/detonation (`[NORDWIND/TNT]`), and sandbox initialization (`[NORDWIND/SANDBOX]`).
+  4. In `shipBuilder.ts`: Removed unreachable `void i;` and added a seamless bottom landing step (`rectBox("steelDark", bX0, bX1, yBot - 0.2, yBot, zTop, zTop + 1.8)`) in `uStair`.
+  5. In `tests/sandbox-overhaul.test.mjs`: Added Unit Test 9 verifying weapon firing and TNT throwing without pointer lock dependency.
+- Verification: `npm test` (all 10 test suites pass 100%, 66 unit tests + 10 Python CI checks), `npm run typecheck` (0 errors), `npm run docs:check` (CodeGraph MCP pass), `npm run build` (clean 1,038 kB single-file build).
+- Prevention: Player input actions (fire, use, throw) must never be conditioned on browser pointer-lock states; pointer lock should be requested opportunistically while allowing gameplay gestures to proceed.
+- Related files / skills: `detailed-3d-sinking-freighter-game_sonnet/src/game/game.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/input.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/shipBuilder.ts`, `tests/sandbox-overhaul.test.mjs`, `error-fix-document`.
+
 ## Open incidents
 
 None at this revision. Add a new entry before merging any future fix, even when

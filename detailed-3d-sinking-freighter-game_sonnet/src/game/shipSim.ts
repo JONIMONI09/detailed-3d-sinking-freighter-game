@@ -18,10 +18,13 @@ export class ShipSim {
   tiltDeg = 0;
   waveHeave = 0;
   firstBreach = false;
+  heading = 0;
   private q1 = new THREE.Quaternion();
   private q2 = new THREE.Quaternion();
+  private qYaw = new THREE.Quaternion();
   private ax = new THREE.Vector3(1, 0, 0);
   private az = new THREE.Vector3(0, 0, 1);
+  private ay = new THREE.Vector3(0, 1, 0);
   forceSink = false;
 
   constructor(
@@ -42,16 +45,14 @@ export class ShipSim {
     return c.level + (m[1] * (cx - x) + m[9] * (cz - z)) / Math.max(0.2, m[5]);
   }
 
-  addBreach(c: Compartment, pos: THREE.Vector3, power: number, oceanHeight = 0): Hole | null {
+  addBreach(c: Compartment, pos: THREE.Vector3, power: number, _oceanHeight = 0): Hole | null {
     const dS = WI - Math.abs(pos.x);
     const dB = pos.y - FLOOR_Y;
     const d = Math.min(dS, dB);
     if (pos.y > 1.0 || d > 3.4) return null;
 
-    // Deck explosions (pos.y >= -0.2) must NOT create an underwater exterior breach
-    // unless that deck coordinate is actually submerged below sea level (worldY < oceanHeight).
-    const wy = this.worldY(pos.x, pos.y, pos.z);
-    if (pos.y >= -0.2 && wy >= oceanHeight) return null;
+    // Deck and upper hull explosions (pos.y > -2.0) must NEVER create an underwater exterior breach into lower compartments
+    if (pos.y > -2.0) return null;
 
     const area = Math.max(0.6, power * (2.8 - d * 0.55));
     let hole: Hole;
@@ -150,7 +151,8 @@ export class ShipSim {
     this.group.position.y = this.heaveBase - this.sinkDepth + this.waveHeave;
     this.q1.setFromAxisAngle(this.ax, this.pitch + pitchW);
     this.q2.setFromAxisAngle(this.az, this.roll + rollW);
-    this.group.quaternion.copy(this.q1).multiply(this.q2);
+    this.qYaw.setFromAxisAngle(this.ay, this.heading);
+    this.group.quaternion.copy(this.qYaw).multiply(this.q1).multiply(this.q2);
     this.group.updateMatrixWorld(true);
     // Neigung für Rutschen
     const m = this.group.matrixWorld.elements;
