@@ -963,7 +963,7 @@ export class Game {
         }
         if (inp.pressed("prev")) this.orbitalZoomFov = Math.max(8, this.orbitalZoomFov - 7);
         if (inp.pressed("next")) this.orbitalZoomFov = Math.min(72, this.orbitalZoomFov + 7);
-        if (inp.fire) this.fireOrbitalDeathRay();
+        if (inp.held.has("fire") || inp.fire) this.fireOrbitalDeathRay();
         if (inp.pressed("interact")) this.toggleOrbitalLaser(false);
       }
       b.vx = 0;
@@ -1557,15 +1557,15 @@ export class Game {
 
   fireOrbitalDeathRay() {
     if (this.laserCd > 0) return;
-    this.laserCd = 1.4;
+    this.laserCd = 0.08;
     const tx = this.orbitalAimX;
     const tz = this.orbitalAimZ;
-    const beamGeo = new THREE.CylinderGeometry(2.6, 4.4, STATION_BASE_Y + 20, 14);
+    const beamGeo = new THREE.CylinderGeometry(2.2, 3.8, STATION_BASE_Y + 20, 14);
     const beamMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
     const beam = new THREE.Mesh(beamGeo, beamMat);
     beam.position.set(tx, (STATION_BASE_Y - 10) * 0.5, tz);
     this.scene.add(beam);
-    const coreGeo = new THREE.CylinderGeometry(1.1, 1.8, STATION_BASE_Y + 20, 10);
+    const coreGeo = new THREE.CylinderGeometry(0.9, 1.5, STATION_BASE_Y + 20, 10);
     const coreMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false });
     const core = new THREE.Mesh(coreGeo, coreMat);
     core.position.copy(beam.position);
@@ -1577,7 +1577,7 @@ export class Game {
       beamMat.dispose();
       coreGeo.dispose();
       coreMat.dispose();
-    }, 380);
+    }, 110);
 
     this.audio.explosion(2.2, 14);
     this.shake = Math.max(this.shake, 1.4);
@@ -1642,26 +1642,25 @@ export class Game {
       this.activeFires.push({ pos: hitPos.clone(), life: 25, spreadCd: 2.0 });
     }
 
-    // Check Freighter hit -> shatter into 340 pieces & trigger sinking!
+    // Check Freighter hit ONLY when aimed directly at Freighter hull -> explode, shatter & sink!
     const shipDist = Math.hypot(tx - this.ship.group.position.x, tz - this.ship.group.position.z);
-    if (shipDist < 75 && this.ship.group.visible) {
-      this.shatterIntoPieces(this.ship.group.position.clone().add(V(0, 4, 0)), 0x475569, 340);
-      this.ship.group.visible = false;
+    if (shipDist < 28 && !this.sim.sunk) {
+      this.shatterIntoPieces(V(tx, 4, tz), 0x475569, 180);
+      this.sim.sinking = true;
       this.sim.sunk = true;
       for (const c of this.ship.compartments) c.fill = 1;
-      this.say("☄️ ORBITAL DEATH RAY OBLITERATED FREIGHTER NORDWIND!", "alert");
+      this.say("☄️ ORBITAL DEATH RAY DESTROYED FREIGHTER NORDWIND!", "alert");
     }
 
-    // Check Battleships -> shatter into 240 pieces!
+    // Check Battleships ONLY when aimed directly at that Battleship -> explode, shatter & sink!
     for (const bs of this.battleships) {
-      if (!bs.group.visible) continue;
+      if (bs.sunk) continue;
       const d = Math.hypot(tx - bs.baseX, tz - bs.baseZ);
-      if (d < 55) {
-        this.shatterIntoPieces(bs.group.position.clone().add(V(0, 3, 0)), 0x64748b, 240);
-        bs.group.visible = false;
+      if (d < 22) {
+        this.shatterIntoPieces(bs.group.position.clone().add(V(0, 3, 0)), 0x64748b, 140);
         bs.sunk = true;
         bs.hp = 0;
-        this.say("☄️ ORBITAL DEATH RAY SHATTERED BATTLESHIP!", "alert");
+        this.say(`☄️ ORBITAL DEATH RAY SINKING ${bs.id.toUpperCase()}!`, "alert");
       }
     }
   }
