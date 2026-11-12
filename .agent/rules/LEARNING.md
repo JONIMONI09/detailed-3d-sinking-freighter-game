@@ -51,7 +51,7 @@
 - **Issue:** The three project skills were in Git, but Freebuff did not list them, and `/brainstorming`, `/find-skills` and `/skill-creator` appeared not to work.
 - **Root Cause:** The skills lived only in `.claude/skills/`, which `npx skills list` reports under **Claude Code**; Freebuff's native project path is `.agents/skills/`. Freebuff also registers every skill as `/skill:<name>`, so the bare slash names were not commands.
 - **Fix:** Moved the three skills to `.agents/skills/`, updated `tools/ci_check.py`, `AGENTS.md`, `README.md` and `CI_DEPLOYMENT.md`, and documented `/skill:<name>` invocation.
-- **Verified:** `npx skills list` resolves the three skills from `.agents/skills/`; `python tools/ci_check.py` passes 10/10; `npm test` passes 5/5 physics, 14/14 browser guards and 10/10 Python. Remote delivery evidence is recorded in `CI_DEPLOYMENT.md` §17.
+- **Verified:** `npx skills list` lists all three from `.agents/skills/`; `python tools/ci_check.py` passes 10/10; `npm test` passes 5/5 physics, 14/14 browser guards and 10/10 Python; branch run `43216150102`, main CI `43216286360` and Pages `43216286679` all **success** on `34f28d1`; live `/` and `/sonnet/` return HTTP 200. See `CI_DEPLOYMENT.md` §17.
 - **Lesson:** A skill is discoverable only when it sits in a path the target runtime actually scans; Claude-only paths and bare slash names are not enough. Invocation syntax is part of discovery too.
 
 ### [RESOLVED] GitHub Pages Deploy Never Created a Site

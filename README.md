@@ -163,7 +163,8 @@ Invoke every skill as `/skill:<name>`:
 | Built-in skill creator | `/skill:skill-creator` |
 
 A bare `/brainstorming` or `/find-skills` is not a Freebuff command; the
-`/skill:` prefix is required.
+`/skill:` prefix is required. Skill discovery happens at session start, so
+reload the chat (or start a new one) after adding, moving, or renaming a skill.
 
 - `error-fix-document` — bug and incident workflow with fallback and docs.
 - `ci-workflow-audit` — YAML validation, exact-SHA CI gate and Pages checks.

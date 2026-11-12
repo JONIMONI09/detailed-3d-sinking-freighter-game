@@ -6,6 +6,7 @@ fullscreen fix were verified on 2026-11-12. §14 records that delivery; sections
 
 Fullscreen fix commit: `7e54232` — *Run CI on feature branches* on `main`.
 Project skills commit: `cc32e2e` — *Add project skills for fix, CI and documentation workflows* on `main`.
+Native skill-path commit: `34f28d1` — *Move project skills to Freebuff's native discovery path* on `main`.
 Initial deployment fix: `410a321` — *Enable GitHub Pages provisioning*.
 
 ---
@@ -519,6 +520,18 @@ skill as `/skill:<name>`; the built-in account skills are
 `/brainstorming` is not a command. Freebuff loads skills at session start, so a
 running chat must be reloaded before it sees the new path.
 
+- Branch: `fix/skill-discovery`, based on `f5a0ba7`.
+- Fix commit: `34f28d1` — *Move project skills to Freebuff's native discovery path*.
+- Branch CI: run [`43216150102`](https://github.com/JONIMONI09/detailed-3d-sinking-freighter-game/actions/runs/43216150102),
+  commit `34f28d1`, **success**.
+- Merge to `main`: fast-forward `f5a0ba7..34f28d1`.
+- Main CI: run [`43216286360`](https://github.com/JONIMONI09/detailed-3d-sinking-freighter-game/actions/runs/43216286360),
+  commit `34f28d1`, **success**.
+- GitHub Pages: run [`43216286679`](https://github.com/JONIMONI09/detailed-3d-sinking-freighter-game/actions/runs/43216286679),
+  commit `34f28d1`, **success**.
+- Remote `main` and `FETCH_HEAD` were both at
+  `34f28d1ae533b5505a20a08e5231dffe50929ff3` after the merge.
+
 Local gate at this change:
 
 | Check | Result |
@@ -531,5 +544,11 @@ Local gate at this change:
 | Skill YAML | 3/3 parsed; names match directories; bodies 3,083–3,326 chars |
 | `npm audit --omit=dev` | 0 vulnerabilities |
 
-The branch and workflow run IDs are recorded in the follow-up documentation
-commit after the branch gate.
+Live pages after the deployment:
+
+| URL | HTTP | Bytes |
+| :--- | :---: | ---: |
+| `https://jonimoni09.github.io/detailed-3d-sinking-freighter-game/` | 200 | 956,060 |
+| `https://jonimoni09.github.io/detailed-3d-sinking-freighter-game/sonnet/` | 200 | 1,001,088 |
+
+The moved files are the three `SKILL.md` files; their contents did not change.
