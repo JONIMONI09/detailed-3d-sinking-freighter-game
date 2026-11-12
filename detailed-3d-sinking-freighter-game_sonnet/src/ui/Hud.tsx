@@ -381,11 +381,40 @@ export default function Hud({ h, settings, touch, game }: { h: HudState; setting
                 🚢 Switch Ship [V] ({h.activeVessel === "freighter" ? "→ Battleship" : "→ Freighter"})
               </button>
               <button
+                onClick={() => game.restoreFreighter()}
+                className="rounded-lg border border-emerald-400/40 bg-emerald-500/20 px-3 py-2 text-xs font-bold text-emerald-200 hover:bg-emerald-500/35"
+              >
+                🔧 Restore Freighter (No Reload)
+              </button>
+              <button
+                onClick={() => game.spawnExtraBattleship()}
+                className="rounded-lg border border-cyan-400/40 bg-cyan-500/20 px-3 py-2 text-xs font-bold text-cyan-200 hover:bg-cyan-500/35"
+              >
+                ⚓ Spawn Battleship ({h.battleshipCount}/6)
+              </button>
+              <button
+                onClick={() => game.toggleFleetBattle()}
+                className={`rounded-lg border px-3 py-2 text-xs font-bold ${
+                  h.fleetBattle
+                    ? "border-red-400/60 bg-red-600/40 text-red-100"
+                    : "border-orange-400/40 bg-orange-500/20 text-orange-200 hover:bg-orange-500/35"
+                }`}
+              >
+                ⚔️ {h.fleetBattle ? "Stop Fleet Battle" : "Start Fleet Battle"}
+              </button>
+              <button
                 onClick={() => game.remoteFireSalvo()}
                 disabled={!h.battleshipAvailable}
                 className="rounded-lg border border-red-400/40 bg-red-500/20 px-3 py-2 text-xs font-bold text-red-200 hover:bg-red-500/35 disabled:opacity-40"
               >
-                💥 Fire Battleship Salvo (HP: {h.battleshipHp})
+                💥 Fire Salvo (HP: {h.battleshipHp})
+              </button>
+              <button
+                onClick={() => game.fireBattleshipMissile()}
+                disabled={!h.battleshipAvailable}
+                className="rounded-lg border border-purple-400/40 bg-purple-500/20 px-3 py-2 text-xs font-bold text-purple-200 hover:bg-purple-500/35 disabled:opacity-40"
+              >
+                🚀 Launch Missile [E]
               </button>
             </div>
 
@@ -441,9 +470,12 @@ export default function Hud({ h, settings, touch, game }: { h: HudState; setting
               💥 [LMB] Cannons: {h.cannonCd <= 0 ? "READY" : `${h.cannonCd.toFixed(1)}s`}
             </span>
             <span className={h.torpCd <= 0 ? "text-cyan-300" : "text-slate-400"}>
-              🚀 [RMB / Q] Torpedo: {h.torpCd <= 0 ? "READY" : `${h.torpCd.toFixed(1)}s`}
+              ⚓ [RMB/Q] Torpedo: {h.torpCd <= 0 ? "READY" : `${h.torpCd.toFixed(1)}s`}
             </span>
-            <span className="text-slate-300">[W/S] Speed · [A/D] Steer · [V] Return to Freighter</span>
+            <span className={h.missileCd <= 0 ? "text-purple-300" : "text-slate-400"}>
+              🚀 [E] Missile: {h.missileCd <= 0 ? "READY" : `${h.missileCd.toFixed(1)}s`}
+            </span>
+            <span className="text-slate-300">[W/S] Speed · [A/D] Steer · [V] Freighter</span>
           </div>
         </div>
       )}

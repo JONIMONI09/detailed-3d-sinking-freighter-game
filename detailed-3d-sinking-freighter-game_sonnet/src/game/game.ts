@@ -80,7 +80,10 @@ export interface HudState {
   battleshipAvailable: boolean;
   torpCd: number;
   cannonCd: number;
+  missileCd: number;
   freighterDist: number;
+  battleshipCount: number;
+  fleetBattle: boolean;
 }
 
 export interface EndInfo {
@@ -230,7 +233,9 @@ export class Game {
   activeVessel: "freighter" | "battleship" = "freighter";
   bsFireCd = 0;
   bsTorpCd = 0;
-  navalProjectiles: { mesh: THREE.Mesh; pos: THREE.Vector3; vel: THREE.Vector3; kind: "shell" | "torpedo"; life: number }[] = [];
+  bsMissileCd = 0;
+  fleetBattle = false;
+  navalProjectiles: { mesh: THREE.Mesh; pos: THREE.Vector3; vel: THREE.Vector3; kind: "shell" | "torpedo" | "missile"; life: number; ownerIdx?: number }[] = [];
   engineExploded = false;
   private tmpV = V();
   private tmpQ = new THREE.Quaternion();
@@ -749,32 +754,52 @@ export class Game {
     const bsPlayerControlled = this.activeVessel === "battleship" && !this.tabletOpen;
     const bsAimDir = V(-Math.sin(this.player.yaw) * Math.cos(this.player.pitch), Math.sin(this.player.pitch), -Math.cos(this.player.yaw) * Math.cos(this.player.pitch)).normalize();
     const freighterTarget = this.ship.group.position.clone().add(V(0, 3, -10));
-    for (const bs of this.battleships) {
-      const aimTarget = bsPlayerControlled
-        ? bs.group.position.clone().addScaledVector(bsAimDir, 120)
-        : freighterTarget;
+    for (let bi = 0; bi < this.battleships.length; bi++) {
+      const bs = this.battleships[bi];
+      const isPlayerShip = bi === 0 && bsPlayerControlled;
+      // In Fleet Battle mode, non-player Battleships fight each other (or the Freighter)
+      let targetPos = freighterTarget;
+      if (isPlayerShip) {
+        targetPos = bs.group.position.clone().addScaledVector(bsAimDir, 120);
+      } else if (this.fleetBattle && this.battleships.length > 1) {
+        const opp = this.battleships.find((other, oi) => oi !== bi && !other.sunk);
+        if (opp) targetPos = opp.group.position.clone().add(V(0, 3, 0));
+      }
       stepBattleship(
         bs,
         dt,
         t,
-        aimTarget,
+        targetPos,
         (x, z, tt) => this.ocean.height(x, z, tt),
         (muzzle, dir) => {
           this.tracer(muzzle, muzzle.clone().addScaledVector(dir, 55), 0xff8833);
-          this.pn.emit(muzzle.x, muzzle.y, muzzle.z, dir.x * 3, 2, dir.z * 3, 1.4, 0.25, 0.8, 0.6, 0.6, 0.6, 0.7, -0.2, 0.4);
+          if (this.fleetBattle && this.battleships.length > 1) {
+            const opp = this.battleships.find((other, oi) => oi !== bi && !other.sunk);
+            if (opp && muzzle.distanceTo(opp.group.position) < 260) {
+              damageBattleship(opp, 45);
+              this.pn.emit(opp.baseX, 4, opp.baseZ, 0, 5, 0, 3, 0.35, 0.7, 1, 0.5, 0.1, 0.7, -1, 0.8);
+            }
+          }
         },
-        !bsPlayerControlled,
+        !isPlayerShip && (this.fleetBattle || bi === 0),
       );
     }
 
-    // Step Battleship shells & torpedoes
+    // Step Battleship shells, torpedoes & homing missiles
     this.bsFireCd = Math.max(0, this.bsFireCd - dt);
     this.bsTorpCd = Math.max(0, this.bsTorpCd - dt);
+    this.bsMissileCd = Math.max(0, this.bsMissileCd - dt);
     for (let i = this.navalProjectiles.length - 1; i >= 0; i--) {
       const proj = this.navalProjectiles[i];
       proj.life -= dt;
       if (proj.kind === "shell") {
         proj.vel.y -= 9.8 * dt;
+      } else if (proj.kind === "missile") {
+        // Arc and home toward Freighter (or nearest enemy Battleship)
+        const target = freighterTarget.clone();
+        const toT = target.sub(proj.pos).normalize();
+        proj.vel.lerp(toT.multiplyScalar(55), Math.min(1, dt * 3.5));
+        this.pn.emit(proj.pos.x, proj.pos.y, proj.pos.z, 0, 0.5, 0, 1.2, 0.14, 0.4, 1.0, 0.7, 0.3, 0.6, 0, 0.25);
       } else {
         proj.pos.y = this.ocean.height(proj.pos.x, proj.pos.z, t) - 0.15;
         this.pn.emit(proj.pos.x, proj.pos.y + 0.25, proj.pos.z, 0, 1.2, 0, 1.0, 0.12, 0.4, 0.9, 0.95, 1.0, 0.5, 0, 0.3);
@@ -784,11 +809,19 @@ export class Game {
 
       const localHit = this.ship.group.worldToLocal(proj.pos.clone());
       const hitFreighter = Math.abs(localHit.x) < 11.5 && Math.abs(localHit.z) < 66 && localHit.y > -7 && localHit.y < 10;
+      const hitBs = this.battleships.find((bs, bi) => bi > 0 && !bs.sunk && proj.pos.distanceTo(bs.group.position) < 14);
       const hitWater = proj.kind === "shell" && proj.pos.y <= this.ocean.height(proj.pos.x, proj.pos.z, t);
-      if (hitFreighter || hitWater || proj.life <= 0) {
+      if (hitFreighter || hitBs || hitWater || proj.life <= 0) {
         if (hitFreighter) {
-          this.explode(localHit, proj.kind === "torpedo" ? 1.8 : 1.15, "tnt");
-          this.say(proj.kind === "torpedo" ? "TORPEDO DIRECT HIT ON FREIGHTER!" : "CANNON SHELL IMPACT!", "alert");
+          this.explode(localHit, proj.kind === "torpedo" || proj.kind === "missile" ? 1.85 : 1.15, "tnt");
+          this.say(
+            proj.kind === "torpedo" ? "TORPEDO DIRECT HIT!" : proj.kind === "missile" ? "MISSILE DIRECT HIT!" : "CANNON SHELL IMPACT!",
+            "alert",
+          );
+        } else if (hitBs) {
+          damageBattleship(hitBs, proj.kind === "shell" ? 160 : 280);
+          this.pn.emit(proj.pos.x, proj.pos.y + 1, proj.pos.z, 0, 8, 0, 5, 0.5, 0.9, 1, 0.5, 0.1, 0.8, -2, 1.0);
+          this.audio.explosion(0.7);
         } else if (hitWater) {
           this.pn.emit(proj.pos.x, proj.pos.y + 0.5, proj.pos.z, 0, 10, 0, 4.5, 0.45, 0.9, 0.85, 0.95, 1.0, 0.7, -3.0, 1.2);
         }
@@ -866,9 +899,10 @@ export class Game {
         if (inp.keys.has("KeyA") || inp.keys.has("ArrowLeft")) bs.rudderDeg = Math.max(-MAX_RUDDER_DEG, bs.rudderDeg - 35 * dt);
         else if (inp.keys.has("KeyD") || inp.keys.has("ArrowRight")) bs.rudderDeg = Math.min(MAX_RUDDER_DEG, bs.rudderDeg + 35 * dt);
         else bs.rudderDeg += (0 - bs.rudderDeg) * Math.min(1, dt * 1.5);
-        // Fire main cannons (LMB) & Torpedo (RMB / Q)
+        // Fire main cannons (LMB), Torpedo (RMB / Q), Missile (E / F)
         if (inp.fire) this.fireBattleshipCannon();
         if (inp.pressed("alt") || inp.pressed("last")) this.fireBattleshipTorpedo();
+        if (inp.pressed("interact") || inp.pressed("flash")) this.fireBattleshipMissile();
       }
       // Keep FPS body safely parked on Freighter deck (never falling into void)
       b.x = 9.8;
@@ -886,6 +920,21 @@ export class Game {
         { world: this.ship.world, slide: this.sim.tiltDeg > 6 ? this.sim.slideVector() : [0, 0], water: this.waterAt, sens: st.sens, touchSens: st.touchSens, invertY: st.invertY, noclip: this.supervisor.isNoclip() },
         controls,
       );
+      // Walkable Battleship decks when walking in FPS mode
+      if (!this.supervisor.isNoclip()) {
+        const wx = b.x + this.ship.group.position.x;
+        const wz = b.z + this.ship.group.position.z;
+        for (const bs of this.battleships) {
+          if (Math.abs(wx - bs.baseX) <= bs.deckBounds.maxX + 0.5 && Math.abs(wz - bs.baseZ) <= bs.deckBounds.maxZ + 0.5) {
+            const deckY = bs.group.position.y + bs.deckBounds.deckY;
+            if (b.y < deckY) {
+              b.y = deckY;
+              b.vy = 0;
+              b.onGround = true;
+            }
+          }
+        }
+      }
     }
     if (this.helmMode) this.handleHelm(dt);
     this.lastLookDX = 0;
@@ -902,24 +951,13 @@ export class Game {
     if (b.y < -25 || !isFinite(b.x + b.y + b.z)) {
       this.damagePlayer(1000, "fell out of the world");
     }
-    // Sicherheitsnetz: aktives Schiff (Freighter oder Battleship)
-    if (this.activeVessel === "battleship" && this.battleships[0]) {
-      const bs = this.battleships[0];
-      if (!this.supervisor.isNoclip()) {
-        const minX = bs.baseX + bs.deckBounds.minX + 0.4;
-        const maxX = bs.baseX + bs.deckBounds.maxX - 0.4;
-        const minZ = bs.baseZ + bs.deckBounds.minZ + 0.4;
-        const maxZ = bs.baseZ + bs.deckBounds.maxZ - 0.4;
-        b.x = Math.max(minX, Math.min(maxX, b.x));
-        b.z = Math.max(minZ, Math.min(maxZ, b.z));
-        const deckY = bs.group.position.y + bs.deckBounds.deckY;
-        if (b.y < deckY) {
-          b.y = deckY;
-          b.vy = 0;
-          b.onGround = true;
-        }
-      }
-    } else if (controls && !this.supervisor.isNoclip() && (Math.abs(b.x) > 13.5 || b.z < -72 || b.z > 72 || b.y > 25)) {
+    // Sicherheitsnetz: Schiff verlassen (außer wenn auf einem begehbaren Battleship-Deck)
+    const onAnyBsDeck = this.battleships.some((bs) => {
+      const wx = b.x + this.ship.group.position.x;
+      const wz = b.z + this.ship.group.position.z;
+      return Math.abs(wx - bs.baseX) <= bs.deckBounds.maxX + 1 && Math.abs(wz - bs.baseZ) <= bs.deckBounds.maxZ + 1;
+    });
+    if (controls && !this.supervisor.isNoclip() && !onAnyBsDeck && (Math.abs(b.x) > 13.5 || b.z < -72 || b.z > 72 || b.y > 25)) {
       p.teleport(9.8, DECK_Y, -42, Math.PI);
       this.say("Placed back on deck.", "warn");
     }
@@ -953,6 +991,10 @@ export class Game {
       }
     }
     this.indoor += ((inside ? 1 : 0) - this.indoor) * Math.min(1, dt * 3);
+
+    // Always allow [TAB] Tablet & [V] Ship Switch even in Battleship mode or with Tablet open
+    if (inp.pressed("status")) this.toggleTablet();
+    if (inp.pressed("switchShip")) this.switchVessel();
 
     if (controls) this.handleInput(dt);
     this.updateInteraction(dt);
@@ -1242,8 +1284,10 @@ export class Game {
 
   fireBattleshipCannon() {
     const bs = this.battleships[0];
-    if (!bs || bs.sunk || this.bsFireCd > 0) return;
-    this.bsFireCd = 1.25;
+    if (!bs || bs.sunk) return;
+    const noCooldown = this.supervisor.isGodMode() || this.mode === "sandbox";
+    if (!noCooldown && this.bsFireCd > 0) return;
+    this.bsFireCd = noCooldown ? 0 : 1.25;
     const aimDir = V(-Math.sin(this.player.yaw) * Math.cos(this.player.pitch), Math.sin(this.player.pitch), -Math.cos(this.player.yaw) * Math.cos(this.player.pitch)).normalize();
     const target = bs.group.position.clone().addScaledVector(aimDir, 120);
     fireBattleshipSalvo(bs, target, (muzzle, dir) => {
@@ -1263,8 +1307,10 @@ export class Game {
 
   fireBattleshipTorpedo() {
     const bs = this.battleships[0];
-    if (!bs || bs.sunk || this.bsTorpCd > 0) return;
-    this.bsTorpCd = 3.5;
+    if (!bs || bs.sunk) return;
+    const noCooldown = this.supervisor.isGodMode() || this.mode === "sandbox";
+    if (!noCooldown && this.bsTorpCd > 0) return;
+    this.bsTorpCd = noCooldown ? 0 : 3.5;
     const dir = V(-Math.sin(this.player.yaw), 0, -Math.cos(this.player.yaw)).normalize();
     const start = bs.group.position.clone().addScaledVector(dir, 14);
     start.y = this.ocean.height(start.x, start.z, this.time) - 0.15;
@@ -1279,6 +1325,73 @@ export class Game {
     this.navalProjectiles.push({ mesh, pos: start, vel: dir.multiplyScalar(28), kind: "torpedo", life: 8.0 });
     this.audio.shot("shotgun");
     this.say("TORPEDO LAUNCHED!", "info");
+  }
+
+  fireBattleshipMissile() {
+    const bs = this.battleships[0];
+    if (!bs || bs.sunk) return;
+    const noCooldown = this.supervisor.isGodMode() || this.mode === "sandbox";
+    if (!noCooldown && this.bsMissileCd > 0) return;
+    this.bsMissileCd = noCooldown ? 0 : 2.5;
+    const start = bs.group.position.clone().add(V(0, 6.5, 0));
+    const mesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.2, 0.25, 2.4, 8),
+      new THREE.MeshStandardMaterial({ color: 0xf8fafc, emissive: 0xff6600, emissiveIntensity: 0.9 }),
+    );
+    mesh.position.copy(start);
+    this.scene.add(mesh);
+    this.navalProjectiles.push({ mesh, pos: start, vel: V(0, 26, 0), kind: "missile", life: 8.0 });
+    this.audio.explosion(0.35);
+    this.say("CRUISE MISSILE LAUNCHED!", "alert");
+  }
+
+  restoreFreighter() {
+    for (const c of this.ship.compartments) {
+      c.holes = [];
+      c.water = 0;
+      c.fill = 0;
+      c.flow = 0;
+    }
+    this.sim.sunk = false;
+    this.sim.forceSink = false;
+    this.sim.sinkDepth = 0;
+    this.sim.roll = 0;
+    this.sim.pitch = 0;
+    this.supervisor.keelFractured = false;
+    this.supervisor.engineDestroyed = false;
+    this.engineExploded = false;
+    this.ship.group.visible = true;
+    this.ship.group.position.y = 0;
+    this.ship.group.rotation.set(0, this.supervisor.helm.heading, 0);
+    this.alarm = false;
+    this.audio.click();
+    this.say("FREIGHTER RESTORED: Hull sealed, flooded water pumped!", "good");
+  }
+
+  spawnExtraBattleship() {
+    if (this.battleships.length >= 6) {
+      this.say("Max 6 Battleships active to prevent lag.", "warn");
+      return;
+    }
+    const idx = this.battleships.length;
+    const angle = idx * 1.3;
+    const dist = 65 + idx * 25;
+    const x = this.ship.group.position.x + Math.cos(angle) * dist;
+    const z = this.ship.group.position.z + Math.sin(angle) * dist;
+    const bs = createBattleship(`bs-${idx + 1}`, x, z);
+    this.scene.add(bs.group);
+    this.battleships.push(bs);
+    this.audio.click();
+    this.say(`Spawned Battleship #${idx + 1} (Walkable deck, Twin Turrets)!`, "good");
+  }
+
+  toggleFleetBattle() {
+    if (this.battleships.length < 2) {
+      this.spawnExtraBattleship();
+    }
+    this.fleetBattle = !this.fleetBattle;
+    this.audio.click();
+    this.say(this.fleetBattle ? "FLEET BATTLE STARTED: Battleships engaging!" : "FLEET BATTLE PAUSED", this.fleetBattle ? "alert" : "info");
   }
 
   remoteFireSalvo() {
@@ -2770,11 +2883,14 @@ export class Game {
           : this.supervisor.helm.telegraph.toUpperCase(),
       battleshipHp: this.battleships[0] ? Math.round(this.battleships[0].hp) : 0,
       battleshipAvailable: this.battleships.length > 0,
-      torpCd: this.bsTorpCd,
-      cannonCd: this.bsFireCd,
+      torpCd: this.supervisor.isGodMode() || this.mode === "sandbox" ? 0 : this.bsTorpCd,
+      cannonCd: this.supervisor.isGodMode() || this.mode === "sandbox" ? 0 : this.bsFireCd,
+      missileCd: this.supervisor.isGodMode() || this.mode === "sandbox" ? 0 : this.bsMissileCd,
       freighterDist: this.battleships[0]
         ? Math.round(this.battleships[0].group.position.distanceTo(this.ship.group.position))
         : 0,
+      battleshipCount: this.battleships.length,
+      fleetBattle: this.fleetBattle,
     };
     this.cb.onHud(hud);
   }
