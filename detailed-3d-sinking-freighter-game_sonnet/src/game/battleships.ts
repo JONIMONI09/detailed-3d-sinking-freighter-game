@@ -108,6 +108,7 @@ export function stepBattleship(
   targetWorldPos: THREE.Vector3,
   waveHeight: (x: number, z: number, t: number) => number,
   onTurretFire?: (muzzleWorld: THREE.Vector3, dir: THREE.Vector3) => void,
+  autoFire = true,
 ): void {
   if (bs.sunk) {
     bs.sinkDepth = Math.min(18, bs.sinkDepth + dt * 1.4);
@@ -140,11 +141,14 @@ export function stepBattleship(
     t.group.getWorldPosition(wp);
     const dx = targetWorldPos.x - wp.x;
     const dz = targetWorldPos.z - wp.z;
-    const desiredYaw = Math.atan2(-dx, -dz);
-    t.group.rotation.y += (desiredYaw - t.group.rotation.y) * Math.min(1, dt * 1.5);
+    const desiredYaw = Math.atan2(-dx, -dz) - bs.heading;
+    let diff = desiredYaw - t.group.rotation.y;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    t.group.rotation.y += diff * Math.min(1, dt * 3.5);
 
     t.cooldown -= dt;
-    if (t.cooldown <= 0) {
+    if (autoFire && t.cooldown <= 0) {
       t.cooldown = 4.5 + Math.random() * 2.5;
       if (onTurretFire) {
         const dir = new THREE.Vector3(dx, targetWorldPos.y - wp.y, dz).normalize();

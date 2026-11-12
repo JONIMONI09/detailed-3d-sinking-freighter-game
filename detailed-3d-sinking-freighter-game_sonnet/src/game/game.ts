@@ -78,6 +78,9 @@ export interface HudState {
   vesselTelegraph: string;
   battleshipHp: number;
   battleshipAvailable: boolean;
+  torpCd: number;
+  cannonCd: number;
+  freighterDist: number;
 }
 
 export interface EndInfo {
@@ -225,6 +228,9 @@ export class Game {
   helmThrottleCooldown = 0;
   tabletOpen = false;
   activeVessel: "freighter" | "battleship" = "freighter";
+  bsFireCd = 0;
+  bsTorpCd = 0;
+  navalProjectiles: { mesh: THREE.Mesh; pos: THREE.Vector3; vel: THREE.Vector3; kind: "shell" | "torpedo"; life: number }[] = [];
   engineExploded = false;
   private tmpV = V();
   private tmpQ = new THREE.Quaternion();
@@ -718,25 +724,75 @@ export class Game {
       this.ship.world,
     );
 
+    // Freighter AI evasive escape maneuver when player commands the Battleship
+    if (this.activeVessel === "battleship" && this.battleships[0] && !this.sim.sunk) {
+      const bs = this.battleships[0];
+      const awayX = this.ship.group.position.x - bs.baseX;
+      const awayZ = this.ship.group.position.z - bs.baseZ;
+      const desiredHeading = Math.atan2(-awayX, -awayZ);
+      let hDiff = desiredHeading - this.supervisor.helm.heading;
+      while (hDiff > Math.PI) hDiff -= Math.PI * 2;
+      while (hDiff < -Math.PI) hDiff += Math.PI * 2;
+      this.supervisor.helm.telegraph = "full";
+      this.supervisor.helm.rudderCmd = Math.max(-MAX_RUDDER_DEG, Math.min(MAX_RUDDER_DEG, (hDiff * 180) / Math.PI));
+    }
+
     // Real vessel propulsion and rudder steering
     const forward = v3(-Math.sin(this.supervisor.helm.heading), 0, -Math.cos(this.supervisor.helm.heading));
     this.ship.group.position.addScaledVector(forward, this.supervisor.helm.speed * dt);
     this.ship.group.updateMatrixWorld(true);
 
     // Step walkable Battleships & rotating turrets
+    const bsPlayerControlled = this.activeVessel === "battleship" && !this.tabletOpen;
+    const bsAimDir = V(-Math.sin(this.player.yaw) * Math.cos(this.player.pitch), Math.sin(this.player.pitch), -Math.cos(this.player.yaw) * Math.cos(this.player.pitch)).normalize();
     const freighterTarget = this.ship.group.position.clone().add(V(0, 3, -10));
     for (const bs of this.battleships) {
+      const aimTarget = bsPlayerControlled
+        ? bs.group.position.clone().addScaledVector(bsAimDir, 120)
+        : freighterTarget;
       stepBattleship(
         bs,
         dt,
         t,
-        freighterTarget,
+        aimTarget,
         (x, z, tt) => this.ocean.height(x, z, tt),
         (muzzle, dir) => {
           this.tracer(muzzle, muzzle.clone().addScaledVector(dir, 55), 0xff8833);
           this.pn.emit(muzzle.x, muzzle.y, muzzle.z, dir.x * 3, 2, dir.z * 3, 1.4, 0.25, 0.8, 0.6, 0.6, 0.6, 0.7, -0.2, 0.4);
         },
+        !bsPlayerControlled,
       );
+    }
+
+    // Step Battleship shells & torpedoes
+    this.bsFireCd = Math.max(0, this.bsFireCd - dt);
+    this.bsTorpCd = Math.max(0, this.bsTorpCd - dt);
+    for (let i = this.navalProjectiles.length - 1; i >= 0; i--) {
+      const proj = this.navalProjectiles[i];
+      proj.life -= dt;
+      if (proj.kind === "shell") {
+        proj.vel.y -= 9.8 * dt;
+      } else {
+        proj.pos.y = this.ocean.height(proj.pos.x, proj.pos.z, t) - 0.15;
+        this.pn.emit(proj.pos.x, proj.pos.y + 0.25, proj.pos.z, 0, 1.2, 0, 1.0, 0.12, 0.4, 0.9, 0.95, 1.0, 0.5, 0, 0.3);
+      }
+      proj.pos.addScaledVector(proj.vel, dt);
+      proj.mesh.position.copy(proj.pos);
+
+      const localHit = this.ship.group.worldToLocal(proj.pos.clone());
+      const hitFreighter = Math.abs(localHit.x) < 11.5 && Math.abs(localHit.z) < 66 && localHit.y > -7 && localHit.y < 10;
+      const hitWater = proj.kind === "shell" && proj.pos.y <= this.ocean.height(proj.pos.x, proj.pos.z, t);
+      if (hitFreighter || hitWater || proj.life <= 0) {
+        if (hitFreighter) {
+          this.explode(localHit, proj.kind === "torpedo" ? 1.8 : 1.15, "tnt");
+          this.say(proj.kind === "torpedo" ? "TORPEDO DIRECT HIT ON FREIGHTER!" : "CANNON SHELL IMPACT!", "alert");
+        } else if (hitWater) {
+          this.pn.emit(proj.pos.x, proj.pos.y + 0.5, proj.pos.z, 0, 10, 0, 4.5, 0.45, 0.9, 0.85, 0.95, 1.0, 0.7, -3.0, 1.2);
+        }
+        this.scene.remove(proj.mesh);
+        proj.mesh.geometry.dispose();
+        this.navalProjectiles.splice(i, 1);
+      }
     }
 
     // Engine room severe flooding (> 40%) triggers generator breakdown & explosion
@@ -791,7 +847,28 @@ export class Game {
 
     const p = this.player;
     const b = p.body;
-    const controls = !this.dead && !this.escapeState && !this.ended && !this.helmMode && !this.tabletOpen;
+    const controls = !this.dead && !this.escapeState && !this.ended && !this.helmMode && !this.tabletOpen && this.activeVessel !== "battleship";
+
+    if (this.activeVessel === "battleship" && this.battleships[0] && !this.tabletOpen && !this.paused && !this.ended) {
+      const bs = this.battleships[0];
+      const [lx, ly] = inp.consumeLook();
+      const sens = 0.0022 * st.sens;
+      p.yaw -= lx * sens;
+      p.pitch = Math.max(-0.55, Math.min(0.65, p.pitch - ly * sens * (st.invertY ? -1 : 1)));
+      // WASD Battleship driving
+      if (inp.keys.has("KeyW") || inp.keys.has("ArrowUp")) bs.targetSpeed = Math.min(16, bs.targetSpeed + 10 * dt);
+      else if (inp.keys.has("KeyS") || inp.keys.has("ArrowDown")) bs.targetSpeed = Math.max(-8, bs.targetSpeed - 10 * dt);
+      if (inp.keys.has("KeyA") || inp.keys.has("ArrowLeft")) bs.rudderDeg = Math.max(-MAX_RUDDER_DEG, bs.rudderDeg - 35 * dt);
+      else if (inp.keys.has("KeyD") || inp.keys.has("ArrowRight")) bs.rudderDeg = Math.min(MAX_RUDDER_DEG, bs.rudderDeg + 35 * dt);
+      else bs.rudderDeg += (0 - bs.rudderDeg) * Math.min(1, dt * 1.5);
+      // Fire main cannons (LMB) & Torpedo (RMB / Q)
+      if (inp.fire) this.fireBattleshipCannon();
+      if (inp.pressed("alt") || inp.pressed("last")) this.fireBattleshipTorpedo();
+      // Keep player body synced to Battleship bridge
+      b.x = bs.baseX;
+      b.y = bs.group.position.y + bs.deckBounds.deckY + 2.5;
+      b.z = bs.baseZ;
+    }
 
     // Spieler
     const ev = p.update(
@@ -1144,17 +1221,50 @@ export class Game {
     this.audio.click();
   }
 
-  remoteFireSalvo() {
+  fireBattleshipCannon() {
     const bs = this.battleships[0];
-    if (!bs || bs.sunk) {
-      this.say("No active Battleship turrets available.", "warn");
-      return;
-    }
-    const target = this.ship.group.position.clone();
+    if (!bs || bs.sunk || this.bsFireCd > 0) return;
+    this.bsFireCd = 1.25;
+    const aimDir = V(-Math.sin(this.player.yaw) * Math.cos(this.player.pitch), Math.sin(this.player.pitch), -Math.cos(this.player.yaw) * Math.cos(this.player.pitch)).normalize();
+    const target = bs.group.position.clone().addScaledVector(aimDir, 120);
     fireBattleshipSalvo(bs, target, (muzzle, dir) => {
-      this.tracer(muzzle, muzzle.clone().addScaledVector(dir, 75), 0xff5522);
-      this.audio.shot("rifle");
+      const shellDir = dir.clone().add(V(0, 0.06, 0)).normalize();
+      const mesh = new THREE.Mesh(
+        new THREE.SphereGeometry(0.28, 6, 6),
+        new THREE.MeshBasicMaterial({ color: 0xffaa22 }),
+      );
+      mesh.position.copy(muzzle);
+      this.scene.add(mesh);
+      this.navalProjectiles.push({ mesh, pos: muzzle.clone(), vel: shellDir.multiplyScalar(115), kind: "shell", life: 3.5 });
+      this.tracer(muzzle, muzzle.clone().addScaledVector(dir, 55), 0xff8833);
+      this.pn.emit(muzzle.x, muzzle.y, muzzle.z, dir.x * 4, 2, dir.z * 4, 2.0, 0.35, 0.8, 0.8, 0.7, 0.5, 0.8, -0.2, 0.4);
+      this.audio.explosion(0.45);
     });
+  }
+
+  fireBattleshipTorpedo() {
+    const bs = this.battleships[0];
+    if (!bs || bs.sunk || this.bsTorpCd > 0) return;
+    this.bsTorpCd = 3.5;
+    const dir = V(-Math.sin(this.player.yaw), 0, -Math.cos(this.player.yaw)).normalize();
+    const start = bs.group.position.clone().addScaledVector(dir, 14);
+    start.y = this.ocean.height(start.x, start.z, this.time) - 0.15;
+    const mesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.25, 0.25, 3.2, 8),
+      new THREE.MeshStandardMaterial({ color: 0x1e293b, emissive: 0xff3300, emissiveIntensity: 0.6 }),
+    );
+    mesh.rotation.x = Math.PI / 2;
+    mesh.rotation.z = -this.player.yaw;
+    mesh.position.copy(start);
+    this.scene.add(mesh);
+    this.navalProjectiles.push({ mesh, pos: start, vel: dir.multiplyScalar(28), kind: "torpedo", life: 8.0 });
+    this.audio.shot("shotgun");
+    this.say("TORPEDO LAUNCHED!", "info");
+  }
+
+  remoteFireSalvo() {
+    this.bsFireCd = 0;
+    this.fireBattleshipCannon();
     this.say("BATTLESHIP SALVO FIRED!", "alert");
   }
 
@@ -1938,6 +2048,7 @@ export class Game {
     this.promptKind = "";
     this.promptTarget = null;
     if (this.dead || this.escapeState) return;
+    if (this.activeVessel === "battleship") return;
     const eye = this.eyeLocal();
     const dir = this.lookDirLocal();
     const world = this.ship.world;
@@ -2405,6 +2516,18 @@ export class Game {
       this.ship.group.updateMatrixWorld(true);
       return;
     }
+    if (this.activeVessel === "battleship" && this.battleships[0]) {
+      const bs = this.battleships[0];
+      const back = V(Math.sin(p.yaw) * Math.cos(p.pitch), -Math.sin(p.pitch), Math.cos(p.yaw) * Math.cos(p.pitch));
+      const anchor = bs.group.position.clone().add(V(0, 8.5, 0));
+      cam.position.copy(anchor).addScaledVector(back, 38);
+      cam.position.y = Math.max(this.ocean.height(cam.position.x, cam.position.z, this.time) + 2.0, cam.position.y);
+      const lookTarget = anchor.clone().addScaledVector(back, -50);
+      const m = new THREE.Matrix4().lookAt(cam.position, lookTarget, V(0, 1, 0));
+      cam.quaternion.setFromRotationMatrix(m);
+      cam.updateMatrixWorld(true);
+      return;
+    }
     const eye = this.eyeLocal();
     let bobY = 0,
       bobX = 0;
@@ -2546,7 +2669,7 @@ export class Game {
     const r = this.renderer;
     r.clear();
     r.render(this.scene, this.camera);
-    if (!this.dead && !this.escapeState && this.vm.root.visible) {
+    if (!this.dead && !this.escapeState && this.vm.root.visible && this.activeVessel !== "battleship") {
       const pb = this.player;
       const [ldx, ldy] = [this.input.lookX, this.input.lookY];
       this.vm.update(this.paused ? 0 : 0.016, { speed: pb.speed * (pb.sprinting ? 1.2 : 1), onGround: pb.body.onGround, lookDX: ldx, lookDY: ldy, reloading: this.reloading }, this.dyns.length > 0);
@@ -2624,6 +2747,11 @@ export class Game {
           : this.supervisor.helm.telegraph.toUpperCase(),
       battleshipHp: this.battleships[0] ? Math.round(this.battleships[0].hp) : 0,
       battleshipAvailable: this.battleships.length > 0,
+      torpCd: this.bsTorpCd,
+      cannonCd: this.bsFireCd,
+      freighterDist: this.battleships[0]
+        ? Math.round(this.battleships[0].group.position.distanceTo(this.ship.group.position))
+        : 0,
     };
     this.cb.onHud(hud);
   }

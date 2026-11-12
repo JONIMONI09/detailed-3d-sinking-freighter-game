@@ -431,6 +431,22 @@ export default function Hud({ h, settings, touch, game }: { h: HudState; setting
           </div>
         </div>
       )}
+      {!h.tabletOpen && h.activeVessel === "battleship" && (
+        <div className="pointer-events-none absolute bottom-10 left-1/2 -translate-x-1/2 rounded-xl border border-amber-400/50 bg-slate-950/85 px-4 py-2 text-center shadow-xl backdrop-blur-sm">
+          <div className="text-xs font-black tracking-wider text-amber-300">
+            ⚓ BATTLESHIP COMMAND · SPEED {h.vesselSpeed.toFixed(1)} m/s · RUDDER {h.vesselRudder.toFixed(0)}° · FREIGHTER {h.freighterDist}m ({Math.round(h.flood * 100)}% FLOODED)
+          </div>
+          <div className="mt-1 flex justify-center gap-4 text-[11px] font-bold">
+            <span className={h.cannonCd <= 0 ? "text-emerald-300" : "text-slate-400"}>
+              💥 [LMB] Cannons: {h.cannonCd <= 0 ? "READY" : `${h.cannonCd.toFixed(1)}s`}
+            </span>
+            <span className={h.torpCd <= 0 ? "text-cyan-300" : "text-slate-400"}>
+              🚀 [RMB / Q] Torpedo: {h.torpCd <= 0 ? "READY" : `${h.torpCd.toFixed(1)}s`}
+            </span>
+            <span className="text-slate-300">[W/S] Speed · [A/D] Steer · [V] Return to Freighter</span>
+          </div>
+        </div>
+      )}
       {!h.tabletOpen && (
         <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full border border-cyan-400/30 bg-black/55 px-3 py-1 text-[10px] font-bold tracking-wide text-cyan-200">
           [TAB] Command Tablet · [V] Switch Ship ({h.activeVessel.toUpperCase()}) · [N] Fly
