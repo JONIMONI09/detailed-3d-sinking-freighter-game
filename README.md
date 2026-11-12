@@ -184,8 +184,8 @@ every project; Cloud project skills are scoped to one project. All four
 workflows have also been registered as enabled account skills, so they appear
 in the web `/` skill picker after the next turn. The web picker inserts
 `/<name>`; the local CLI/Desktop form is `/skill:<name>`. The six built-in
-account skills remain unchanged; `performance` is disabled. The actual
-slash-menu rendering is the remaining UI-only check. See
+account skills remain present alongside them. The actual slash-menu rendering
+is the remaining UI-only check. See
 [CI_DEPLOYMENT.md](CI_DEPLOYMENT.md) §19 and §20.
 
 - `error-fix-document` — bug and incident workflow with fallback and docs.

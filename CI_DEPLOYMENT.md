@@ -619,16 +619,16 @@ skills map. The run used both `includeHomeSkills: false` and
 
 The account registry was checked separately because account skills are not
 stored in the project tree. At the time of this loader run it contained six
-skills; five were enabled and `performance` was disabled:
+built-in skills; their enabled state is managed separately:
 
 | Account skill | Exact handle | State |
 | :--- | :--- | :--- |
-| `brainstorming` | `/skill:brainstorming` | enabled |
-| `find-skills` | `/skill:find-skills` | enabled |
-| `skill-creator` | `/skill:skill-creator` | enabled |
-| `web-design-guidelines` | `/skill:web-design-guidelines` | enabled |
-| `performance` | `/skill:performance` | disabled |
-| `github-actions-docs` | `/skill:github-actions-docs` | enabled |
+| `brainstorming` | `/skill:brainstorming` | present |
+| `find-skills` | `/skill:find-skills` | present |
+| `skill-creator` | `/skill:skill-creator` | present |
+| `web-design-guidelines` | `/skill:web-design-guidelines` | present |
+| `performance` | `/skill:performance` | present |
+| `github-actions-docs` | `/skill:github-actions-docs` | present |
 
 Freebuff registers each loaded name with `getSlashCommandsWithSkills()` as
 `skill:${name}` and inserts `/skill:${name}`. The loader returned no warnings;
@@ -645,7 +645,7 @@ Verified by execution:
 - names, paths and `/skill:<name>` handles match
 - the home-inclusive load does not change the project result
 - no duplicate, shadowing or loader warnings
-- six account skills were present separately; five were enabled
+- six account skills were present separately
 
 Only the UI can verify:
 
@@ -685,9 +685,9 @@ now contains ten skills; the four new entries are enabled:
 | `error-fix-document` | `/error-fix-document` | `/skill:error-fix-document` | enabled |
 | `skill-discovery-audit` | `/skill-discovery-audit` | `/skill:skill-discovery-audit` | enabled |
 
-The pre-existing six account skills are unchanged: `brainstorming`,
-`find-skills`, `skill-creator`, `web-design-guidelines`, `performance`
-(disabled), and `github-actions-docs`.
+The pre-existing six account skills remain present: `brainstorming`,
+`find-skills`, `skill-creator`, `web-design-guidelines`, `performance`, and
+`github-actions-docs`. Their enabled state is managed separately.
 
 Scope and shadowing:
 

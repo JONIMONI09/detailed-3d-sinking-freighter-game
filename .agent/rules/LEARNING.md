@@ -65,7 +65,7 @@
 - **Issue:** The repository could show four `SKILL.md` files and a passing YAML check while still leaving open whether a fresh Freebuff process actually loaded them.
 - **Root Cause:** Earlier verification stopped at the filesystem and CI layer; it did not call the real SDK loader or compare project names against the account registry.
 - **Fix:** Ran `@codebuff/sdk@0.10.7` `loadSkills()` in a fresh Node process with both project-only and home-inclusive options. No repository change was needed; §19 records the method and the UI-only gap.
-- **Verified:** Four project skills loaded from `.agents/skills/`, each with its exact `/skill:<name>` local handle; six account skills were present (five enabled); project/account intersection was empty; no warnings; `.claude/skills` absent. The temporary SDK install was removed.
+- **Verified:** Four project skills loaded from `.agents/skills/`, each with its exact `/skill:<name>` local handle; six account skills were present; project/account intersection was empty; no warnings; `.claude/skills` absent. The temporary SDK install was removed.
 - **Lesson:** Loader execution and account-registry comparison are separate evidence from file listing and CI; UI rendering after reload remains a separate, unprovable-from-CLI layer.
 
 ### [RESOLVED] Web Cloud Client Did Not Read Project Skills
