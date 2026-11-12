@@ -1555,6 +1555,47 @@ export class Game {
     }
   }
 
+  private detachMeshesAt(root: THREE.Object3D, hitX: number, hitZ: number, radius: number, maxDetach: number) {
+    const candidates: THREE.Mesh[] = [];
+    const wp = V();
+    root.updateMatrixWorld(true);
+    root.traverse((obj) => {
+      if (obj instanceof THREE.Mesh && obj.visible) {
+        obj.getWorldPosition(wp);
+        if (Math.hypot(wp.x - hitX, wp.z - hitZ) <= radius) {
+          candidates.push(obj);
+        }
+      }
+    });
+    // Sort closest to impact first so bridge/plates/superstructure rip off right under the beam
+    candidates.sort((a, b) => {
+      const pa = a.getWorldPosition(V());
+      const pb = b.getWorldPosition(V());
+      return Math.hypot(pa.x - hitX, pa.z - hitZ) - Math.hypot(pb.x - hitX, pb.z - hitZ);
+    });
+    const wq = new THREE.Quaternion();
+    const ws = V();
+    let detached = 0;
+    for (const m of candidates) {
+      if (detached >= maxDetach) break;
+      m.getWorldPosition(wp);
+      m.getWorldQuaternion(wq);
+      m.getWorldScale(ws);
+      m.parent?.remove(m);
+      m.position.copy(wp);
+      m.quaternion.copy(wq);
+      m.scale.copy(ws);
+      this.scene.add(m);
+      const dx = wp.x - hitX;
+      const dz = wp.z - hitZ;
+      const len = Math.max(1, Math.hypot(dx, dz));
+      const vel = V((dx / len) * (14 + Math.random() * 24) + (Math.random() - 0.5) * 10, 14 + Math.random() * 28, (dz / len) * (14 + Math.random() * 24) + (Math.random() - 0.5) * 10);
+      const rot = V((Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6);
+      this.debris.push({ m, vel, rot, life: 11 + Math.random() * 5 });
+      detached++;
+    }
+  }
+
   fireOrbitalDeathRay() {
     if (this.laserCd > 0) return;
     this.laserCd = 0.08;
@@ -1642,25 +1683,31 @@ export class Game {
       this.activeFires.push({ pos: hitPos.clone(), life: 25, spreadCd: 2.0 });
     }
 
-    // Check Freighter hit ONLY when aimed directly at Freighter hull -> explode, shatter & sink!
+    // Check Freighter hit ONLY when aimed directly at Freighter hull -> rip off real plates/bridge, explode & sink!
     const shipDist = Math.hypot(tx - this.ship.group.position.x, tz - this.ship.group.position.z);
-    if (shipDist < 28 && !this.sim.sunk) {
-      this.shatterIntoPieces(V(tx, 4, tz), 0x475569, 180);
+    if (shipDist < 62 && !this.sim.sunk) {
+      this.detachMeshesAt(this.ship.group, tx, tz, 24, 28);
+      this.shatterIntoPieces(V(tx, 4, tz), 0x475569, 90);
       this.sim.sinking = true;
       this.sim.sunk = true;
       for (const c of this.ship.compartments) c.fill = 1;
-      this.say("☄️ ORBITAL DEATH RAY DESTROYED FREIGHTER NORDWIND!", "alert");
+      this.say("☄️ ORBITAL DEATH RAY RIPPED APART & SUNK FREIGHTER NORDWIND!", "alert");
+    } else if (shipDist < 65) {
+      // Even if already sinking, keep tearing off remaining bridge/hull plates under the beam!
+      this.detachMeshesAt(this.ship.group, tx, tz, 22, 18);
     }
 
-    // Check Battleships ONLY when aimed directly at that Battleship -> explode, shatter & sink!
+    // Check Battleships ONLY when aimed directly at that Battleship -> rip off turrets/plates, explode & sink!
     for (const bs of this.battleships) {
-      if (bs.sunk) continue;
       const d = Math.hypot(tx - bs.baseX, tz - bs.baseZ);
-      if (d < 22) {
-        this.shatterIntoPieces(bs.group.position.clone().add(V(0, 3, 0)), 0x64748b, 140);
-        bs.sunk = true;
-        bs.hp = 0;
-        this.say(`☄️ ORBITAL DEATH RAY SINKING ${bs.id.toUpperCase()}!`, "alert");
+      if (d < 28) {
+        this.detachMeshesAt(bs.group, tx, tz, 22, 18);
+        if (!bs.sunk) {
+          this.shatterIntoPieces(bs.group.position.clone().add(V(0, 3, 0)), 0x64748b, 80);
+          bs.sunk = true;
+          bs.hp = 0;
+          this.say(`☄️ ORBITAL DEATH RAY TORE APART & SUNK ${bs.id.toUpperCase()}!`, "alert");
+        }
       }
     }
   }
