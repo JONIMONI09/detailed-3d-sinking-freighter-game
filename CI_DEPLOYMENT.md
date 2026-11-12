@@ -720,3 +720,23 @@ produced 956,117 bytes with SHA-256
 bundle stayed at 1,001,088 bytes with SHA-256
 `7ea4957dfe82f83ac489e159b5683d0a2f056424329399482cd1ffa5d1a9635f`. The branch
 and main runs for this change are recorded in §21.
+
+---
+
+## 21. Web registry delivery (2026-11-12)
+
+| Item | Value |
+| :--- | :--- |
+| Branch | `fix/web-skill-registry` |
+| Functional/docs commit | `286cb5193753ff04e26299edd61a7083e671f354` |
+| Branch CI | Run `43244789323`, success |
+| Local gate | 5/5 physics, 14/14 browser guards, 10/10 Python checks, both typechecks, both builds, YAML parse, `npm audit --omit=dev` 0 |
+| Root bundle | 956,117 bytes, `2841dd39…` |
+| Sonnet bundle | 1,001,088 bytes, `7ea4957d…` |
+| Account registry | 10 skills; four new entries enabled |
+
+The code change is documentation and the discovery skill only; the runtime
+fix is the Account registry save. The final evidence-only commit adds this
+section and is gated by its own branch run before the fast-forward merge. Main
+CI and Pages are verified after that merge; their run IDs are reported in the
+delivery message rather than rewritten into this file in a third cycle.
