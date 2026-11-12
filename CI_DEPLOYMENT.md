@@ -855,6 +855,7 @@ the old list until it refetches. The remaining checklist is user-visible:
 | Workflow YAML | Both files parse with `yaml.safe_load`, exit 0 |
 | `npm audit --omit=dev` | 0 vulnerabilities |
 | `git diff --check` | exit 0 |
+| Exact-SHA branch CI | Run `43250740606`, success on `80a79eb` |
 
 The root bundle moved from 956,117 to 956,096 bytes because Tailwind scans the
 repository's Markdown and the corrected prose changes its generated CSS. The
