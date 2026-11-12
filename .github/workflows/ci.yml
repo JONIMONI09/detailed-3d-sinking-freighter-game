@@ -37,6 +37,9 @@ jobs:
       - name: Run Test Suite (Physics, Browser Guards, Python Integrity)
         run: npm test
 
+      - name: Validate Skill and Documentation Governance
+        run: npm run docs:check
+
       - name: Build Root Distribution
         run: npx vite build
 

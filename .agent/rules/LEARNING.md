@@ -111,6 +111,13 @@
 - **Issue:** CPU lag from per-frame `computeVertexNormals()` on 96x96 ocean grid.
 - **Fix:** Removed per-frame CPU vertex normal calculation. Smooth 60+ FPS on mobile and desktop.
 
+### [RESOLVED] Skill Governance and Documentation Had No Single Source of Truth
+- **Issue:** Skill names, update dates, tool capabilities, error history and documentation ownership were spread across README, AGENTS.md, CI_DEPLOYMENT.md and conversation memory. A new session could edit a skill without updating its date, duplicate a missing skill, or assume a tool name that did not exist.
+- **Root Cause:** No canonical index existed, no mandatory error ledger existed, and CodeGraph was used as an interactive guess rather than a repository script with a stable one-shot tool.
+- **Fix:** Added `skill-index`, `docs/SKILLS.md`, `docs/AGENT_TOOLS.md`, `docs/ERRORS_AND_FIXES.md` and `tools/check_skill_docs.py`; installed `@astudioplus/codegraph-mcp@0.21.0`; added `docs:check` to CI; extended the four project skills with dates and ledger rules; and registered the project skills plus `skill-index` as Account copies for the web client.
+- **Verified:** `npm run docs:check` passed with CodeGraph `codegraph_pr_context` graph-only, `npm test` passed the physics, browser-guard and Python suites, both TypeScript projects passed, both Vite builds passed, the workflow YAML parsed with duplicate-key detection, and `npm audit --omit=dev` reported 0 vulnerabilities. The local Cloud preview served HTTP 200 on `0.0.0.0:3000` with the exact assigned host. Exact-SHA CI, main CI and Pages are recorded in `CI_DEPLOYMENT.md` §23 after they complete.
+- **Lesson:** Make the map, the dates, the tool list and the error history executable checks. A skill is not governed by a file alone; it needs an index row, a date, an Account copy when the web client must see it, and a gate that fails when they diverge.
+
 ### [RESOLVED] Quota Sentinel Sidecar Blank White Screen / Exit Code 1
 - **Issue:** Opening the `[Quota Sentinel]` Aux Pane tab displayed a blank white screen or error `sidecar process failed exit status 1`.
 - **Root Cause:**

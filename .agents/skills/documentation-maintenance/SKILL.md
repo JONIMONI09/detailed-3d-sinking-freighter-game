@@ -8,6 +8,7 @@ license: MIT
 metadata:
   category: documentation
   project: detailed-3d-sinking-freighter-game
+  last_updated: 2026-11-12
 ---
 
 # Documentation Maintenance
@@ -28,34 +29,43 @@ Use this skill when a change affects:
 | `README.md` | What the project does, controls, live links, setup, CI summary |
 | `CI_DEPLOYMENT.md` | Exact commands, exit codes, artifacts, hashes, run IDs, deployment status, limitations |
 | `RESPONSIVE_UI.md` | Viewport measurements, clipping/coverage counts, browser caveats |
-| `AGENTS.md` | Durable rules the next agent must follow |
+| `AGENTS.md` | Durable rules the next agent must follow; agent-only scope |
+| `docs/SKILLS.md` | Canonical skill map, update dates, documentation map, protocol |
+| `docs/AGENT_TOOLS.md` | Current English tool inventory and CodeGraph commands |
+| `docs/ERRORS_AND_FIXES.md` | Mandatory error, cause, solution, proof, prevention ledger |
 | `.agent/rules/LEARNING.md` | Root cause, fix, verification, and reusable lesson |
 
 ## Mandatory documentation sequence
 
-1. Search for stale claims before editing:
+1. Run `TZ=Europe/Berlin date +%F` and check the date shown by the current
+   Freebuff web session. Record discrepancies instead of choosing silently.
+2. Read `docs/SKILLS.md` before changing a skill or its update date.
+3. Search for stale claims before editing:
 
 ```bash
 rg -n "Not observed|could not be read|private repository|TODO|FIXME|[0-9]+/[0-9]+" \
   --glob '*.md' .
 ```
 
-2. Verify every count, hash, run ID, URL, and date against the current output.
+4. Verify every count, hash, run ID, URL, and date against the current output.
    Never copy an old number into a new section.
-3. Mark historical sections as historical. Do not rewrite the old result as if
+5. Mark historical sections as historical. Do not rewrite the old result as if
    it were the current one.
-4. Record the exact commands that ran and their exit codes. State which checks
+6. Record the exact commands that ran and their exit codes. State which checks
    were not run.
-5. Record warnings and limitations separately from passes. A green build does
+7. Record warnings and limitations separately from passes. A green build does
    not erase a dependency advisory or an untested physical device.
-6. Put the current delivery at the end of `CI_DEPLOYMENT.md` with its commit,
+8. Put the current delivery at the end of `CI_DEPLOYMENT.md` with its commit,
    branch run, main run, Pages run, and live URLs.
-7. Add or update the `LEARNING.md` entry for the underlying cause and the
+9. Add or update the `LEARNING.md` entry for the underlying cause and the
    lesson, not only the symptom.
-8. Keep all documentation, commit messages, identifiers, and UI text in
-   English. German belongs only in user chat replies.
-9. Cross-link related records instead of duplicating large sections.
-10. Re-run the relevant checks after editing commands or counts.
+10. Add or update the matching `docs/ERRORS_AND_FIXES.md` entry for any incident.
+11. Keep all documentation, commit messages, identifiers, and UI text in
+    English. German belongs only in user chat replies.
+12. Cross-link related records instead of duplicating large sections.
+13. Run `npm run docs:check` after editing skills, dates, commands, or the
+    documentation structure.
+14. Re-run the relevant checks after editing commands or counts.
 
 ## Required evidence block
 
@@ -85,6 +95,9 @@ A delivery record must contain:
 - [ ] No stale claims remain in current-state sections.
 - [ ] Counts, hashes, run IDs, and URLs match real output.
 - [ ] Historical and current results are clearly separated.
+- [ ] `docs/SKILLS.md` dates and index rows match the skill files.
+- [ ] `docs/ERRORS_AND_FIXES.md` has an entry for every fixed incident.
 - [ ] `LEARNING.md` captures the cause and lesson.
 - [ ] English is used throughout.
+- [ ] `npm run docs:check` passes with CodeGraph enabled.
 - [ ] The documentation change is included in the same branch and CI gate.

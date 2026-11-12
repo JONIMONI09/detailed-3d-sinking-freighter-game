@@ -10,6 +10,7 @@ license: MIT
 metadata:
   category: quality
   project: detailed-3d-sinking-freighter-game
+  last_updated: 2026-11-12
 ---
 
 # Skill Discovery Audit
@@ -134,7 +135,9 @@ separately. The 2026-11-12 audit found:
   `/${e.name} `.
 
 Register the workflow in the matching registry before expecting it in the web
-`/` picker. Then verify the exact typed name, not the `/skill` substring.
+`/` picker. Then verify the exact typed name, not the `/skill` substring. Read
+`docs/SKILLS.md` before changing a name, path, or update date; that index is the
+canonical map of project copies and Account copies.
 
 Use the narrowest scope that fits: project settings for one repository,
 account skills only when the workflow should follow the user into every
@@ -179,8 +182,10 @@ State:
   locally, `/<name>` in the web picker)
 - whether the web picker query was the exact name or only `/skill`; state the
   substring result instead of calling the skill missing
-- the output of `npx skills list` and `python tools/ci_check.py`
+- the output of `npx skills list`, `python tools/ci_check.py`, and
+  `npm run docs:check`
 - whether the session was reloaded or the web registry was saved
+- the matching row and date in `docs/SKILLS.md`
 - which client source was used: project path, account registry, or Cloud
   project registry
 - what was not verified, especially the live slash menu
@@ -198,6 +203,8 @@ recommending an install.
 [ ] description states what and when
 [ ] YAML parses with yaml.safe_load
 [ ] python tools/ci_check.py passes
+[ ] npm run docs:check passes
+[ ] docs/SKILLS.md row and date match the skill
 [ ] client-specific invocation is identified
 [ ] local path or web registry source is identified
 [ ] session was reloaded or the registry was saved

@@ -114,10 +114,37 @@ def check_project_skills():
         "ci-workflow-audit",
         "documentation-maintenance",
         "skill-discovery-audit",
+        "skill-index",
+    ]
+    required_docs = [
+        WORKSPACE / "docs" / "SKILLS.md",
+        WORKSPACE / "docs" / "AGENT_TOOLS.md",
+        WORKSPACE / "docs" / "ERRORS_AND_FIXES.md",
     ]
 
     if not skills_dir.exists():
         log(".agents/skills directory is missing!", "FAIL")
+        return False
+
+    for doc in required_docs:
+        if not doc.exists():
+            log(f"Required agent documentation is missing: {doc.relative_to(WORKSPACE)}", "FAIL")
+            return False
+
+    index_text = required_docs[0].read_text(encoding="utf-8")
+    ledger_text = required_docs[2].read_text(encoding="utf-8")
+    if "Last reviewed: 2026-11-12" not in index_text:
+        log("docs/SKILLS.md has no current Last reviewed date.", "FAIL")
+        return False
+    if "ERR-2026-11-12-01" not in ledger_text:
+        log("docs/ERRORS_AND_FIXES.md has no seeded incident entry.", "FAIL")
+        return False
+    if "CodeGraph" not in required_docs[1].read_text(encoding="utf-8"):
+        log("docs/AGENT_TOOLS.md does not document the CodeGraph script.", "FAIL")
+        return False
+    agents_text = (WORKSPACE / "AGENTS.md").read_text(encoding="utf-8")
+    if "Freebuff AI agent only" not in agents_text:
+        log("AGENTS.md does not declare its Freebuff-agent-only scope.", "FAIL")
         return False
 
     for name in required:
@@ -143,6 +170,12 @@ def check_project_skills():
         if not re.search(r"^description:\s*\S", frontmatter, re.MULTILINE):
             log(f"Skill '{name}' has no description.", "FAIL")
             return False
+        if not re.search(r"^  last_updated:\s*\d{4}-\d{2}-\d{2}\s*$", frontmatter, re.MULTILINE):
+            log(f"Skill '{name}' has no metadata.last_updated date.", "FAIL")
+            return False
+        if name not in index_text:
+            log(f"Skill '{name}' is not listed in docs/SKILLS.md.", "FAIL")
+            return False
         if len(body) < 200:
             log(f"Skill '{name}' body is too short to be actionable.", "FAIL")
             return False
@@ -153,7 +186,7 @@ def check_project_skills():
             log(f"Skill '{name}' contains unfinished markers.", "FAIL")
             return False
 
-    log("Project skills are present, structurally valid and free of German umlauts.", "PASS")
+    log("Project skills, update dates and agent documentation are consistent.", "PASS")
     return True
 
 def check_branch_ci_trigger():
@@ -179,6 +212,10 @@ def check_branch_ci_trigger():
 
     if "npm test" not in ci:
         log("ci.yml does not run npm test.", "FAIL")
+        return False
+
+    if "npm run docs:check" not in ci:
+        log("ci.yml does not run the skill/documentation gate.", "FAIL")
         return False
 
     if '"**"' in deploy or "'**'" in deploy:

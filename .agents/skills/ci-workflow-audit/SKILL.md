@@ -8,6 +8,7 @@ license: MIT
 metadata:
   category: ci
   project: detailed-3d-sinking-freighter-game
+  last_updated: 2026-11-12
 ---
 
 # CI Workflow Audit
@@ -36,6 +37,7 @@ This must pass all Python checks, including the feature-branch trigger check.
 Then run the complete application gate:
 
 ```bash
+npm run docs:check
 npm test
 ```
 
@@ -101,7 +103,8 @@ Do not merge on a local pass, a queued run, or a run for a different SHA.
 
 - [ ] Both workflow files parse with duplicate-key detection.
 - [ ] Branch, main, and Pages triggers are correct.
+- [ ] `npm run docs:check` passes with CodeGraph enabled.
 - [ ] The exact feature-branch SHA has a successful run.
 - [ ] Main CI and Pages both succeeded after the merge.
 - [ ] Live pages return 200 and contain the expected markers.
-- [ ] `CI_DEPLOYMENT.md` records the evidence.
+- [ ] `CI_DEPLOYMENT.md` and `docs/ERRORS_AND_FIXES.md` record the evidence.

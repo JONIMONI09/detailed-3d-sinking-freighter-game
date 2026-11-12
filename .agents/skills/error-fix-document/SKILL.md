@@ -1,14 +1,16 @@
 ---
 name: error-fix-document
 description: >-
-  Use for every bug fix, failed check, or incident in this repository.
-  Reproduce the failure, fix its root cause, add a safe fallback and regression
-  tests, update the English documentation, and verify the feature branch
-  through GitHub CI before merging.
+  Use for every bug fix, failed check, incident, or unexpected behavior in this
+  repository. Reproduce the failure, write it into the mandatory error ledger,
+  fix its root cause, add a safe fallback and regression tests, update the
+  English documentation, and verify the feature branch through GitHub CI before
+  merging.
 license: MIT
 metadata:
   category: quality
   project: detailed-3d-sinking-freighter-game
+  last_updated: 2026-11-12
 ---
 
 # Error Fix and Documentation Workflow
@@ -37,31 +39,36 @@ Use this skill when a request involves any of:
      success.
 7. Add or update regression tests under `tests/`. Wire new suites into
    `npm test`.
-8. Update the English documentation in the same change:
+8. Add or update the mandatory entry in `docs/ERRORS_AND_FIXES.md` before
+   merging. Include the date in Europe/Berlin, symptom, root cause, solution,
+   verification, prevention, and related files or skills. A fix without a
+   ledger entry is incomplete.
+9. Update the English documentation in the same change:
    - `README.md` for user-facing behavior;
    - `CI_DEPLOYMENT.md` for commands, results, hashes, runs, and limitations;
+   - `docs/SKILLS.md` for a skill or command-surface change;
+   - `docs/AGENT_TOOLS.md` for a tool or command change;
    - `RESPONSIVE_UI.md` for layout and browser evidence;
    - `AGENTS.md` for durable project rules;
    - `.agent/rules/LEARNING.md` for the root cause and lesson.
-9. Run the full local gate:
+10. Run the full local gate:
 
 ```bash
 npm ci
+npm run docs:check
 npx tsc --noEmit
 npx tsc -p detailed-3d-sinking-freighter-game_sonnet/tsconfig.json --noEmit
 npm test
 npx vite build
-mkdir -p dist/sonnet
-npx vite build detailed-3d-sinking-freighter-game_sonnet --outDir ../dist/sonnet --base ./
 npx vite build detailed-3d-sinking-freighter-game_sonnet
 ```
 
-10. Verify the artifacts and, for UI changes, the exact viewports. Record byte
+11. Verify the artifacts and, for UI changes, the exact viewports. Record byte
     sizes, hashes, and measurements.
-11. Commit on the feature branch and push it.
-12. Wait for the GitHub Actions run for the exact commit SHA. Merge only when it
+12. Commit on the feature branch and push it.
+13. Wait for the GitHub Actions run for the exact commit SHA. Merge only when it
     is `completed` with conclusion `success`.
-13. Merge by fast-forward, then verify main CI, Pages deployment, remote hash,
+14. Merge by fast-forward, then verify main CI, Pages deployment, remote hash,
     and live URLs.
 
 ## Failure rules
@@ -84,7 +91,9 @@ npx vite build detailed-3d-sinking-freighter-game_sonnet
 - [ ] The root cause is fixed, not hidden.
 - [ ] A fallback exists for every fallible boundary.
 - [ ] Regression tests cover the fix and run in `npm test`.
-- [ ] English documentation and `LEARNING.md` are updated.
+- [ ] `docs/ERRORS_AND_FIXES.md` has a complete entry for the incident.
+- [ ] English documentation, `docs/SKILLS.md`, and `LEARNING.md` are updated.
+- [ ] `npm run docs:check` passes with CodeGraph enabled.
 - [ ] Typechecks, tests, builds, and YAML gates pass with real output.
 - [ ] The feature-branch Actions run for the exact SHA is green.
 - [ ] `main` and the live deployment are verified after the merge.

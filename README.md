@@ -69,7 +69,8 @@ tests for them.
 
 ```text
 ├── .agent/                             # Antigravity Rules, Workflows & LEARNING.md
-├── .agents/skills/                     # Project skills (quality, CI, docs, discovery)
+├── .agents/skills/                     # Project skills (governance, quality, CI, docs, discovery)
+├── docs/                               # Agent skill index, tool inventory, error ledger
 ├── CI_DEPLOYMENT.md                    # CI & GitHub Pages verification record
 ├── RESPONSIVE_UI.md                    # Responsive HUD & landscape layout record
 ├── detailed-3d-sinking-freighter-game_sonnet/ # Alternative / Sub-workspace Edition
@@ -144,10 +145,11 @@ Details and measurements: [RESPONSIVE_UI.md](RESPONSIVE_UI.md).
 
 ### Agent skills
 
-Four project skills under `.agents/skills/` encode the recurring workflow:
+Five project skills under `.agents/skills/` encode the recurring workflow:
 reproduce, fix the root cause, add a fallback and regression tests, update the
-English documentation, verify the feature branch through CI, and audit skill
-discovery. `.agents/skills/`
+English documentation, verify the feature branch through CI, audit skill
+discovery, and keep the skill map current. `skill-index` is the main index;
+`docs/SKILLS.md` is its canonical date and ownership table. `.agents/skills/`
 is Freebuff's native project discovery path; `.claude/skills/` is also supported
 for Claude Code compatibility. These skills follow the official
 [Freebuff skills format](https://docs.freebuff.page/working-with-the-agent/#skills).
@@ -165,6 +167,7 @@ The same registry name is used in both clients:
 | `/documentation-maintenance` | `/skill:documentation-maintenance` | Project + Account skill |
 | `/error-fix-document` | `/skill:error-fix-document` | Project + Account skill |
 | `/skill-discovery-audit` | `/skill:skill-discovery-audit` | Project + Account skill |
+| `/skill-index` | `/skill:skill-index` | Project + Account skill |
 
 Locally, a bare `/brainstorming` or `/find-skills` is not a Freebuff command;
 the `/skill:` prefix is required. Local discovery happens at session start, so
@@ -202,24 +205,35 @@ local executions**, not the web Cloud client.
 The web Cloud client does not read a repository's `.agents/skills/` directory.
 It loads **Account skills** from **Settings → Skills** and **Cloud project
 skills** from **Settings → Project settings**. Account skills are available in
-every project; Cloud project skills are scoped to one project. The four
-workflows have also been registered as enabled account skills, so the account
-copy is what a web chat can resolve. The registry has ten entries: the seven
+every project; Cloud project skills are scoped to one project. The project
+workflows and the main index also have enabled Account copies, so the account
+copy is what a web chat can resolve. The registry has eleven entries: the eight
 commands above plus `web-design-guidelines`, `performance`, and
-`github-actions-docs`. Two consecutive reads on 2026-11-12 returned all seven
+`github-actions-docs`. Two consecutive reads on 2026-11-12 returned every entry
 as enabled; the registry is not the reason a name is missing from `/skill`.
 The web picker inserts `/<name>`; the local CLI/Desktop form is
 `/skill:<name>`. The browser pixels are the remaining UI-only check. See
-[CI_DEPLOYMENT.md](CI_DEPLOYMENT.md) §19, §20 and §22.
+[CI_DEPLOYMENT.md](CI_DEPLOYMENT.md) §19, §20, §22 and §23.
 
-- `error-fix-document` — bug and incident workflow with fallback and docs.
+- `skill-index` — main skill map, Europe/Berlin dates, documentation structure.
+- `error-fix-document` — bug, incident, and mandatory error-ledger workflow.
 - `ci-workflow-audit` — YAML validation, exact-SHA CI gate and Pages checks.
 - `documentation-maintenance` — stale-claim scan and evidence recording.
 - `skill-discovery-audit` — native path, YAML, client-specific invocation and reload checks.
 
-`tools/ci_check.py` checks their presence, names, frontmatter fields, body
-length, and absence of German umlauts or unfinished markers. Full YAML syntax
-is parsed separately during delivery.
+`tools/ci_check.py` checks their presence, names, frontmatter dates, index
+rows, body length, and absence of German umlauts or unfinished markers.
+`npm run docs:check` runs the installed CodeGraph MCP server through
+`tools/check_skill_docs.py` and validates the documentation structure. Full
+YAML syntax is parsed separately during delivery.
+
+### Agent documentation map
+
+- [docs/SKILLS.md](docs/SKILLS.md) — canonical skill index, update protocol, documentation map.
+- [docs/AGENT_TOOLS.md](docs/AGENT_TOOLS.md) — current English tool inventory and CodeGraph commands.
+- [docs/ERRORS_AND_FIXES.md](docs/ERRORS_AND_FIXES.md) — mandatory error, cause, solution, and prevention ledger.
+- [AGENTS.md](AGENTS.md) — Freebuff-AI-agent-only operating rules; last updated 2026-11-12.
+- [.agent/rules/LEARNING.md](.agent/rules/LEARNING.md) — historical root causes and lessons.
 
 ---
 
@@ -227,16 +241,22 @@ is parsed separately during delivery.
 
 Both editions are verified on every feature-branch push and on every push to
 `main`. `npm test` runs 5 physics tests, 14 browser-guard tests and 10 Python
-integrity checks; CI invokes the same command:
+integrity checks; CI invokes the same command and adds the documentation gate:
 
 ```bash
 npm ci
 npm run typecheck
 npx tsc -p detailed-3d-sinking-freighter-game_sonnet/tsconfig.json --noEmit
 npm test
+npm run docs:check
 npm run build
 npx vite build detailed-3d-sinking-freighter-game_sonnet --outDir ../dist/sonnet --base ./
 ```
+
+The documentation gate uses `@astudioplus/codegraph-mcp` in one-shot graph-only
+mode. The package is a development dependency; `npm audit --omit=dev` remains
+0, while the full development audit may report advisories in the Vite/esbuild
+toolchain. Do not run `npm audit fix --force` as part of a docs change.
 
 Two independent targets are built and type-checked: the root app (`package.json`,
 `tsconfig.json`, `vite.config.ts`) and the Sonnet sub-site
