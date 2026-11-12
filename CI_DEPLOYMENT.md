@@ -554,3 +554,48 @@ Live pages after the deployment:
 | `https://jonimoni09.github.io/detailed-3d-sinking-freighter-game/sonnet/` | 200 | 1,001,088 |
 
 The moved files are the three `SKILL.md` files; their contents did not change.
+
+---
+
+## 18. Skill-discovery audit skill (2026-11-12)
+
+The fourth project skill, `skill-discovery-audit`, turns the recurring
+"skill not recognized" investigation into a repeatable checklist: native
+`.agents/skills/` path, YAML frontmatter, exact `/skill:<name>` invocation and
+the session-start reload. `tools/ci_check.py` now requires all four skills.
+
+- Branch: `skills/discovery-audit`, based on `31b54c3`.
+- Fix commit: `4b7480a` — *Add skill discovery audit skill*.
+- Branch CI: run [`43224320242`](https://github.com/JONIMONI09/detailed-3d-sinking-freighter-game/actions/runs/43224320242),
+  commit `4b7480a`, **success**.
+- Merge to `main`: fast-forward `31b54c3..4b7480a`.
+- Main CI: run [`43225088772`](https://github.com/JONIMONI09/detailed-3d-sinking-freighter-game/actions/runs/43225088772),
+  commit `4b7480a`, **success**.
+- GitHub Pages: run [`43225088864`](https://github.com/JONIMONI09/detailed-3d-sinking-freighter-game/actions/runs/43225088864),
+  commit `4b7480a`, **success**.
+- Remote `main` and `FETCH_HEAD` were both at
+  `4b7480a22ba2aac631fb51fc8f05703a30a2d05c` after the merge.
+
+Local gate at this change:
+
+| Check | Result |
+| :--- | :--- |
+| `npm test` | Exit 0: 5/5 physics, 14/14 browser guards, 10/10 Python |
+| Root and Sonnet typechecks | Exit 0 |
+| Root build | 956.10 kB (gzip 251.25 kB), `092f298f…` |
+| Sonnet build (both paths) | 1,001.09 kB (gzip 275.92 kB), `7ea4957d…` |
+| Workflow YAML | Both files parsed with duplicate-key rejection |
+| Skill YAML | 4/4 parsed; names match directories; bodies 3,083–4,976 chars |
+| `npm audit --omit=dev` | 0 vulnerabilities |
+
+The root bundle moved from 956.06 kB/`b5908820…` to 956.10 kB/`092f298f…`;
+the new Markdown skill is the only new source file, and the project-wide
+Tailwind scan is the documented cause of root-only movements (§12). The Sonnet
+bundle is unchanged.
+
+Live pages after the deployment:
+
+| URL | HTTP | Bytes |
+| :--- | :---: | ---: |
+| `https://jonimoni09.github.io/detailed-3d-sinking-freighter-game/` | 200 | 956,096 |
+| `https://jonimoni09.github.io/detailed-3d-sinking-freighter-game/sonnet/` | 200 | 1,001,088 |

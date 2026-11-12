@@ -58,7 +58,7 @@
 - **Issue:** When a skill was missing or a slash command was not recognized, the check depended on memory and the same path and syntax mistakes recurred.
 - **Root Cause:** No project skill encoded the discovery rules: native path, YAML validation, exact `/skill:<name>` invocation and the session-start reload.
 - **Fix:** Added `skill-discovery-audit` under `.agents/skills/`, registered it in `tools/ci_check.py`, and documented it in `README.md` and `CI_DEPLOYMENT.md` §15.
-- **Verified:** The skill parses as YAML, the suite now validates four skills, and `npm test` passes 5/5 physics, 14/14 browser guards and 10/10 Python. Remote evidence is recorded in `CI_DEPLOYMENT.md` §18.
+- **Verified:** The skill parses as YAML, the suite now validates four skills, and `npm test` passes 5/5 physics, 14/14 browser guards and 10/10 Python; branch run `43224320242`, main CI `43225088772` and Pages `43225088864` all **success** on `4b7480a`; root build 956.10 kB/`092f298f…`, Sonnet unchanged; live `/` 200/956,096 and `/sonnet/` 200/1,001,088. See `CI_DEPLOYMENT.md` §18.
 - **Lesson:** Encode discovery checks as a skill so the next missing-command report follows one repeatable path instead of a new guess.
 
 ### [RESOLVED] GitHub Pages Deploy Never Created a Site
