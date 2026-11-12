@@ -18,7 +18,8 @@ Initial deployment fix: `410a321` — *Enable GitHub Pages provisioning*.
 | Sonnet edition TypeScript check | Exit 0, 0 errors |
 | Physics unit tests | Exit 0, 5/5 passed |
 | Browser-guard regression tests | Exit 0, 14/14 passed |
-| Python CI integrity suite | Exit 0, 9/9 passed |
+| Python CI integrity suite | Exit 0, 10/10 passed |
+| Project skills | 3 `SKILL.md` files with YAML frontmatter, validated |
 | Branch CI (`fix/fullscreen-pointer-capture`) | **success**, run `43119185236` |
 | Main CI (`7e54232`) | **success**, run `43119328266` |
 | GitHub Pages deploy (`7e54232`) | **success**, run `43119328360` |
@@ -424,7 +425,8 @@ The live root bundle contains `Enter fullscreen` and
 | `npm ci` | Exit 0, 104 packages |
 | Root `tsc --noEmit` | Exit 0 |
 | Sonnet `tsc --noEmit` | Exit 0 |
-| `npm test` | Exit 0: 5/5 physics, 14/14 browser guards, 9/9 Python |
+| `npm test` | Exit 0: 5/5 physics, 14/14 browser guards, 10/10 Python |
+| Project skills | 3 `SKILL.md` files with valid YAML frontmatter and English guidance |
 | Root build | 956.06 kB (gzip 251.25 kB), `b5908820…` |
 | Sonnet build (both paths) | 1,001.09 kB (gzip 275.92 kB), `7ea4957d…` |
 | Python YAML gate | 31/31 assertions, duplicate keys included |
@@ -434,3 +436,28 @@ The live root bundle contains `Enter fullscreen` and
 The Android crash path at `785x303` is covered by the pointer guard and the
 viewport measurements in §13. Real-device Android verification remains a manual
 hardware check; the Cloud browser uses Chromium with exact-size iframes.
+
+---
+
+## 15. Project skills and recurring workflow (2026-11-12)
+
+Three project-local skills under `.claude/skills/` turn the recurring delivery
+rules into discoverable instructions. Freebuff supports both
+`.claude/skills/` and `.agents/skills/`; the Claude-compatible path is used
+here.
+
+| Skill | Purpose |
+| :--- | :--- |
+| `error-fix-document` | Reproduce, fix the root cause, add fallbacks, add regression tests, update docs, and gate the branch through CI. |
+| `ci-workflow-audit` | Validate workflow YAML with duplicate-key detection, verify branch/Pages triggers, and check the exact-SHA Actions run before merging. |
+| `documentation-maintenance` | Scan for stale claims, keep current and historical results separate, and record commands, hashes, run IDs, and limitations. |
+
+Each `SKILL.md` starts with YAML frontmatter containing `name`, `description`,
+`license`, and `metadata`. Skill names match their directory names, which
+Freebuff requires. The official format is documented at
+<https://docs.freebuff.page/working-with-the-agent/#skills>.
+
+`tools/ci_check.py` now validates the three skill files: presence, YAML
+delimiters, directory/name match, a non-empty description, actionable body
+length, English-only text, and no unfinished markers. `npm test` therefore
+fails if a skill is deleted, renamed, or broken.

@@ -40,6 +40,13 @@
 - **Fix:** The push trigger now includes the `"**"` branch pattern, and `tools/ci_check.py` asserts feature-branch coverage while keeping Pages deployment restricted to `main`. Branch run `43119185236` passed on `7e54232` before the fast-forward merge.
 - **Lesson:** After pushing a branch, query the Actions API and confirm a run exists for that exact SHA. A green local suite and an existing remote branch are not a CI gate.
 
+### [RESOLVED] Recurring Fix and Documentation Workflow Was Only in Conversation
+- **Issue:** Error handling, fallback design, test updates and documentation rules were repeated in prompts but were not discoverable inside the project.
+- **Root Cause:** The process lived only in conversation memory; the repository had no project skills and no validation that skill files stayed intact.
+- **Fix:** Added three English project skills under `.claude/skills/` (`error-fix-document`, `ci-workflow-audit`, `documentation-maintenance`) with valid YAML frontmatter. Added a Python integrity check for presence, names, frontmatter, English text and unfinished markers.
+- **Verified:** `tools/ci_check.py` passes 10/10, skill frontmatter parses as YAML, and the skills are included in the same branch and CI gate as the code.
+- **Lesson:** Encode recurring quality rules as tested, discoverable skills instead of relying on the next conversation remembering them.
+
 ### [RESOLVED] GitHub Pages Deploy Never Created a Site
 - **Issue:** The Pages workflow never published a site; the project URL stayed blank or 404.
 - **Root Cause:** `actions/configure-pages` ran without `enablement`, so the job aborted whenever no Pages site existed; no `github-pages` environment was declared; and a branch-based Pages source would serve the raw `index.html`, which references `/src/main.tsx` and has no compiled CSS.

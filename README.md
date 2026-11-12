@@ -69,6 +69,7 @@ tests for them.
 
 ```text
 ├── .agent/                             # Antigravity Rules, Workflows & LEARNING.md
+├── .claude/skills/                     # Project skills (quality, CI, documentation)
 ├── CI_DEPLOYMENT.md                    # CI & GitHub Pages verification record
 ├── RESPONSIVE_UI.md                    # Responsive HUD & landscape layout record
 ├── detailed-3d-sinking-freighter-game_sonnet/ # Alternative / Sub-workspace Edition
@@ -141,12 +142,28 @@ geometry and physics; details are in [CI_DEPLOYMENT.md](CI_DEPLOYMENT.md) §12.
 Layout harness (dev server): `/tools/hud-preview.html?w=844&h=390`.
 Details and measurements: [RESPONSIVE_UI.md](RESPONSIVE_UI.md).
 
+### Agent skills
+
+Three project skills under `.claude/skills/` encode the recurring workflow:
+reproduce, fix the root cause, add a fallback and regression tests, update the
+English documentation, and verify the feature branch through CI. Freebuff also
+discovers `.agents/skills/`; these skills follow the official
+[Freebuff skills format](https://docs.freebuff.page/working-with-the-agent/#skills)
+and the [SKILL.md template](https://github.com/CodebuffAI/freebuff/blob/main/common/src/templates/initial-agents-dir/skills/README.md).
+
+- `error-fix-document` — bug and incident workflow with fallback and docs.
+- `ci-workflow-audit` — YAML validation, exact-SHA CI gate and Pages checks.
+- `documentation-maintenance` — stale-claim scan and evidence recording.
+
+`tools/ci_check.py` validates their presence, names, YAML frontmatter and
+English guidance.
+
 ---
 
 ## 🚀 CI & GitHub Pages Deployment
 
 Both editions are verified on every feature-branch push and on every push to
-`main`. `npm test` runs 5 physics tests, 14 browser-guard tests and 9 Python
+`main`. `npm test` runs 5 physics tests, 14 browser-guard tests and 10 Python
 integrity checks; CI invokes the same command:
 
 ```bash

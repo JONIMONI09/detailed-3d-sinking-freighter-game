@@ -106,6 +106,55 @@ def check_test_suite_wiring():
     log("Physics, browser-guard and Python suites are wired into npm test.", "PASS")
     return True
 
+def check_project_skills():
+    log("Verifying project skills...")
+    skills_dir = WORKSPACE / ".claude" / "skills"
+    required = [
+        "error-fix-document",
+        "ci-workflow-audit",
+        "documentation-maintenance",
+    ]
+
+    if not skills_dir.exists():
+        log(".claude/skills directory is missing!", "FAIL")
+        return False
+
+    for name in required:
+        path = skills_dir / name / "SKILL.md"
+        if not path.exists():
+            log(f"Skill '{name}' is missing its SKILL.md!", "FAIL")
+            return False
+
+        text = path.read_text(encoding="utf-8")
+        if not text.startswith("---\n"):
+            log(f"Skill '{name}' does not start with YAML frontmatter.", "FAIL")
+            return False
+
+        parts = text.split("---", 2)
+        if len(parts) != 3:
+            log(f"Skill '{name}' has incomplete YAML frontmatter.", "FAIL")
+            return False
+
+        frontmatter, body = parts[1], parts[2].strip()
+        if not re.search(rf"^name:\s*{re.escape(name)}\s*$", frontmatter, re.MULTILINE):
+            log(f"Skill '{name}' frontmatter name does not match its directory.", "FAIL")
+            return False
+        if not re.search(r"^description:\s*\S", frontmatter, re.MULTILINE):
+            log(f"Skill '{name}' has no description.", "FAIL")
+            return False
+        if len(body) < 200:
+            log(f"Skill '{name}' body is too short to be actionable.", "FAIL")
+            return False
+        if re.search(r"[äöüÄÖÜß]", text):
+            log(f"Skill '{name}' contains non-English umlauts.", "FAIL")
+            return False
+        if re.search(r"\b(?:TODO|FIXME):", text):
+            log(f"Skill '{name}' contains unfinished markers.", "FAIL")
+            return False
+
+    log("Project skills have valid frontmatter and complete English guidance.", "PASS")
+    return True
+
 def check_branch_ci_trigger():
     log("Verifying CI covers feature branches before merge...")
     ci_path = WORKSPACE / ".github" / "workflows" / "ci.yml"
@@ -223,6 +272,7 @@ def main():
         check_workflows,
         check_branch_ci_trigger,
         check_test_suite_wiring,
+        check_project_skills,
         check_engine_room_collision_clearance,
         check_physics_torricelli_math,
         check_bending_moment_math,
