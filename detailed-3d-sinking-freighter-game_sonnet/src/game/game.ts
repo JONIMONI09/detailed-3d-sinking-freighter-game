@@ -234,7 +234,7 @@ export class Game {
   private onLockChange = () => {
     this.lockOk = document.pointerLockElement === this.renderer?.domElement;
     this.input.locked = this.lockOk;
-    if (!this.lockOk && this.running && !this.paused && !this.dead && !this.escapeState && !this.dragMode && !this.isTouch()) this.cb.onPause();
+    if (!this.lockOk && this.running && !this.paused && !this.dead && !this.escapeState && !this.dragMode && !this.tabletOpen && !this.isTouch()) this.cb.onPause();
   };
   private onLockError = () => {
     this.dragMode = true;
@@ -1087,12 +1087,16 @@ export class Game {
   toggleTablet(force?: boolean) {
     this.tabletOpen = force ?? !this.tabletOpen;
     this.audio.click();
-    if (this.tabletOpen && document.pointerLockElement) {
-      try {
-        document.exitPointerLock();
-      } catch {
-        /* ignore */
+    if (this.tabletOpen) {
+      if (document.pointerLockElement) {
+        try {
+          document.exitPointerLock();
+        } catch {
+          /* ignore */
+        }
       }
+    } else if (!this.paused && !this.isTouch()) {
+      this.requestLock();
     }
   }
 
