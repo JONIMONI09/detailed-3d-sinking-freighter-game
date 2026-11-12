@@ -1258,9 +1258,12 @@ export class Game {
   }
 
   switchVessel() {
-    if (!this.battleships.length) {
-      this.say("No Battleship spawned in this mode.", "warn");
+    if (this.theatre === "orbital") {
+      this.say("Return to Ocean first to command ships.", "warn");
       return;
+    }
+    if (!this.battleships.length) {
+      this.spawnExtraBattleship();
     }
     const bs = this.battleships[0];
     if (this.activeVessel === "freighter") {
