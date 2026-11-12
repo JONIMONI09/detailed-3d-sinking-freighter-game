@@ -956,11 +956,13 @@ export class Game {
         if (inp.keys.has("KeyW") || inp.keys.has("ArrowUp")) this.orbitalAimZ -= panSpd;
         if (inp.keys.has("KeyS") || inp.keys.has("ArrowDown")) this.orbitalAimZ += panSpd;
         if (inp.keys.has("Equal") || inp.keys.has("NumpadAdd") || inp.keys.has("KeyQ")) {
-          this.orbitalZoomFov = Math.max(8, this.orbitalZoomFov - 38 * dt);
+          this.orbitalZoomFov = Math.max(8, this.orbitalZoomFov - 42 * dt);
         }
         if (inp.keys.has("Minus") || inp.keys.has("NumpadSubtract") || inp.keys.has("KeyZ")) {
-          this.orbitalZoomFov = Math.min(72, this.orbitalZoomFov + 38 * dt);
+          this.orbitalZoomFov = Math.min(72, this.orbitalZoomFov + 42 * dt);
         }
+        if (inp.pressed("prev")) this.orbitalZoomFov = Math.max(8, this.orbitalZoomFov - 7);
+        if (inp.pressed("next")) this.orbitalZoomFov = Math.min(72, this.orbitalZoomFov + 7);
         if (inp.fire) this.fireOrbitalDeathRay();
         if (inp.pressed("interact")) this.toggleOrbitalLaser(false);
       }
@@ -1577,31 +1579,85 @@ export class Game {
       coreMat.dispose();
     }, 380);
 
-    this.audio.explosion(1.6, 10);
-    this.shake = Math.max(this.shake, 0.9);
+    this.audio.explosion(2.2, 14);
+    this.shake = Math.max(this.shake, 1.4);
     const hitPos = V(tx, 1.5, tz);
-    this.pn.emit(tx, 2.5, tz, 0, 14, 0, 10, 0.4, 2.2, 0.2, 0.85, 1.0, 0.95, -2, 1.4);
-    this.pa.emit(tx, 1.5, tz, 0, 9, 0, 12, 0.5, 2.4, 1.0, 0.5, 0.12, 0.9, -1, 1.1);
+    // Massive Orbital Fireball, Plasma Plume & Expanding Shockwave Ring
+    const ringGeo = new THREE.RingGeometry(2, 5.5, 32);
+    ringGeo.rotateX(-Math.PI / 2);
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, side: THREE.DoubleSide, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.position.set(tx, 1.2, tz);
+    this.scene.add(ring);
+    let rScale = 1;
+    const ringInt = setInterval(() => {
+      rScale += 1.6;
+      ring.scale.set(rScale, 1, rScale);
+      ringMat.opacity = Math.max(0, ringMat.opacity - 0.08);
+      if (ringMat.opacity <= 0) {
+        clearInterval(ringInt);
+        this.scene.remove(ring);
+        ringGeo.dispose();
+        ringMat.dispose();
+      }
+    }, 30);
+
+    for (let i = 0; i < 36; i++) {
+      this.pa.emit(
+        tx + (Math.random() - 0.5) * 14,
+        1.5 + Math.random() * 4,
+        tz + (Math.random() - 0.5) * 14,
+        (Math.random() - 0.5) * 26,
+        8 + Math.random() * 24,
+        (Math.random() - 0.5) * 26,
+        4.5 + Math.random() * 4,
+        0.7,
+        1.8,
+        1.0,
+        0.52,
+        0.1,
+        0.95,
+        -1.5,
+        1.2,
+      );
+      this.pn.emit(
+        tx + (Math.random() - 0.5) * 16,
+        2 + Math.random() * 6,
+        tz + (Math.random() - 0.5) * 16,
+        (Math.random() - 0.5) * 18,
+        12 + Math.random() * 22,
+        (Math.random() - 0.5) * 18,
+        6 + Math.random() * 5,
+        0.5,
+        2.6,
+        0.15,
+        0.15,
+        0.18,
+        0.85,
+        -2,
+        1.4,
+      );
+    }
     if (this.activeFires.length < 18) {
       this.activeFires.push({ pos: hitPos.clone(), life: 25, spreadCd: 2.0 });
     }
 
-    // Check Freighter hit -> shatter into 300 pieces & trigger sinking!
+    // Check Freighter hit -> shatter into 340 pieces & trigger sinking!
     const shipDist = Math.hypot(tx - this.ship.group.position.x, tz - this.ship.group.position.z);
-    if (shipDist < 68 && this.ship.group.visible) {
-      this.shatterIntoPieces(this.ship.group.position.clone().add(V(0, 4, 0)), 0x475569, 260);
+    if (shipDist < 75 && this.ship.group.visible) {
+      this.shatterIntoPieces(this.ship.group.position.clone().add(V(0, 4, 0)), 0x475569, 340);
       this.ship.group.visible = false;
       this.sim.sunk = true;
       for (const c of this.ship.compartments) c.fill = 1;
       this.say("☄️ ORBITAL DEATH RAY OBLITERATED FREIGHTER NORDWIND!", "alert");
     }
 
-    // Check Battleships -> shatter into 220 pieces!
+    // Check Battleships -> shatter into 240 pieces!
     for (const bs of this.battleships) {
       if (!bs.group.visible) continue;
       const d = Math.hypot(tx - bs.baseX, tz - bs.baseZ);
-      if (d < 48) {
-        this.shatterIntoPieces(bs.group.position.clone().add(V(0, 3, 0)), 0x64748b, 200);
+      if (d < 55) {
+        this.shatterIntoPieces(bs.group.position.clone().add(V(0, 3, 0)), 0x64748b, 240);
         bs.group.visible = false;
         bs.sunk = true;
         bs.hp = 0;
@@ -2894,17 +2950,22 @@ export class Game {
       return;
     }
     if (this.orbitalLaserMode) {
-      if (Math.abs(cam.fov - this.orbitalZoomFov) > 0.05) {
-        cam.fov = this.orbitalZoomFov;
+      this.vm.group.visible = false;
+      const zoomT = Math.max(0, Math.min(1, (this.orbitalZoomFov - 8) / (72 - 8)));
+      const camY = 34 + zoomT * (STATION_BASE_Y - 46);
+      const targetFov = 36 + zoomT * 34;
+      if (Math.abs(cam.fov - targetFov) > 0.05) {
+        cam.fov = targetFov;
         cam.updateProjectionMatrix();
       }
-      cam.position.set(this.orbitalAimX, STATION_BASE_Y - 12, this.orbitalAimZ);
+      cam.position.set(this.orbitalAimX, camY, this.orbitalAimZ);
       const lookTarget = V(this.orbitalAimX, 0, this.orbitalAimZ);
       const m = new THREE.Matrix4().lookAt(cam.position, lookTarget, V(0, 0, -1));
       cam.quaternion.setFromRotationMatrix(m);
       cam.updateMatrixWorld(true);
       return;
     }
+    this.vm.group.visible = this.activeVessel !== "battleship";
     if (Math.abs(cam.fov - st.fov) > 0.05) {
       cam.fov = st.fov;
       cam.updateProjectionMatrix();
@@ -2977,7 +3038,9 @@ export class Game {
     const depthDark = under ? 0.45 : 1;
     this.hemi.intensity = (env.hemiIntensity * (1 - 0.75 * ind) + 0.1 * ind + this.lightning * 2.5) * depthDark;
     const spaceMix = Math.max(0, Math.min(1, (cam.position.y - 60) / 140));
-    const fogD = 0.0016 * (1.15 - st.viewDistance) * (1 + env.storm * 1.2) * (1 - spaceMix * 0.85);
+    const fogD = this.orbitalLaserMode
+      ? 0.00025
+      : 0.0016 * (1.15 - st.viewDistance) * (1 + env.storm * 1.2) * (1 - spaceMix * 0.85);
     const spaceColor = new THREE.Color(0x02040a);
     const fogC = under
       ? new THREE.Color(0.02, 0.2, 0.28).multiplyScalar(0.4 + 0.6 * env.night * 0 + 0.6)
