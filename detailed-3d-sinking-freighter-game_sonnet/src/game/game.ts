@@ -787,7 +787,7 @@ export class Game {
     const ev = p.update(
       dt,
       inp,
-      { world: this.ship.world, slide: this.sim.tiltDeg > 6 ? this.sim.slideVector() : [0, 0], water: this.waterAt, sens: st.sens, touchSens: st.touchSens, invertY: st.invertY },
+      { world: this.ship.world, slide: this.sim.tiltDeg > 6 ? this.sim.slideVector() : [0, 0], water: this.waterAt, sens: st.sens, touchSens: st.touchSens, invertY: st.invertY, noclip: this.supervisor.isNoclip() },
       controls,
     );
     if (this.helmMode) this.handleHelm(dt);
@@ -805,8 +805,8 @@ export class Game {
     if (b.y < -25 || !isFinite(b.x + b.y + b.z)) {
       this.damagePlayer(1000, "fell out of the world");
     }
-    // Sicherheitsnetz: Schiff verlassen / außerhalb der Welt -> zurück an Deck
-    if (controls && (Math.abs(b.x) > 13.5 || b.z < -72 || b.z > 72 || b.y > 25)) {
+    // Sicherheitsnetz: Schiff verlassen / außerhalb der Welt -> zurück an Deck (ausgesetzt bei Noclip-Flug)
+    if (controls && !this.supervisor.isNoclip() && (Math.abs(b.x) > 13.5 || b.z < -72 || b.z > 72 || b.y > 25)) {
       p.teleport(9.8, DECK_Y, -42, Math.PI);
       this.say("Placed back on deck.", "warn");
     }

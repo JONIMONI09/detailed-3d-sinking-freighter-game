@@ -9,6 +9,7 @@ export interface PlayerCtx {
   sens: number;
   touchSens: number;
   invertY: boolean;
+  noclip?: boolean;
 }
 
 export interface PlayerEvents {
@@ -71,6 +72,26 @@ export class Player {
       this.pitch = Math.max(-1.5, Math.min(1.5, this.pitch));
     }
     if (this.yaw > Math.PI * 2 || this.yaw < -Math.PI * 2) this.yaw %= Math.PI * 2;
+
+    if (ctx.noclip && controls) {
+      const m = input.move();
+      const flySpeed = input.sprint ? 24 : 11;
+      const fx = -Math.sin(this.yaw) * Math.cos(this.pitch);
+      const fy = Math.sin(this.pitch);
+      const fz = -Math.cos(this.yaw) * Math.cos(this.pitch);
+      const rx = Math.cos(this.yaw);
+      const rz = -Math.sin(this.yaw);
+      const vy = (input.jump ? 1 : 0) - (input.crouch ? 1 : 0);
+      b.vx = (fx * -m.y + rx * m.x) * flySpeed;
+      b.vy = (fy * -m.y + vy) * flySpeed;
+      b.vz = (fz * -m.y + rz * m.x) * flySpeed;
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+      b.z += b.vz * dt;
+      b.onGround = false;
+      this.speed = Math.hypot(b.vx, b.vy, b.vz);
+      return ev;
+    }
 
     // --- Wasser
     const eyeY = b.y + 1.62 - this.crouch * 0.62;
