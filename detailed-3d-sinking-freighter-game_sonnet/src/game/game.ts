@@ -21,6 +21,7 @@ import { shouldWindowBurst } from "./ingress";
 import { v3 } from "./navmesh3d";
 import { CrewVisual } from "./crewVisual";
 import { Battleship, createBattleship, stepBattleship, damageBattleship, fireBattleshipSalvo } from "./battleships";
+import { OrbitalSpaceStationSim, STATION_BASE_Y } from "./spaceStation";
 
 export type Mode = "mission" | "sandbox";
 
@@ -84,6 +85,7 @@ export interface HudState {
   freighterDist: number;
   battleshipCount: number;
   fleetBattle: boolean;
+  theatre: "maritime" | "orbital";
 }
 
 export interface EndInfo {
@@ -235,6 +237,8 @@ export class Game {
   bsTorpCd = 0;
   bsMissileCd = 0;
   fleetBattle = false;
+  theatre: "maritime" | "orbital" = "maritime";
+  spaceStation!: OrbitalSpaceStationSim;
   navalProjectiles: { mesh: THREE.Mesh; pos: THREE.Vector3; vel: THREE.Vector3; kind: "shell" | "torpedo" | "missile"; life: number; ownerIdx?: number }[] = [];
   engineExploded = false;
   private tmpV = V();
@@ -343,6 +347,7 @@ export class Game {
     this.ship.group.add(this.ship.holeGroup);
     this.sim = new ShipSim(this.ship.group, this.ship.compartments);
     this.supervisor = new StormworksSupervisor(this.sim, this.ship.compartments, this.ship.doors);
+    this.spaceStation = new OrbitalSpaceStationSim(this.scene, this.ship.world);
     this.ship.doors.forEach((d) => {
       d.onEvent = (e, door) => {
         const pos = this.posAudio(door.center);
@@ -750,7 +755,18 @@ export class Game {
     this.ship.group.position.addScaledVector(forward, this.supervisor.helm.speed * dt);
     this.ship.group.updateMatrixWorld(true);
 
-    // Step walkable Battleships & rotating turrets
+    // Step Orbital Space Station (0 CPU when inactive)
+    this.spaceStation.step(dt, t, false);
+
+    // Step walkable Battleships & rotating turrets (skipped in Orbital Space mode)
+    if (this.theatre === "orbital") {
+      this.ship.group.visible = false;
+      this.ocean.mesh.visible = false;
+      for (const bs of this.battleships) bs.group.visible = false;
+    } else {
+      this.ocean.mesh.visible = true;
+      for (const bs of this.battleships) bs.group.visible = true;
+    }
     const bsPlayerControlled = this.activeVessel === "battleship" && !this.tabletOpen;
     const bsAimDir = V(-Math.sin(this.player.yaw) * Math.cos(this.player.pitch), Math.sin(this.player.pitch), -Math.cos(this.player.yaw) * Math.cos(this.player.pitch)).normalize();
     const freighterTarget = this.ship.group.position.clone().add(V(0, 3, -10));
@@ -947,19 +963,31 @@ export class Game {
       this.audio.step("metal", 1.4);
       if (ev.landed < -13) this.damagePlayer((-ev.landed - 13) * 9, "fall from a great height");
     }
-    // Sicherheitsnetz: aus der Welt gefallen
-    if (b.y < -25 || !isFinite(b.x + b.y + b.z)) {
-      this.damagePlayer(1000, "fell out of the world");
-    }
-    // Sicherheitsnetz: Schiff verlassen (außer wenn auf einem begehbaren Battleship-Deck)
-    const onAnyBsDeck = this.battleships.some((bs) => {
-      const wx = b.x + this.ship.group.position.x;
-      const wz = b.z + this.ship.group.position.z;
-      return Math.abs(wx - bs.baseX) <= bs.deckBounds.maxX + 1 && Math.abs(wz - bs.baseZ) <= bs.deckBounds.maxZ + 1;
-    });
-    if (controls && !this.supervisor.isNoclip() && !onAnyBsDeck && (Math.abs(b.x) > 13.5 || b.z < -72 || b.z > 72 || b.y > 25)) {
-      p.teleport(9.8, DECK_Y, -42, Math.PI);
-      this.say("Placed back on deck.", "warn");
+    // Sicherheitsnetz: Orbital Space Station vs Maritime Ship
+    if (this.theatre === "orbital") {
+      if (!this.supervisor.isNoclip() && (b.y < STATION_BASE_Y - 12 || Math.abs(b.x) > 40 || Math.abs(b.z) > 85 || !isFinite(b.x + b.y + b.z))) {
+        b.vx = 0;
+        b.vy = 0;
+        b.vz = 0;
+        b.onGround = true;
+        p.teleport(0, STATION_BASE_Y + 0.35, 0, 0);
+        this.say("Returned to Space Station Airlock.", "info");
+      }
+    } else {
+      // Sicherheitsnetz: aus der Welt gefallen
+      if (b.y < -25 || !isFinite(b.x + b.y + b.z)) {
+        this.damagePlayer(1000, "fell out of the world");
+      }
+      // Sicherheitsnetz: Schiff verlassen (außer wenn auf einem begehbaren Battleship-Deck)
+      const onAnyBsDeck = this.battleships.some((bs) => {
+        const wx = b.x + this.ship.group.position.x;
+        const wz = b.z + this.ship.group.position.z;
+        return Math.abs(wx - bs.baseX) <= bs.deckBounds.maxX + 1 && Math.abs(wz - bs.baseZ) <= bs.deckBounds.maxZ + 1;
+      });
+      if (controls && !this.supervisor.isNoclip() && !onAnyBsDeck && (Math.abs(b.x) > 13.5 || b.z < -72 || b.z > 72 || b.y > 25)) {
+        p.teleport(9.8, DECK_Y, -42, Math.PI);
+        this.say("Placed back on deck.", "warn");
+      }
     }
     // Sauerstoff
     if (p.submerged && p.alive) {
@@ -1383,6 +1411,35 @@ export class Game {
     this.battleships.push(bs);
     this.audio.click();
     this.say(`Spawned Battleship #${idx + 1} (Walkable deck, Twin Turrets)!`, "good");
+  }
+
+  toggleTheatre(target?: "maritime" | "orbital") {
+    const next = target ?? (this.theatre === "maritime" ? "orbital" : "maritime");
+    this.theatre = next;
+    this.spaceStation.active = next === "orbital";
+    this.spaceStation.root.visible = next === "orbital";
+    this.activeVessel = "freighter";
+    this.helmMode = false;
+    this.player.body.vx = 0;
+    this.player.body.vy = 0;
+    this.player.body.vz = 0;
+    this.player.body.onGround = true;
+    if (next === "orbital") {
+      this.ship.group.visible = false;
+      this.ocean.mesh.visible = false;
+      for (const bs of this.battleships) bs.group.visible = false;
+      this.player.teleport(0, STATION_BASE_Y + 0.35, 0, 0);
+      this.say("🛰️ HYPERION-9 Orbital Space Station: Ships hidden, full orbital gravity!", "good");
+    } else {
+      this.ship.group.visible = true;
+      this.ocean.mesh.visible = true;
+      for (const bs of this.battleships) bs.group.visible = true;
+      this.player.teleport(9.8, DECK_Y + 0.3, -42, Math.PI);
+      this.say("⚓ Returned to Maritime Ocean Theatre.", "info");
+    }
+    this.audio.click();
+    if (this.tabletOpen) this.toggleTablet(false);
+    else if (!this.paused && !this.isTouch()) this.requestLock();
   }
 
   toggleFleetBattle() {
@@ -2682,12 +2739,13 @@ export class Game {
     eye.y += bobY + shk.y;
     const lookRight = V(Math.cos(p.yaw), 0, -Math.sin(p.yaw));
     eye.addScaledVector(lookRight, bobX + shk.x);
-    const ew = this.worldPos(eye, V());
+    const ew = this.theatre === "orbital" ? eye : this.worldPos(eye, V());
     cam.position.copy(ew);
     const lean = Math.sin(p.bob) * 0.004 * (p.speed > 1 ? 1 : 0);
     this.tmpE.set(p.pitch + (Math.random() - 0.5) * 0.02 * sk, p.yaw + (Math.random() - 0.5) * 0.02 * sk, lean + fall * 1.2 + (Math.random() - 0.5) * 0.02 * sk, "YXZ");
     this.tmpQ.setFromEuler(this.tmpE);
-    cam.quaternion.copy(this.ship.group.quaternion).multiply(this.tmpQ);
+    if (this.theatre === "orbital") cam.quaternion.copy(this.tmpQ);
+    else cam.quaternion.copy(this.ship.group.quaternion).multiply(this.tmpQ);
     cam.updateMatrixWorld(true);
   }
 
@@ -2891,6 +2949,7 @@ export class Game {
         : 0,
       battleshipCount: this.battleships.length,
       fleetBattle: this.fleetBattle,
+      theatre: this.theatre,
     };
     this.cb.onHud(hud);
   }

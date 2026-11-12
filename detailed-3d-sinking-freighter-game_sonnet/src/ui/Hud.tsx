@@ -456,6 +456,12 @@ export default function Hud({ h, settings, touch, game }: { h: HudState; setting
               <button onClick={() => game.remoteCycleFlood()} className="rounded-lg border border-blue-400/30 bg-blue-900/40 py-2 hover:bg-blue-800/50">
                 🌊 Cycle Flood Rate [F]
               </button>
+              <button
+                onClick={() => game.toggleTheatre()}
+                className="col-span-2 rounded-lg border border-indigo-400/50 bg-indigo-700/40 py-2 text-indigo-100 hover:bg-indigo-600/50"
+              >
+                {h.theatre === "orbital" ? "⚓ Return to Ocean / Ships" : "🛰️ Enter Orbital Space Station (No Ships)"}
+              </button>
             </div>
           </div>
         </div>
