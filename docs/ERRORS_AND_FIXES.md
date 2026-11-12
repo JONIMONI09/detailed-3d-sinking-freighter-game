@@ -180,6 +180,53 @@ Use exact commands and real run IDs when they exist.
 - Related files / skills: `.github/workflows/ci.yml`,
   `tools/check_skill_docs.py`, `ci-workflow-audit`, `skill-index`.
 
+### ERR-2026-11-12-08 - Creative skills existed only as Account copies
+
+- Date (Europe/Berlin): 2026-11-12
+- Area: Skill governance
+- Status: Resolved
+- Symptom: `brainstorming` and `skill-creator` were available as Account skills
+  and described in `docs/SKILLS.md`, but had no project copy under
+  `.agents/skills/`. The index called them Account-only, and the Python gates
+  required only five project skills.
+- Root cause: The first governance pass treated the two upstream creative skills
+  as external Account content. The user had explicitly asked for them to be
+  improved, so referencing them from the index was not enough.
+- Solution: Added full project skills with improved procedures, registered both
+  names in `tools/ci_check.py` and `tools/check_skill_docs.py`, updated the
+  index, README, AGENTS.md, and the Account copies, and added the index date and
+  path consistency checks.
+- Verification: `npm run docs:check` and `npm test` pass; `npx skills list`
+  shows all seven project skills, including both creative skills. The branch
+  and live gate are recorded in `CI_DEPLOYMENT.md` section 24.
+- Prevention: `skill-creator` now requires a project copy, an index row with a
+  matching date, both Python registries, and an Account copy. The documentation
+  gate rejects a project skill without an index row or with a mismatched date.
+- Related files / skills: `.agents/skills/brainstorming/SKILL.md`,
+  `.agents/skills/skill-creator/SKILL.md`, `docs/SKILLS.md`,
+  `tools/check_skill_docs.py`, `skill-index`.
+
+### ERR-2026-11-12-09 - Index path checker treated a glob as a file
+
+- Date (Europe/Berlin): 2026-11-12
+- Area: Documentation gate
+- Status: Resolved
+- Symptom: `python tools/check_skill_docs.py --no-codegraph` failed with
+  `docs/SKILLS.md points at a missing path: .agents/skills/*/SKILL.md`, although
+  the path was only the wildcard example in the documentation map.
+- Root cause: The new path validator scanned every backticked
+  `.agents/skills/.../SKILL.md` string and tried to open the literal wildcard as
+  a file.
+- Solution: Skip entries containing `*` or `<` before checking filesystem
+  existence. Concrete index paths are still checked.
+- Verification: The offline gate passes again and reports the changed paths;
+  the full CodeGraph gate passes before delivery.
+- Prevention: The validator distinguishes a documentation pattern from a
+  concrete skill path; `skill-creator` tells authors to use a concrete path in
+  table rows.
+- Related files / skills: `tools/check_skill_docs.py`, `docs/SKILLS.md`,
+  `skill-index`.
+
 ## Open incidents
 
 None at this revision. Add a new entry before merging any future fix, even when

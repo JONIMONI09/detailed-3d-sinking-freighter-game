@@ -29,28 +29,35 @@ account skills or type the exact name.
 | `documentation-maintenance` | Project + Account | `.agents/skills/documentation-maintenance/SKILL.md`; Settings -> Skills | `/documentation-maintenance` | 2026-11-12 | Stale-claim scan and evidence recording |
 | `ci-workflow-audit` | Project + Account | `.agents/skills/ci-workflow-audit/SKILL.md`; Settings -> Skills | `/ci-workflow-audit` | 2026-11-12 | Workflow YAML, exact-SHA CI, Pages gate |
 | `skill-discovery-audit` | Project + Account | `.agents/skills/skill-discovery-audit/SKILL.md`; Settings -> Skills | `/skill-discovery-audit` | 2026-11-12 | Discovery paths, client invocation, reload rules |
-| `brainstorming` | Account | Settings -> Skills | `/brainstorming` | 2026-11-12 reviewed | Design conversation before creative work |
+| `brainstorming` | Project + Account | `.agents/skills/brainstorming/SKILL.md`; Settings -> Skills | `/brainstorming` | 2026-11-12 | Divergence/convergence procedure ending in a decided next step |
 | `find-skills` | Account | Settings -> Skills | `/find-skills` | 2026-11-12 reviewed | Public skill-catalog search |
-| `skill-creator` | Account | Settings -> Skills | `/skill-creator` | 2026-11-12 reviewed | Create and improve skills with evals |
+| `skill-creator` | Project + Account | `.agents/skills/skill-creator/SKILL.md`; Settings -> Skills | `/skill-creator` | 2026-11-12 | Authoring checklist, registration map, and verification gate |
 | `web-design-guidelines` | Account | Settings -> Skills | `/web-design-guidelines` | 2026-11-12 reviewed | UI review heuristics |
 | `performance` | Account | Settings -> Skills | `/performance` | 2026-11-12 reviewed | Web performance guidance |
 | `github-actions-docs` | Account | Settings -> Skills | `/github-actions-docs` | 2026-11-12 reviewed | Official GitHub Actions guidance |
 
-The five project skills also have Account copies because the web Cloud client
+The seven project skills also have Account copies because the web Cloud client
 does not read `.agents/skills/`. Update the project file first, then save the
-same instructions to the Account copy. Do not maintain two different versions
-with the same name.
+same procedure to the Account copy. The project file is canonical; do not
+maintain two different versions with the same name. Every
+`.agents/skills/*/SKILL.md` must have a row in this table with the same
+`metadata.last_updated` date, and every path in this table must exist.
 
 ## How to use the two creative skills
 
 ### `/brainstorming`
 
 Use it before creative or ambiguous work: a feature, a layout, a new workflow,
-or a change whose success criteria are not agreed. Read the existing repository
-and this index first. Ask only questions whose answers would change what gets
-built. When the user has already supplied a detailed mission and wants
-implementation, record the assumptions in the delivery notes and move forward;
-do not reopen decisions already made.
+or a change whose success criteria are not agreed. The project procedure is
+`.agents/skills/brainstorming/SKILL.md`; the Account copy mirrors it for the web
+client.
+
+The procedure is opinionated: read the repository first, choose discovery or
+convergence, generate two or three genuinely different options, recommend one,
+ask at most one build-changing question, and close with a decision, assumptions,
+non-goals, and one executable next action. When the user has already supplied a
+detailed mission and wants implementation, record the assumptions in the
+delivery notes and move forward; do not reopen decisions already made.
 
 Record a design decision in the same branch as the implementation when the
 change is project-sized. The relevant evidence belongs in
@@ -58,17 +65,20 @@ change is project-sized. The relevant evidence belongs in
 
 ### `/skill-creator`
 
-Use it to create or revise a skill. For this repository:
+Use it to create or revise a skill. The complete authoring procedure is
+`.agents/skills/skill-creator/SKILL.md`; the Account copy mirrors it for the web
+client. For this repository:
 
 1. Put the canonical skill in `.agents/skills/<name>/SKILL.md`.
 2. Use a lowercase hyphenated name; it must match the directory.
 3. Give the description both the what and the when, including likely trigger
    words.
 4. Keep the body actionable and under about 500 lines.
-5. Add `metadata.last_updated: YYYY-MM-DD`.
-6. Add the skill to this file and to `tools/ci_check.py` when it is a required
-   project skill.
-7. Save the same instructions as an Account skill for the web client.
+5. Add `metadata.last_updated: YYYY-MM-DD` from
+   `TZ=Europe/Berlin date +%F`.
+6. Add the row to this file with the same date, and add the name to both
+   `tools/ci_check.py` and `tools/check_skill_docs.py` when it is mandatory.
+7. Save the same procedure as an Account skill for the web client.
 8. Run `npm run docs:check` and the full local gate.
 9. Do not create a second skill with the same name to fix a client search.
 
@@ -139,7 +149,8 @@ npm test
 npx tsc --noEmit
 npx tsc -p detailed-3d-sinking-freighter-game_sonnet/tsconfig.json --noEmit
 npx vite build
-npx vite build detailed-3d-sinking-freighter-game_sonnet
+npx vite build detailed-3d-sinking-freighter-game_sonnet --outDir ../dist/sonnet --base ./
+npx skills list
 ```
 
 10. Push the feature branch and verify the exact-SHA CI run. Merge only after

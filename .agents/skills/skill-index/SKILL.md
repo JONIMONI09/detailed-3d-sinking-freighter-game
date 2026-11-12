@@ -38,11 +38,18 @@ second name just to make a picker search return more rows.
 
 ## The two creative skills
 
+Both are now full project skills and also have Account copies for the web
+client. The project files are canonical locally:
+
+- `.agents/skills/brainstorming/SKILL.md`
+- `.agents/skills/skill-creator/SKILL.md`
+
 `/brainstorming` is for finding out what to build before building it. Read the
-repository and the existing docs first. Ask only questions whose answers change
-the work. If the user has already given a detailed mission and asked for
-implementation, state the material assumptions in the delivery evidence and
-proceed; do not reopen settled decisions.
+repository and the existing docs first. Choose discovery or convergence, ask
+only questions whose answers change the work, generate real alternatives, and
+close with a decision and one next step. If the user has already given a
+detailed mission and asked for implementation, state the material assumptions in
+the delivery evidence and proceed; do not reopen settled decisions.
 
 `/skill-creator` is for writing or revising a skill. Follow this sequence:
 
@@ -53,12 +60,15 @@ proceed; do not reopen settled decisions.
 3. Keep the body actionable and under about 500 lines. Move large references
    into `references/`.
 4. Add `metadata.last_updated: YYYY-MM-DD`.
-5. Add the name to the tables in `docs/SKILLS.md` and to the required list in
-   `tools/ci_check.py` when it is a project-required skill.
-6. Save the complete instructions as an Account skill if the web client must
-   use it.
-7. Run `npm run docs:check`, the typechecks, the tests, and the builds.
-8. Push a feature branch and verify the exact-SHA CI run before merging.
+5. Add the name and matching date to the table in `docs/SKILLS.md`, and add it
+   to `REQUIRED_SKILLS` in both `tools/ci_check.py` and
+   `tools/check_skill_docs.py` when it is mandatory.
+6. Save the complete procedure as an Account skill if the web client must use
+   it. The project file stays canonical.
+7. Run `npm run docs:check`, the typechecks, the tests, the builds, and
+   `npx skills list`.
+8. Push a feature branch with the branch explicit and verify the exact-SHA CI
+   run before merging.
 
 The full upstream `skill-creator` evaluation viewer is optional in this
 headless Cloud environment. Use focused prompts and inspect the resulting

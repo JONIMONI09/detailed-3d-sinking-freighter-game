@@ -36,7 +36,7 @@ documented fallback; do not pretend the tool ran.
 | `npm run typecheck` | Root TypeScript |
 | `npx tsc -p detailed-3d-sinking-freighter-game_sonnet/tsconfig.json --noEmit` | Sonnet TypeScript |
 | `npm run build` | Root single-file bundle |
-| `npx vite build detailed-3d-sinking-freighter-game_sonnet` | Sonnet bundle |
+| `npx vite build detailed-3d-sinking-freighter-game_sonnet --outDir ../dist/sonnet --base ./` | Sonnet sub-site bundle |
 | `python tools/ci_check.py` | Skills, workflows, physics, and repository contracts |
 | `npm run docs:check` | CodeGraph documentation context plus skill/documentation consistency |
 | `python3 -c 'import yaml; ...'` | Workflow YAML parse; use duplicate-key detection when available |

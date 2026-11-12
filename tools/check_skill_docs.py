@@ -30,6 +30,8 @@ REQUIRED_SKILLS = [
     "documentation-maintenance",
     "ci-workflow-audit",
     "skill-discovery-audit",
+    "brainstorming",
+    "skill-creator",
 ]
 REQUIRED_DOCS = [
     WORKSPACE / "docs" / "SKILLS.md",
@@ -126,6 +128,56 @@ def check_dates() -> None:
     ok(f"all documentation dates are valid and not after {today.isoformat()}")
 
 
+def check_skill_index_consistency(index: str) -> None:
+    """Every project skill has a row, path, and matching update date."""
+    rows = {}
+    for line in index.splitlines():
+        if not line.startswith("|"):
+            continue
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) < 6 or not cells[0].startswith("`"):
+            continue
+        name = cells[0].strip("`")
+        scope = cells[1]
+        path_cell = cells[2]
+        date_cell = cells[4]
+        rows[name] = (scope, path_cell, date_cell)
+
+    for skill_dir in sorted(SKILLS_DIR.iterdir()):
+        if not skill_dir.is_dir():
+            continue
+        path = skill_dir / "SKILL.md"
+        if not path.exists():
+            continue
+        name = skill_dir.name
+        frontmatter, _ = parse_frontmatter(path)
+        date_match = FRONTMATTER_DATE_RE.search(frontmatter)
+        if not date_match:
+            fail(f"{name}: missing metadata.last_updated")
+        file_date = date_match.group(1)
+
+        if name not in rows:
+            fail(f"docs/SKILLS.md has no row for project skill {name}")
+        scope, path_cell, date_cell = rows[name]
+        if "Project" not in scope:
+            fail(f"docs/SKILLS.md row for {name} does not declare Project scope")
+        canonical = f".agents/skills/{name}/SKILL.md"
+        if canonical not in path_cell:
+            fail(f"docs/SKILLS.md row for {name} does not point at {canonical}")
+        if date_cell != file_date:
+            fail(
+                f"docs/SKILLS.md date for {name} is {date_cell!r}, "
+                f"but metadata.last_updated is {file_date!r}"
+            )
+
+    for path_text in re.findall(r"`(\.agents/skills/[^`]+/SKILL\.md)`", index):
+        if "*" in path_text or "<" in path_text:
+            continue
+        if not (WORKSPACE / path_text).exists():
+            fail(f"docs/SKILLS.md points at a missing path: {path_text}")
+
+
+
 def check_index_and_agent_rules() -> None:
     index = (WORKSPACE / "docs" / "SKILLS.md").read_text(encoding="utf-8")
     tools = (WORKSPACE / "docs" / "AGENT_TOOLS.md").read_text(encoding="utf-8")
@@ -137,6 +189,8 @@ def check_index_and_agent_rules() -> None:
             fail(f"docs/SKILLS.md does not list `{skill}`")
         if f"`.agents/skills/{skill}/SKILL.md`" not in index:
             fail(f"docs/SKILLS.md does not list the canonical path for {skill}")
+
+    check_skill_index_consistency(index)
 
     if "CodeGraph" not in tools or "tools/check_skill_docs.py" not in tools:
         fail("docs/AGENT_TOOLS.md does not describe the CodeGraph script")

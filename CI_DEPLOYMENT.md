@@ -954,3 +954,51 @@ The feature branch is verified at `e00a232` and the documentation commit at
 
 This text was added in a follow-up documentation commit; its own CI/Pages run
 is reported in the delivery message because the commit changes the SHA again.
+
+---
+
+## 24. Creative project skills and index-date enforcement (2026-11-12)
+
+This follow-up closes the gap left by section 23: `brainstorming` and
+`skill-creator` were still only Account copies and were merely referenced from
+the index. They are now first-class project skills with repository-specific
+procedures.
+
+### 24.1 What changed
+
+| Item | Result |
+| :--- | :--- |
+| Project skills | 7 total: the previous 5 plus `brainstorming` and `skill-creator` |
+| `brainstorming` | `.agents/skills/brainstorming/SKILL.md`: discovery/convergence modes, divergence, recommendation table, one-question rule, decision close |
+| `skill-creator` | `.agents/skills/skill-creator/SKILL.md`: frontmatter schema, date rule, index/registration map, Account copy, test and CI checklist |
+| Gates | Both names added to `REQUIRED_SKILLS` in `tools/ci_check.py` and `tools/check_skill_docs.py` |
+| Index consistency | `tools/check_skill_docs.py` now checks every `.agents/skills/*/SKILL.md` against its index row and matching `metadata.last_updated`, and rejects concrete index paths that do not exist |
+| Account registry | Still 11 entries; both creative skills were replaced with the improved procedures and remain enabled |
+| Error ledger | `ERR-2026-11-12-08` (missing project copies) and `ERR-2026-11-12-09` (glob treated as a path) |
+| Commands | Sonnet build everywhere uses `--outDir ../dist/sonnet --base ./`; `npx skills list` is part of the authoring check |
+
+Date cross-check: `TZ=Europe/Berlin date +%F` and the current web session both
+returned `2026-11-12`. Every project skill frontmatter and every project index
+row uses that date.
+
+### 24.2 Local gate
+
+| Check | Result |
+| :--- | :--- |
+| `npm run docs:check` | CodeGraph `codegraph_pr_context` valid JSON; required files, paths, dates, and seven index rows pass |
+| `npm test` | 5/5 physics, 14/14 browser guards, 10/10 Python checks |
+| Root TypeScript | `npx tsc --noEmit` exit 0 |
+| Sonnet TypeScript | `npx tsc -p detailed-3d-sinking-freighter-game_sonnet/tsconfig.json --noEmit` exit 0 |
+| Root build | 956,117 bytes, SHA-256 `2841dd3980ca418cdaf5c4e0f0ec85a9ea7194878029041f9332ef92005855ab` |
+| Sonnet build | 1,001,088 bytes, SHA-256 `7ea4957dfe82f83ac489e159b5683d0a2f056424329399482cd1ffa5d1a9635f` |
+| Workflow YAML | Both files parse with duplicate-key detection, exit 0 |
+| `npm audit --omit=dev` | 0 vulnerabilities |
+| `npx skills list` | Seven project skills; both creative skills present |
+| `git diff --check` | exit 0 |
+
+### 24.3 Delivery
+
+The branch is `feat/creative-project-skills`. The exact-SHA CI run, main CI,
+Pages deployment, and live root/`/sonnet/` HTTP checks are reported in the
+delivery message and follow the same explicit-branch, exact-SHA, Pages gate as
+section 23. No deployment is complete until those runs are green.

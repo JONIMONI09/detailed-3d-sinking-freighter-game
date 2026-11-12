@@ -145,11 +145,13 @@ Details and measurements: [RESPONSIVE_UI.md](RESPONSIVE_UI.md).
 
 ### Agent skills
 
-Five project skills under `.agents/skills/` encode the recurring workflow:
+Seven project skills under `.agents/skills/` encode the recurring workflow:
 reproduce, fix the root cause, add a fallback and regression tests, update the
 English documentation, verify the feature branch through CI, audit skill
-discovery, and keep the skill map current. `skill-index` is the main index;
-`docs/SKILLS.md` is its canonical date and ownership table. `.agents/skills/`
+discovery, keep the skill map current, and run the authoring checks. `skill-index`
+is the main index; `brainstorming` and `skill-creator` are now full project
+skills with their own procedures. `docs/SKILLS.md` is the canonical date and
+ownership table. `.agents/skills/`
 is Freebuff's native project discovery path; `.claude/skills/` is also supported
 for Claude Code compatibility. These skills follow the official
 [Freebuff skills format](https://docs.freebuff.page/working-with-the-agent/#skills).
@@ -160,9 +162,9 @@ The same registry name is used in both clients:
 
 | Command in web picker | Local CLI/Desktop | Source |
 | :--- | :--- | :--- |
-| `/brainstorming` | `/skill:brainstorming` | Account skill |
+| `/brainstorming` | `/skill:brainstorming` | Project + Account skill |
 | `/find-skills` | `/skill:find-skills` | Account skill |
-| `/skill-creator` | `/skill:skill-creator` | Account skill |
+| `/skill-creator` | `/skill:skill-creator` | Project + Account skill |
 | `/ci-workflow-audit` | `/skill:ci-workflow-audit` | Project + Account skill |
 | `/documentation-maintenance` | `/skill:documentation-maintenance` | Project + Account skill |
 | `/error-fix-document` | `/skill:error-fix-document` | Project + Account skill |
@@ -197,10 +199,12 @@ for every skill was wrong and is removed; `/skill` hides most of these names.
 See [CI_DEPLOYMENT.md](CI_DEPLOYMENT.md) §22 for the bundle lines and the
 two consecutive registry reads.
 
-A fresh `@codebuff/sdk@0.10.7` `loadSkills()` run against this repository
-returned all four project skills from `.agents/skills/` with their exact
-`/skill:<name>` handles. That loader proof covers **local CLI/Desktop and
-local executions**, not the web Cloud client.
+An earlier `@codebuff/sdk@0.10.7` `loadSkills()` run proved the original four
+project skills loaded from `.agents/skills/` with their exact `/skill:<name>`
+handles. The repository now has seven project skills; `tools/ci_check.py`
+checks all seven, and `npx skills list` is the current local loader check. That
+loader proof covers **local CLI/Desktop and local executions**, not the web Cloud
+client.
 
 The web Cloud client does not read a repository's `.agents/skills/` directory.
 It loads **Account skills** from **Settings → Skills** and **Cloud project
@@ -216,6 +220,8 @@ The web picker inserts `/<name>`; the local CLI/Desktop form is
 [CI_DEPLOYMENT.md](CI_DEPLOYMENT.md) §19, §20, §22 and §23.
 
 - `skill-index` — main skill map, Europe/Berlin dates, documentation structure.
+- `brainstorming` — divergence/convergence procedure ending in a decided next step.
+- `skill-creator` — frontmatter, index, Account-copy, and verification checklist.
 - `error-fix-document` — bug, incident, and mandatory error-ledger workflow.
 - `ci-workflow-audit` — YAML validation, exact-SHA CI gate and Pages checks.
 - `documentation-maintenance` — stale-claim scan and evidence recording.

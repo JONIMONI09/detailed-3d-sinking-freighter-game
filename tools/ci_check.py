@@ -115,6 +115,8 @@ def check_project_skills():
         "documentation-maintenance",
         "skill-discovery-audit",
         "skill-index",
+        "brainstorming",
+        "skill-creator",
     ]
     required_docs = [
         WORKSPACE / "docs" / "SKILLS.md",
