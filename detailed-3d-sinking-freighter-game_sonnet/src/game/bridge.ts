@@ -52,7 +52,7 @@ export function stepHelm(h: HelmState, dt: number, shipLength: number, engineAva
   const dr = cmd - h.rudderDeg;
   const maxStep = RUDDER_RATE_DEG * dt;
   h.rudderDeg += Math.abs(dr) <= maxStep ? dr : Math.sign(dr) * maxStep;
-  const target = engineAvailable ? TELEGRAPH_SPEED[h.telegraph] : 0;
+  const target = engineAvailable ? (TELEGRAPH_SPEED[h.telegraph] ?? 0) : 0;
   h.speed += (target - h.speed) * (1 - Math.exp(-SPEED_RESPONSE * dt));
   h.heading += (h.speed / shipLength) * Math.tan((h.rudderDeg * Math.PI) / 180) * dt;
 }

@@ -736,7 +736,7 @@ export class Game {
       let hDiff = desiredHeading - this.supervisor.helm.heading;
       while (hDiff > Math.PI) hDiff -= Math.PI * 2;
       while (hDiff < -Math.PI) hDiff += Math.PI * 2;
-      this.supervisor.helm.telegraph = "half";
+      this.supervisor.helm.telegraph = "half-ahead";
       this.supervisor.helm.rudderCmd = Math.max(-MAX_RUDDER_DEG, Math.min(MAX_RUDDER_DEG, (hDiff * 180) / Math.PI));
     }
 
