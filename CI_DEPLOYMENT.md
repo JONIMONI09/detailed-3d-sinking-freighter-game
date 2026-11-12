@@ -1005,3 +1005,52 @@ exact-SHA run before merge. Main CI, the Pages deployment, and the live
 root/`/sonnet/` HTTP checks are reported in the delivery message and follow the
 same explicit-branch, exact-SHA, Pages gate as section 23. No deployment is
 complete until those runs are green.
+
+---
+
+## 25. CI and Pages repair after the orbital-laser feature merge (2026-11-13)
+
+Every workflow run since the orbital-laser feature commits failed in the
+`Typecheck Sonnet Edition` / `Run Typecheck (Root & Sonnet)` step, so the Pages
+job never reached its build, upload, or deploy. The typecheck errors, the
+CodeGraph engine gap, and the deployment verification are fixed and recorded in
+`docs/ERRORS_AND_FIXES.md` as `ERR-2026-11-13-01` and `ERR-2026-11-13-02`.
+
+### 25.1 What changed
+
+| Item | Result |
+| :--- | :--- |
+| Sonnet typecheck | 14 errors fixed (crew role union, `CrewBody.step` contract, `input.jumpHeld`, `SoundEngine.explosion` arguments, door `locked` option, unused locals, HUD flood percentage) |
+| Documentation gate | Optional CodeGraph engine missing, launch failure, or 120 s timeout is an explicit `[WARN]`; real MCP errors still fail |
+| CI Pages parity | CI builds the Sonnet bundle into `dist/sonnet` with the same flags as Pages and asserts both HTML files |
+| Base-ref step | `git fetch origin main` and the local `main` ref creation no longer fail the job when the ref is absent |
+
+### 25.2 Local gate
+
+| Check | Result |
+| :--- | :--- |
+| Root TypeScript | `npx tsc --noEmit` exit 0 |
+| Sonnet TypeScript | `npx tsc -p detailed-3d-sinking-freighter-game_sonnet/tsconfig.json --noEmit` exit 0 |
+| `npm test` | All 10 Node suites followed by 10/10 Python checks pass |
+| `npm run docs:check` | Exit 0; CodeGraph WARN because the native engine is not installed on this host, all file-level checks PASS |
+| Root build | `dist/index.html`, 1,092,709 bytes, SHA-256 `51b594c73233a82142a7a60ba7e00ad7a2a4ab1f3507e8251029e6044862e110` |
+| Sonnet build | `dist/sonnet/index.html`, 1,092,709 bytes, same SHA-256 (root config builds the Sonnet engine by design) |
+| Static server | `GET /` and `GET /sonnet/` both HTTP 200, title `NORDWIND – Freighter Sabotage 3D` |
+| Workflow YAML | Both files parse with PyYAML `SafeLoader` plus duplicate-key rejection |
+
+### 25.3 Delivery evidence
+
+| Check | Result |
+| :--- | :--- |
+| Feature-branch CI | Run `43327170448`, completed/success, head SHA `29ac6018c5e09390cdcee120a25def42e42668ab` |
+| Pull request | PR #1, merged into `main` with a merge commit |
+| Main CI | Run `43327332860`, completed/success, head SHA `9fda922fddb8d1658ad2c99d10ee1d150d6e6918` |
+| Pages deployment | Run `43327332914`, completed/success, head SHA `9fda922fddb8d1658ad2c99d10ee1d150d6e6918` |
+| Live root | `https://jonimoni09.github.io/detailed-3d-sinking-freighter-game/` returns the NORDWIND menu (start, sandbox, settings, help, fullscreen) |
+| Live `/sonnet/` | `https://jonimoni09.github.io/detailed-3d-sinking-freighter-game/sonnet/` returns the same NORDWIND menu |
+
+The live checks were fetched through the agent's page reader because the sandbox
+cannot reach `github.io` directly with `curl`; the served title and menu markers
+match the built artifact. This documentation commit receives its own exact-SHA
+run before it is merged, and that run plus the resulting Pages deployment are
+reported in the delivery message.
