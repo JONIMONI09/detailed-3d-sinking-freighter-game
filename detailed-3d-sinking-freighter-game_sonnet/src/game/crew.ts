@@ -89,6 +89,8 @@ export interface CrewMember {
   navWaypoint?: { x: number; z: number } | null;
   navTimer?: number;
   waitingForDoor?: boolean;
+  slideSign?: number;
+  slideTimer?: number;
   patrol?: readonly { x: number; y: number; z: number }[];
 }
 
@@ -112,7 +114,7 @@ export interface CrewWorld {
     dz: number,
     maxDist: number,
     filter?: (c: { tag?: string; owner?: unknown }) => boolean,
-  ) => { collider: { owner?: unknown }; dist: number } | null;
+  ) => { collider: { owner?: unknown }; dist: number; nx?: number; ny?: number; nz?: number } | null;
   move: (
     body: CrewBody,
     dx: number,
@@ -452,27 +454,60 @@ function walkToward(
 
   let desiredStep: Vector3Like = waitingForDoor ? v3(0, 0, 0) : v3(nx * step, 0, nz * step);
 
-  // Apply 5-ray anti-clipping steering + 90-degree wall-slide clearance when not threading a narrow doorway
-  if (raycast && d > 1e-6 && !doorAhead && !waitingForDoor) {
-    const centerHit = raycast(v3(m.x, m.y + 0.9, m.z), v3(nx, 0, nz), 1.05);
-    if (centerHit.hit) {
-      // Pick the 90-degree lateral tangent with greater open clearance so crew walks around walls cleanly
-      const leftDir = v3(-nz, 0, nx);
-      const rightDir = v3(nz, 0, -nx);
-      const leftHit = raycast(v3(m.x, m.y + 0.9, m.z), leftDir, 2.5);
-      const rightHit = raycast(v3(m.x, m.y + 0.9, m.z), rightDir, 2.5);
-      const leftDist = leftHit.hit ? leftHit.distance : 2.5;
-      const rightDist = rightHit.hit ? rightHit.distance : 2.5;
-      const slide = leftDist >= rightDist ? leftDir : rightDir;
-      desiredStep = v3(slide.x * step, 0, slide.z * step);
-    } else {
-      const steering = computeAntiClippingSteering(
-        v3(m.x, m.y, m.z),
-        desiredStep,
-        raycast,
-        0.5,
-      );
-      desiredStep = steering.vel;
+  if ((m.slideTimer ?? 0) > 0) m.slideTimer = Math.max(0, (m.slideTimer ?? 0) - dt);
+
+  // Smooth tangential barrier sliding + anti-oscillation memory (stays active near doorways for doorframes/walls)
+  if (!waitingForDoor && d > 1e-6) {
+    const barrierHit = world?.raycast(m.x, m.y + 0.75, m.z, nx, 0, nz, 0.85, (c) => c.tag !== "door");
+    if (barrierHit && (barrierHit.nx !== undefined || barrierHit.nz !== undefined)) {
+      const hnx = barrierHit.nx ?? 0;
+      const hnz = barrierHit.nz ?? 0;
+      // Tangent along the barrier surface
+      let txDir = nx - (nx * hnx + nz * hnz) * hnx;
+      let tzDir = nz - (nx * hnx + nz * hnz) * hnz;
+      const tLen = Math.hypot(txDir, tzDir);
+      if (tLen < 0.2) {
+        // Head-on hit: commit to one lateral slide direction for 0.6s so bot never oscillates in thin corridors
+        if ((m.slideTimer ?? 0) <= 0 || !m.slideSign) {
+          const leftDir = v3(-nz, 0, nx);
+          const rightDir = v3(nz, 0, -nx);
+          const lHit = world?.raycast(m.x, m.y + 0.75, m.z, leftDir.x, 0, leftDir.z, 1.8, (c) => c.tag !== "door");
+          const rHit = world?.raycast(m.x, m.y + 0.75, m.z, rightDir.x, 0, rightDir.z, 1.8, (c) => c.tag !== "door");
+          m.slideSign = (lHit ? lHit.dist : 1.8) >= (rHit ? rHit.dist : 1.8) ? 1 : -1;
+          m.slideTimer = 0.6;
+        }
+        txDir = -nz * m.slideSign;
+        tzDir = nx * m.slideSign;
+      } else {
+        txDir /= tLen;
+        tzDir /= tLen;
+      }
+      // Blend tangent with a slight push away from the wall normal so character clears doorframes cleanly
+      const bx = txDir + hnx * 0.25;
+      const bz = tzDir + hnz * 0.25;
+      const bLen = Math.hypot(bx, bz) || 1;
+      desiredStep = v3((bx / bLen) * step, 0, (bz / bLen) * step);
+    } else if (raycast && !doorAhead) {
+      const centerHit = raycast(v3(m.x, m.y + 0.9, m.z), v3(nx, 0, nz), 0.9);
+      if (centerHit.hit) {
+        if ((m.slideTimer ?? 0) <= 0 || !m.slideSign) {
+          const leftDir = v3(-nz, 0, nx);
+          const rightDir = v3(nz, 0, -nx);
+          const leftHit = raycast(v3(m.x, m.y + 0.9, m.z), leftDir, 2.0);
+          const rightHit = raycast(v3(m.x, m.y + 0.9, m.z), rightDir, 2.0);
+          m.slideSign = (leftHit.hit ? leftHit.distance : 2.0) >= (rightHit.hit ? rightHit.distance : 2.0) ? 1 : -1;
+          m.slideTimer = 0.6;
+        }
+        desiredStep = v3(-nz * m.slideSign * step, 0, nx * m.slideSign * step);
+      } else {
+        const steering = computeAntiClippingSteering(
+          v3(m.x, m.y, m.z),
+          desiredStep,
+          raycast,
+          0.42,
+        );
+        desiredStep = steering.vel;
+      }
     }
   }
 

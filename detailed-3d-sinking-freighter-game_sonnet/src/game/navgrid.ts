@@ -16,7 +16,7 @@ export interface NavBox {
   tag?: string;
 }
 
-const CELL = 0.4;
+const CELL = 0.35;
 const MIN_X = -11.2;
 const MAX_X = 11.2;
 const MIN_Z = -67.2;
@@ -61,7 +61,7 @@ function buildFloorGrid(boxes: readonly NavBox[], floorY: number, now: number): 
 
   const yLow = floorY + 0.48;
   const yHigh = floorY + 1.72;
-  const pad = 0.14;
+  const pad = 0.08;
 
   // 1. Mark wall/furniture obstacles with slight Minkowski inflation
   for (const b of boxes) {
@@ -79,18 +79,26 @@ function buildFloorGrid(boxes: readonly NavBox[], floorY: number, now: number): 
     }
   }
 
-  // 2. Ensure doorway openings remain passable on the grid
+  // 2. Carve full doorway passage perpendicular to door plane so thin walls never pinch doors shut
   for (const b of boxes) {
     if (b.tag !== "door") continue;
     if (b.maxY <= yLow || b.minY >= yHigh) continue;
+    const spanX = b.maxX - b.minX;
+    const spanZ = b.maxZ - b.minZ;
     const cx = (b.minX + b.maxX) * 0.5;
     const cz = (b.minZ + b.maxZ) * 0.5;
-    const gx = toGridX(cx);
-    const gz = toGridZ(cz);
-    blocked[idx(gx, gz)] = 0;
+    const gx0 = toGridX(spanX < spanZ ? cx - 0.5 : cx - Math.min(0.25, spanX * 0.25));
+    const gx1 = toGridX(spanX < spanZ ? cx + 0.5 : cx + Math.min(0.25, spanX * 0.25));
+    const gz0 = toGridZ(spanZ < spanX ? cz - 0.5 : cz - Math.min(0.25, spanZ * 0.25));
+    const gz1 = toGridZ(spanZ < spanX ? cz + 0.5 : cz + Math.min(0.25, spanZ * 0.25));
+    for (let gz = gz0; gz <= gz1; gz++) {
+      for (let gx = gx0; gx <= gx1; gx++) {
+        blocked[idx(gx, gz)] = 0;
+      }
+    }
   }
 
-  // 3. Clearance-based cost: penalize cells adjacent to walls so paths hug centers
+  // 3. Clearance-based cost: penalize cells adjacent to walls so paths hug corridor/door centers
   for (let gz = 1; gz < ROWS - 1; gz++) {
     for (let gx = 1; gx < COLS - 1; gx++) {
       const i = idx(gx, gz);
@@ -101,7 +109,7 @@ function buildFloorGrid(boxes: readonly NavBox[], floorY: number, now: number): 
         blocked[i - COLS] ||
         blocked[i + COLS]
       ) {
-        cost[i] = 4;
+        cost[i] = 5;
       }
     }
   }
@@ -254,7 +262,7 @@ export function findNextGridWaypoint(
 
   if (!found) return null;
 
-  // Reconstruct path and pick look-ahead node (2 steps ahead to avoid zigzag)
+  // Reconstruct path and pick immediate next step (1 cell ahead) to avoid cutting corners into doorframes
   const path: number[] = [];
   let cur = goal;
   while (cur !== -1 && cur !== start) {
@@ -263,7 +271,7 @@ export function findNextGridWaypoint(
   }
   if (path.length === 0) return { x: tx, z: tz };
   path.reverse();
-  const lookAhead = path[Math.min(2, path.length - 1)];
+  const lookAhead = path[Math.min(1, path.length - 1)];
   const lx = lookAhead % COLS;
   const lz = (lookAhead - lx) / COLS;
   return { x: toWorldX(lx), z: toWorldZ(lz) };
