@@ -328,8 +328,9 @@ export function stepCrew(
   m.stateTime += dt;
   enforceShipBoundsAndRespawn(m);
 
-  // 1. Dynamic Ragdoll Evaluation (skip floor-dropping ragdoll when CollisionWorld physics is active)
-  if (ctx && !ctx.world) {
+  // 1. Dynamic Ragdoll Evaluation (use floor-clamped ragdoll even when CollisionWorld is active)
+  const floorY = ctx?.deckFloorY ?? (m.y >= 2.4 ? 3.0 : 0.1);
+  if (ctx) {
     const sensors: RagdollTriggerSensors = {
       waterVelocity: ctx.waterVelocity || v3(0, 0, 0),
       blastImpulse: ctx.blastImpulse || 0,
@@ -337,9 +338,7 @@ export function stepCrew(
     };
     const triggered = shouldTriggerRagdoll(sensors);
     if (triggered && m.state !== "ragdoll") {
-      if (!m.ragdoll) {
-        m.ragdoll = new ArticulatedRagdoll(v3(m.x, m.y, m.z));
-      }
+      m.ragdoll = new ArticulatedRagdoll(v3(m.x, m.y, m.z));
       m.ragdoll.activate(ctx.waterVelocity || v3(0, 0, 0));
       m.isRagdoll = true;
       enter(m, "ragdoll");
@@ -353,21 +352,22 @@ export function stepCrew(
       dt,
       ctx?.waterVelocity ?? v3(0, 0, 0),
       ctx?.waterLevelY ?? -999,
-      ctx?.deckFloorY ?? -5.0,
+      floorY,
     );
-    // Track position to pelvis center of mass
+    // Track position to pelvis center of mass, keeping within ship deck bounds
     const pelvis = m.ragdoll.limbs.get("pelvis");
     if (pelvis) {
-      m.x = pelvis.pos.x;
-      m.y = pelvis.pos.y;
-      m.z = pelvis.pos.z;
+      m.x = Math.max(-10.5, Math.min(10.5, pelvis.pos.x));
+      m.y = Math.max(floorY, pelvis.pos.y);
+      m.z = Math.max(-56, Math.min(56, pelvis.pos.z));
     }
 
-    // Recover if motion settles and time >= 4.0s
+    // Recover reliably so fallen crew always stand back up (settled or max 5.0s)
     const pelvisSpeed = Math.hypot(pelvis?.vel.x ?? 0, pelvis?.vel.y ?? 0, pelvis?.vel.z ?? 0);
-    if (m.stateTime >= 4.0 && pelvisSpeed < 0.25) {
+    if ((m.stateTime >= 2.5 && pelvisSpeed < 0.6) || m.stateTime >= 5.0) {
       m.isRagdoll = false;
       m.ragdoll.active = false;
+      m.y = floorY;
       enter(m, "patrol");
     }
     return null;

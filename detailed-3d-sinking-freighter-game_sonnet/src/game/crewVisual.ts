@@ -136,9 +136,28 @@ export class CrewVisual {
     const dz = this.member.z - this.lastZ;
     const spd = Math.hypot(dx, dz) / Math.max(0.001, dt);
 
+    if (this.member.state === "ragdoll" || this.member.isRagdoll) {
+      // Fallen / ragdoll pose on deck; resets upright automatically on recovery
+      this.group.rotation.x = Math.PI * 0.45;
+      this.group.rotation.z = 0.22;
+      this.legL.rotation.x = 0.25;
+      this.legR.rotation.x = -0.2;
+      this.armL.rotation.x = 0.5;
+      this.armR.rotation.x = -0.4;
+      this.torso.position.y = 0.55;
+      this.group.position.set(this.member.x, this.member.y + 0.18, this.member.z);
+      this.lastX = this.member.x;
+      this.lastY = this.member.y;
+      this.lastZ = this.member.z;
+      return;
+    }
+
+    this.group.rotation.x = 0;
+    this.group.rotation.z = 0;
+
     if (spd > 0.15) {
       // Turn to face direction of forward motion (-Z is forward)
-      this.yaw = Math.atan2(dx, -dz);
+      this.yaw = Math.atan2(-dx, -dz);
     }
     this.group.rotation.y = this.yaw;
 

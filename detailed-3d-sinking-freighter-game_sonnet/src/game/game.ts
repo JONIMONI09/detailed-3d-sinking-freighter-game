@@ -19,6 +19,7 @@ import { StormworksSupervisor } from "./stormworksSupervisor";
 import { stepTelegraph, MAX_RUDDER_DEG, TELEGRAPH_SPEED } from "./bridge";
 import { shouldWindowBurst } from "./ingress";
 import { v3 } from "./navmesh3d";
+import { createCrewMember, stepCrew, type CrewMember } from "./crew";
 import { CrewVisual } from "./crewVisual";
 import { Battleship, createBattleship, stepBattleship, stepBattleshipAI, damageBattleship, fireBattleshipSalvo } from "./battleships";
 import { OrbitalSpaceStationSim, STATION_BASE_Y } from "./spaceStation";
@@ -251,6 +252,7 @@ export class Game {
   waterOverlay = false;
   godModeHoldProgress = 0;
   crewVisuals: CrewVisual[] = [];
+  deckCrew: CrewMember[] = [];
   battleships: Battleship[] = [];
   helmMode = false;
   helmThrottleCooldown = 0;
@@ -436,17 +438,21 @@ export class Game {
       }
     }
 
-    // Friendly Damage Control Crew (sandbox mode)
+    // Friendly Damage Control Crew (visible on both lower holds and main deck in all modes)
+    this.deckCrew = [
+      createCrewMember("Deck Officer", "boatswain", -4.5, DECK_Y, -28.0, 4),
+      createCrewMember("Deck Engineer", "damage-control", 4.5, DECK_Y, 12.0, 5),
+    ];
+    for (const m of [...this.supervisor.crew, ...this.deckCrew]) {
+      const cv = new CrewVisual(m);
+      this.ship.group.add(cv.group);
+      this.crewVisuals.push(cv);
+    }
     if (this.mode === "sandbox") {
-      for (const m of this.supervisor.crew) {
-        const cv = new CrewVisual(m);
-        this.ship.group.add(cv.group);
-        this.crewVisuals.push(cv);
-      }
       const bs = createBattleship("bs-1", 46, -15);
       this.scene.add(bs.group);
       this.battleships.push(bs);
-      console.log("[NORDWIND/SANDBOX] Spawned 3 visible crew members on deck and 1 walkable Battleship at (46, 0, -15).");
+      console.log("[NORDWIND/SANDBOX] Spawned 5 visible crew members and 1 walkable Battleship at (46, 0, -15).");
     }
 
     // Spieler
@@ -775,23 +781,41 @@ export class Game {
     const st = this.settings;
 
     // Schiff
-    this.supervisor.step(
-      dt,
-      t,
-      this.ocean,
-      st.floodSpeed,
-      (orig, dir, maxD) => {
-        const hit = this.ship.world.raycast(orig.x, orig.y, orig.z, dir.x, dir.y, dir.z, maxD);
-        return {
-          hit: !!hit,
-          distance: hit ? hit.dist : maxD,
-          normal: hit ? v3(hit.nx, hit.ny, hit.nz) : v3(0, 0, 0),
-          point: hit ? v3(orig.x + dir.x * hit.dist, orig.y + dir.y * hit.dist, orig.z + dir.z * hit.dist) : v3(0, 0, 0),
-        };
-      },
-      this.shake * 180,
-      this.ship.world,
+    const crewRay = (orig: { x: number; y: number; z: number }, dir: { x: number; y: number; z: number }, maxD: number) => {
+      const hit = this.ship.world.raycast(orig.x, orig.y, orig.z, dir.x, dir.y, dir.z, maxD);
+      return {
+        hit: !!hit,
+        distance: hit ? hit.dist : maxD,
+        normal: hit ? v3(hit.nx, hit.ny, hit.nz) : v3(0, 0, 0),
+        point: hit ? v3(orig.x + dir.x * hit.dist, orig.y + dir.y * hit.dist, orig.z + dir.z * hit.dist) : v3(0, 0, 0),
+      };
+    };
+    const blastImp = this.shake > 1.5 ? this.shake * 180 : 0;
+    this.supervisor.step(dt, t, this.ocean, st.floodSpeed, crewRay, blastImp, this.ship.world);
+    const deckBreaches = this.ship.compartments.flatMap((c, ci) =>
+      c.holes
+        .filter((h) => h.area > 0.005)
+        .map((h, hi) => ({
+          id: ci * 1000 + hi,
+          x: h.pos.x,
+          y: h.pos.y,
+          z: h.pos.z,
+          area: h.area,
+          compartmentId: c.id,
+          repair: (amt: number) => {
+            h.area = Math.max(0, h.area - amt);
+          },
+        })),
     );
+    for (const dm of this.deckCrew) {
+      stepCrew(dm, dt, deckBreaches, undefined, {
+        raycast: crewRay,
+        world: this.ship.world,
+        deckFloorY: dm.y >= 2.4 ? DECK_Y : 0.1,
+        blastImpulse: blastImp,
+        vesselRollDeg: (this.sim.roll * 180) / Math.PI,
+      });
+    }
 
     // Freighter AI evasive autopilot when player commands the Battleship (stays within 220m so it never vanishes)
     if (this.activeVessel === "battleship" && this.battleships[0] && !this.sim.sunk) {
