@@ -310,6 +310,23 @@ function computeDeckWaypoint(
     if ((m.z < 26.0) !== (target.z < 26.0)) return { x: 0, z: m.z < 26.0 ? 27.0 : 25.0 };
   }
 
+  // Superstructure level 0 side-room <-> central corridor door routing (doors at x = ±1.7, z = -47.0 / -53.6)
+  if (m.y >= 2.7 && m.y < 5.2 && m.z <= -44.0 && m.z >= -66.0 && target.y >= 2.7 && target.y < 5.5) {
+    const inCorridor = Math.abs(m.x) < 1.7 && m.z > -57.2;
+    const targetInSideRoom = Math.abs(target.x) > 2.0 && target.z > -57.2;
+    if (inCorridor && targetInSideRoom) {
+      const doorZ = target.z < -50.2 ? -53.6 : -47.0;
+      if (Math.abs(m.z - doorZ) > 0.7) return { x: Math.sign(target.x) * 0.88, z: doorZ };
+      return { x: Math.sign(target.x) * 2.2, z: doorZ };
+    }
+    const inSideRoom = Math.abs(m.x) >= 1.7 && m.z > -57.2;
+    if (inSideRoom && (Math.abs(target.x) < 1.7 || Math.sign(target.x) !== Math.sign(m.x) || target.z <= -57.2)) {
+      const doorZ = m.z < -50.2 ? -53.6 : -47.0;
+      if (Math.abs(m.z - doorZ) > 0.7) return { x: Math.sign(m.x) * 2.4, z: doorZ };
+      return { x: 0.88, z: doorZ };
+    }
+  }
+
   return { x: target.x, z: target.z };
 }
 
@@ -333,9 +350,11 @@ function walkToward(
   const nz = d > 1e-6 ? dz / d : 0;
 
   // Enemy-AI style automatic door opening when approaching closed unlocked doors
+  let doorAhead = false;
   if (world && d > 1e-6) {
-    const doorRay = world.raycast(m.x, m.y + 1.0, m.z, nx, 0, nz, 1.8, (c) => c.tag === "door");
+    const doorRay = world.raycast(m.x, m.y + 1.0, m.z, nx, 0, nz, 2.4, (c) => c.tag === "door");
     if (doorRay && doorRay.collider?.owner) {
+      doorAhead = true;
       const door = doorRay.collider.owner as { locked?: boolean; key?: string; target: number; fixed: number; forceOpen: (dir: number) => void };
       // Damage control crew carry master keys for keycard doors and can open unlocked watertight doors
       if (door.target === 0 && (!door.locked || door.key)) {
@@ -346,15 +365,28 @@ function walkToward(
 
   let desiredStep: Vector3Like = v3(nx * step, 0, nz * step);
 
-  // Apply 5-ray anti-clipping steering if raycast function is provided
-  if (raycast && d > 1e-6) {
-    const steering = computeAntiClippingSteering(
-      v3(m.x, m.y, m.z),
-      desiredStep,
-      raycast,
-      0.5,
-    );
-    desiredStep = steering.vel;
+  // Apply 5-ray anti-clipping steering + 90-degree wall-slide clearance when not threading a narrow doorway
+  if (raycast && d > 1e-6 && !doorAhead) {
+    const centerHit = raycast(v3(m.x, m.y + 0.9, m.z), v3(nx, 0, nz), 1.05);
+    if (centerHit.hit) {
+      // Pick the 90-degree lateral tangent with greater open clearance so crew walks around walls cleanly
+      const leftDir = v3(-nz, 0, nx);
+      const rightDir = v3(nz, 0, -nx);
+      const leftHit = raycast(v3(m.x, m.y + 0.9, m.z), leftDir, 2.5);
+      const rightHit = raycast(v3(m.x, m.y + 0.9, m.z), rightDir, 2.5);
+      const leftDist = leftHit.hit ? leftHit.distance : 2.5;
+      const rightDist = rightHit.hit ? rightHit.distance : 2.5;
+      const slide = leftDist >= rightDist ? leftDir : rightDir;
+      desiredStep = v3(slide.x * step, 0, slide.z * step);
+    } else {
+      const steering = computeAntiClippingSteering(
+        v3(m.x, m.y, m.z),
+        desiredStep,
+        raycast,
+        0.5,
+      );
+      desiredStep = steering.vel;
+    }
   }
 
   const inWater = waterLevel > m.y + 0.55;
@@ -377,7 +409,7 @@ function walkToward(
       vx: 0,
       vy,
       vz: 0,
-      r: 0.34,
+      r: 0.2,
       h: 1.75,
       onGround: m.onGround ?? false,
       step: 0.48,
@@ -564,6 +596,18 @@ export function stepCrew(
           }
         } else {
           m.stuckTime = 0;
+        }
+      } else if (ctx?.world && moved < 0.15 * dt) {
+        // Same-deck doorway / corner unstick nudge so crew never freezes in a doorframe
+        m.stuckTime = (m.stuckTime ?? 0) + dt;
+        if (m.stuckTime > 0.6) {
+          const ndx = wp.x - m.x;
+          const ndz = wp.z - m.z;
+          const nd = Math.hypot(ndx, ndz);
+          if (nd > 1e-4) {
+            m.x += (ndx / nd) * cfg.walkSpeed * 0.55 * dt;
+            m.z += (ndz / nd) * cfg.walkSpeed * 0.55 * dt;
+          }
         }
       } else {
         m.stuckTime = 0;

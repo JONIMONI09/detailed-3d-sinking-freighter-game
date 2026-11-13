@@ -1174,7 +1174,6 @@ export class Game {
               nz: 0,
             };
             comp.holes.push(hole);
-            this.makeHoleVisual(hole);
             this.sim.firstBreach = true;
           }
         }

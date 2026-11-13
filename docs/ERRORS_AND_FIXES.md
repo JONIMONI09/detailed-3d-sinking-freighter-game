@@ -29,6 +29,18 @@ Do not use this file for speculative risks. Put open limitations in
 - Related files / skills:
 ```
 
+### ERR-2026-11-13-05 - Window Burst Hole Ring, Doorway Steering Lock & Below-Deck Crew Descent
+
+- Date (Europe/Berlin): 2026-11-13
+- Area: Crew Doorway & Wall-Slide Navigation, Below-Deck Descent, Window Burst Visuals
+- Status: Resolved
+- Symptom: (1) Burst windows rendered a circular steel hull-breach ring inside the glass opening; (2) crew froze in narrow `1.0m` doorframes or walked head-first into corridor walls; (3) crew could not descend into lower cargo holds/engine room after explosions due to locked keycard doors (`red`/`blue`), missing `holdHole`/bulkhead routing, and lack of drop-down fallback.
+- Root cause: (1) `game.ts` called `this.makeHoleVisual(hole)` on `shouldWindowBurst` even though `this.breakGlass(pane)` already handled the shattered window; (2) `CrewBody.r = 0.34` + 5-ray `computeAntiClippingSteering` deflected crew into narrow `1.0m` doorjambs and perpendicular corridor walls; (3) `walkToward` skipped doors with `door.locked === true` and `computeDeckWaypoint` lacked `holdHole`/side-room/bulkhead waypoints.
+- Solution: Removed `this.makeHoleVisual(hole)` from window burst in `game.ts`; reduced `CrewBody.r` to `0.2`, bypassed 5-ray steering when threading doors, added 90-degree wall-slide clearance (`walkToward`), added side-room/corridor/`holdHole`/bulkhead routing (`computeDeckWaypoint`), granted crew master-key door access (`door.key`), and added shaft jump (`vy = 4.2`) + `2.2s` drop-down fallback (`stepCrew`) plus regression test `testBelowDeckDescentAndDropJump`.
+- Verification: `npx tsc --noEmit` (root & sonnet), `npm test`, `npm run build`, and `npm run docs:check` executed after final edit.
+- Prevention: Never spawn steel hull-breach rings on broken glass panes; test multi-deck crew descent, doorway clearance, and wall-slide steering in `tests/crew-navigation.test.mjs`.
+- Related files / skills: `detailed-3d-sinking-freighter-game_sonnet/src/game/crew.ts`, `game.ts`, `tests/crew-navigation.test.mjs` / `error-fix-document`
+
 ### ERR-2026-11-13-04 - Superstructure Ocean Wave Clipping & Water Query Isolation
 
 - Date (Europe/Berlin): 2026-11-13
