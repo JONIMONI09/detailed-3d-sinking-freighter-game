@@ -61,7 +61,7 @@ function buildFloorGrid(boxes: readonly NavBox[], floorY: number, now: number): 
 
   const yLow = floorY + 0.48;
   const yHigh = floorY + 1.72;
-  const pad = 0.08;
+  const pad = 0.04;
 
   // 1. Mark wall/furniture obstacles with slight Minkowski inflation
   for (const b of boxes) {

@@ -29,6 +29,17 @@ Do not use this file for speculative risks. Put open limitations in
 - Related files / skills:
 ```
 
+### ERR-2026-11-13-11 - Catwalk Edge Cornering, Doorway Collider Centering & Ragdoll Fall-and-Stand Recovery
+
+- Date (Europe/Berlin): 2026-11-13
+- Area: Crew AI Edge/Doorframe Recovery (`navgrid.ts`, `crew.ts`)
+- Status: Resolved
+- Symptom: Bots could repeatedly loop on narrow catwalk corners (`0.90m` clearance) and doorframes for long runs instead of forcing past or falling/standing up to break the loop.
+- Root cause: (1) `navgrid.ts` (`pad = 0.08`) choked the `0.90m` catwalk clearance and steered diagonally into the superstructure corner; (2) `walkToward()` did not center-align onto the exact doorway `Collider` center; (3) `monitorProgressAndUnstick()` only hopped laterally and reversed `patrolIndex`, allowing indefinite edge loops.
+- Fix: Lowered `navgrid.ts` padding to `0.04` and bypassed 2D `navgrid` on narrow catwalks (`shipNavGraph` centerline), added doorway `Collider` center-alignment in `walkToward()`, upgraded `stuckCount === 2` to a forward force-vault (`0.75m` + `0.35m` hop), and added `stuckCount >= 3` brief ragdoll fall-and-stand recovery (`fallRecovery`, `1.15-1.9s`) that tumbles past the snag and resumes cleanly.
+- Prevention: Break persistent edge/doorframe loops with a physical forward force-vault followed by a brief ragdoll fall/stand-up reset rather than reversing patrol waypoints indefinitely.
+- Related files / skills: `detailed-3d-sinking-freighter-game_sonnet/src/game/crew.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/navgrid.ts`, `tests/crew-navigation.test.mjs`.
+
 ### ERR-2026-11-13-10 - Peer Yielding, Catwalk Lateral Sidestep & Exterior Wall-Climb Fallback
 
 - Date (Europe/Berlin): 2026-11-13

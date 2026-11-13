@@ -98,6 +98,8 @@ export interface CrewMember {
   stuckCount?: number;
   yieldTimer?: number;
   wallClimbing?: boolean;
+  fallRecovery?: boolean;
+  ragdollFloorY?: number;
   patrol?: readonly { x: number; y: number; z: number }[];
 }
 
@@ -321,9 +323,10 @@ function walkToward(
   onStair = false,
 ) {
   const stairMode = onStair || isInStairwellBand(m.x, m.y, m.z);
+  const onCatwalk = isOnNarrowCatwalk(m.x, m.y, m.z);
   let steerX = tx;
   let steerZ = tz;
-  if (world?.boxes && !stairMode) {
+  if (world?.boxes && !stairMode && !onCatwalk) {
     m.navTimer = (m.navTimer ?? 0) - dt;
     const wpClose = m.navWaypoint ? Math.hypot(m.navWaypoint.x - m.x, m.navWaypoint.z - m.z) < 0.55 : true;
     if (m.navTimer <= 0 || wpClose || !m.navWaypoint) {
@@ -333,8 +336,27 @@ function walkToward(
     }
     steerX = m.navWaypoint.x;
     steerZ = m.navWaypoint.z;
-  } else if (stairMode) {
+  } else if (stairMode || onCatwalk) {
     m.navWaypoint = null;
+  }
+
+  // Center-align through nearby open/opening doorways so shoulders never snag on doorframes
+  if (world && !stairMode) {
+    const preDx = steerX - m.x;
+    const preDz = steerZ - m.z;
+    const preLen = Math.hypot(preDx, preDz);
+    if (preLen > 1e-4) {
+      const dHit = world.raycast(m.x, m.y + 1.0, m.z, preDx / preLen, 0, preDz / preLen, 1.8, (c) => c.tag === "door");
+      if (dHit?.collider && dHit.dist < 1.8) {
+        const dc = dHit.collider as { minX?: number; maxX?: number; minZ?: number; maxZ?: number };
+        if (dc.minX !== undefined && dc.maxX !== undefined && dc.minZ !== undefined && dc.maxZ !== undefined) {
+          const cx = (dc.minX + dc.maxX) * 0.5;
+          const cz = (dc.minZ + dc.maxZ) * 0.5;
+          steerX = steerX * 0.35 + cx * 0.65;
+          steerZ = steerZ * 0.35 + cz * 0.65;
+        }
+      }
+    }
   }
 
   const dx = steerX - m.x,
@@ -546,24 +568,36 @@ function monitorProgressAndUnstick(
   m.navTimer = 0;
 
   if (m.stuckCount === 2 && m.onGround) {
-    // Self-unstick hop + sidestep while keeping current slide side
+    // Force-push / vault past snagging edge or doorframe toward waypoint
     const dx = wp.x - m.x;
     const dz = wp.z - m.z;
     const d = Math.hypot(dx, dz) || 1;
     const sign = m.slideSign || 1;
     const tx = (-dz / d) * sign;
     const tz = (dx / d) * sign;
-    const hopBody: CrewBody = { x: m.x, y: m.y, z: m.z, vx: 0, vy: 3.6, vz: 0, r: 0.2, h: 1.75, onGround: false, step: 0.48 };
-    world.move(hopBody, tx * 0.35 + (dx / d) * 0.15, 0.12, tz * 0.35 + (dz / d) * 0.15);
+    const hopBody: CrewBody = { x: m.x, y: m.y, z: m.z, vx: 0, vy: 3.8, vz: 0, r: 0.2, h: 1.75, onGround: false, step: 0.48 };
+    world.move(hopBody, (dx / d) * 0.75 + tx * 0.25, 0.35, (dz / d) * 0.75 + tz * 0.25);
     m.x = hopBody.x;
     m.y = hopBody.y;
     m.z = hopBody.z;
-    m.vy = 3.4;
+    m.vy = 3.6;
     m.onGround = false;
   } else if (m.stuckCount >= 3) {
+    // Persistent edge/doorframe snag -> trigger brief ragdoll fall & stand-up recovery past the snag
+    const dx = wp.x - m.x;
+    const dz = wp.z - m.z;
+    const d = Math.hypot(dx, dz) || 1;
+    m.ragdollFloorY = m.y;
+    m.fallRecovery = true;
+    m.ragdoll = new ArticulatedRagdoll(v3(m.x, m.y, m.z));
+    m.ragdoll.activate(v3((dx / d) * 1.4, 1.2, (dz / d) * 1.4));
+    m.isRagdoll = true;
     m.slideSign = -(m.slideSign || 1);
     m.slideTimer = 0.75;
     m.stuckCount = 0;
+    m.stuckTime = 0;
+    m.navWaypoint = null;
+    enter(m, "ragdoll");
     return true;
   }
   return false;
@@ -673,27 +707,33 @@ export function stepCrew(
 
   // 2. Active Ragdoll State Processing
   if (m.state === "ragdoll" && m.ragdoll && m.ragdoll.active) {
+    const ragFloor = m.fallRecovery ? (m.ragdollFloorY ?? floorY) : floorY;
     m.ragdoll.step(
       dt,
       ctx?.waterVelocity ?? v3(0, 0, 0),
       ctx?.waterLevelY ?? -999,
-      floorY,
+      ragFloor,
     );
     // Track position to pelvis center of mass, keeping within ship deck bounds
     const pelvis = m.ragdoll.limbs.get("pelvis");
     if (pelvis) {
       m.x = Math.max(-10.5, Math.min(10.5, pelvis.pos.x));
-      m.y = Math.max(floorY, pelvis.pos.y);
-      m.z = Math.max(-56, Math.min(56, pelvis.pos.z));
+      m.y = Math.max(ragFloor, pelvis.pos.y);
+      m.z = Math.max(-67, Math.min(56, pelvis.pos.z));
     }
 
-    // Recover reliably so fallen crew always stand back up (settled or max 5.0s)
+    // Recover reliably so fallen crew always stand back up (1.2-2.0s for unstick fall, or max 5.0s)
     const pelvisSpeed = Math.hypot(pelvis?.vel.x ?? 0, pelvis?.vel.y ?? 0, pelvis?.vel.z ?? 0);
-    if ((m.stateTime >= 2.5 && pelvisSpeed < 0.6) || m.stateTime >= 5.0) {
+    const minWait = m.fallRecovery ? 1.15 : 2.5;
+    const maxWait = m.fallRecovery ? 1.9 : 5.0;
+    if ((m.stateTime >= minWait && pelvisSpeed < 0.7) || m.stateTime >= maxWait) {
+      const resumeState = m.targetId ? "moving" : "patrol";
       m.isRagdoll = false;
+      m.fallRecovery = false;
       m.ragdoll.active = false;
-      m.y = floorY;
-      enter(m, "patrol");
+      m.y = ragFloor;
+      m.navWaypoint = null;
+      enter(m, resumeState);
     }
     return null;
   }
@@ -751,6 +791,7 @@ export function stepCrew(
         m.lastX = m.x;
         m.lastZ = m.z;
         const patrolStalled = monitorProgressAndUnstick(m, wp, dt, ctx?.world);
+        if (patrolStalled) return "ragdoll_triggered";
         if (Math.hypot(m.x - patrolTarget.x, m.z - patrolTarget.z) < 0.9) {
           m.patrolIndex = (m.patrolIndex + 1) % patrol.length;
           m.stuckTime = 0;
@@ -859,6 +900,7 @@ export function stepCrew(
           m.stuckTime = 0;
         }
       } else if (monitorProgressAndUnstick(m, wp, dt, ctx?.world) || (ctx?.world && !m.waitingForDoor && moved < 0.2 * dt)) {
+        if ((m.state as string) === "ragdoll") return "ragdoll_triggered";
         // Escalate from A* replan (0.35s) -> exterior catwalk bypass (0.75s) -> clean obstacle vault (1.45s)
         m.stuckTime = (m.stuckTime ?? 0) + dt;
         if (m.stuckTime > 0.35) m.navWaypoint = null;
