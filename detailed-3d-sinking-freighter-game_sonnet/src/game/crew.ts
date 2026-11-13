@@ -81,6 +81,9 @@ export interface CrewMember {
   swimming?: boolean;
   falling?: boolean;
   airTime?: number;
+  stuckTime?: number;
+  lastX?: number;
+  lastZ?: number;
 }
 
 export interface CrewConfig {
@@ -286,11 +289,25 @@ function computeDeckWaypoint(
     return { x: -0.88, z: -52.4 };
   }
 
-  // Descending from main deck into Engine Room via Main Entrance & aft Engine Control Room U-stair (engineHole)
-  if (dy < -2.2 && m.y >= 1.5 && target.y < -1.0 && target.z < -38.0) {
-    if (m.z > -44.0) return { x: 0, z: -44.5 };
-    if (m.z > -57.2) return { x: -0.88, z: -57.6 };
-    return { x: -0.88, z: -58.4 };
+  // Descending from main deck into Engine Room via Main Entrance, right lobby lane (x = 0.88), & aft engineHole U-stair
+  if (dy < -2.2 && m.y >= 1.5 && target.y < -0.5 && target.z < -38.0) {
+    if (m.z > -44.0) return { x: 0, z: -44.8 };
+    if (m.z > -57.0) return Math.abs(m.x) < 1.7 && m.z > -53.0 ? { x: 0.88, z: -53.5 } : { x: 0.4, z: -57.8 };
+    return { x: -0.88, z: -58.6 };
+  }
+
+  // Descending from main deck into Cargo Holds via Cargo Hold 2 Gate & holdHole (x = -9.35..-6.05, z = 18.5..25.5)
+  if (dy < -2.2 && m.y >= 1.5 && target.y < -0.5 && target.z >= -38.0) {
+    if (m.z < 27.0 && (m.x > -6.0 || m.x < -9.5 || m.z < 18.0)) return { x: -8.6, z: 28.2 };
+    if (m.z >= 27.0) return { x: -8.6, z: 25.0 };
+    return { x: -6.8, z: 19.0 };
+  }
+
+  // Navigating between lower-deck compartments through watertight bulkhead doors (z = -39, -8, 26 at x = 0)
+  if (m.y < 1.2 && target.y < 1.2) {
+    if ((m.z < -39.0) !== (target.z < -39.0)) return { x: 0, z: m.z < -39.0 ? -38.0 : -40.0 };
+    if ((m.z < -8.0) !== (target.z < -8.0)) return { x: 0, z: m.z < -8.0 ? -7.0 : -9.0 };
+    if ((m.z < 26.0) !== (target.z < 26.0)) return { x: 0, z: m.z < 26.0 ? 27.0 : 25.0 };
   }
 
   return { x: target.x, z: target.z };
@@ -318,9 +335,10 @@ function walkToward(
   // Enemy-AI style automatic door opening when approaching closed unlocked doors
   if (world && d > 1e-6) {
     const doorRay = world.raycast(m.x, m.y + 1.0, m.z, nx, 0, nz, 1.8, (c) => c.tag === "door");
-    if (doorRay && doorRay.collider.owner) {
-      const door = doorRay.collider.owner as { locked?: boolean; target: number; fixed: number; forceOpen: (dir: number) => void };
-      if (!door.locked && door.target === 0) {
+    if (doorRay && doorRay.collider?.owner) {
+      const door = doorRay.collider.owner as { locked?: boolean; key?: string; target: number; fixed: number; forceOpen: (dir: number) => void };
+      // Damage control crew carry master keys for keycard doors and can open unlocked watertight doors
+      if (door.target === 0 && (!door.locked || door.key)) {
         door.forceOpen(Math.sign(m.z - door.fixed) || 1);
       }
     }
@@ -516,7 +534,40 @@ export function stepCrew(
       }
 
       const wp = ctx?.world ? computeDeckWaypoint(m, target) : { x: target.x, z: target.z };
+      const prevX = m.lastX ?? m.x;
+      const prevZ = m.lastZ ?? m.z;
       walkToward(m, wp.x, wp.z, cfg.walkSpeed * dt, ctx?.raycast, ctx?.world, dt, ctx?.waterLevel ?? -Infinity, target.y);
+      const moved = Math.hypot(m.x - prevX, m.z - prevZ);
+      m.lastX = m.x;
+      m.lastZ = m.z;
+
+      // Allow crew to jump/drop down into lower compartments when responding to below-deck explosions
+      if (ctx?.world && m.y >= 1.5 && target.y < -0.5) {
+        const nearHoldShaft = Math.hypot(m.x - -7.7, m.z - 22.0) < 3.6;
+        const nearEngineShaft = Math.hypot(m.x - 0, m.z - -61.3) < 3.6;
+        if ((nearHoldShaft || nearEngineShaft) && m.onGround && m.y >= 2.5) {
+          m.vy = 4.2;
+          m.onGround = false;
+          m.falling = true;
+        }
+        if (moved < 0.15 * dt) {
+          m.stuckTime = (m.stuckTime ?? 0) + dt;
+          if (m.stuckTime > 2.2) {
+            // Jump down directly into the target lower hold so crew is never blocked upstairs
+            m.x = Math.max(-9.0, Math.min(9.0, target.x * 0.6));
+            m.z = Math.max(-67.0, Math.min(54.0, target.z));
+            m.y = 1.8;
+            m.vy = -3.0;
+            m.onGround = false;
+            m.falling = true;
+            m.stuckTime = 0;
+          }
+        } else {
+          m.stuckTime = 0;
+        }
+      } else {
+        m.stuckTime = 0;
+      }
 
       if (dist(m, target) <= REPAIR_REACH || (horizontalDist <= REPAIR_REACH + 0.8 && Math.abs(target.y - m.y) <= 2.2)) {
         enter(m, "repairing");

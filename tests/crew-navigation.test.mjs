@@ -174,9 +174,71 @@ function testPortableLadderPlacement() {
   console.log('  ok portable damage control ladder deployed for high breaches (> 1.8m)');
 }
 
+// 5. Below-Deck Descent & Jump-Down Fallback for Lower-Hold Explosions
+function testBelowDeckDescentAndDropJump() {
+  const ragdollMod = loadTs('detailed-3d-sinking-freighter-game_sonnet/src/game/ragdoll.ts', (id) => {
+    if (id === './navmesh3d') return navmesh;
+    throw new Error(`Unexpected require in ragdoll: ${id}`);
+  });
+  const crewMod = loadTs('detailed-3d-sinking-freighter-game_sonnet/src/game/crew.ts', (id) => {
+    if (id === './navmesh3d') return navmesh;
+    if (id === './ragdoll') return ragdollMod;
+    throw new Error(`Unexpected require: ${id}`);
+  });
+
+  // Case A: Crew on main deck above solid steel deck (blocked downward) -> drops/jumps down after stuck threshold
+  const world = {
+    move(body, dx, dy, dz) {
+      body.x += dx;
+      body.z += dz;
+      const nextY = body.y + dy;
+      const onUpperDeck = body.y >= 2.8 && !(body.x >= -9.35 && body.x <= -6.05 && body.z >= 18.5 && body.z <= 25.5);
+      const floor = onUpperDeck && body.y >= 2.8 ? 3.0 : -5.0;
+      if (nextY <= floor) {
+        body.y = floor;
+        body.onGround = true;
+      } else {
+        body.y = nextY;
+        body.onGround = false;
+      }
+    },
+    raycast() {
+      return { hit: false, distance: Infinity };
+    },
+  };
+
+  // Start crew right at holdHole entrance on main deck (y = 3.0) with a breach in Cargo Hold 2 (y = -3.5)
+  const member = {
+    name: 'Test Diver',
+    role: 'damage-control',
+    x: -7.7,
+    y: 3.0,
+    z: 27.5,
+    state: 'moving',
+    targetId: 1,
+    patchKits: 4,
+    stateTime: 0,
+    patrolIndex: 0,
+    onGround: true,
+    vy: 0,
+  };
+  const breaches = [{ id: 1, x: 0, y: -3.5, z: 10.0, area: 1.5, kind: 'hull-breach' }];
+  const cfg = { ...crewMod.DEFAULT_CREW_CONFIG, walkSpeed: 4.5, repairRate: 1.2 };
+
+  for (let i = 0; i < 400; i++) {
+    crewMod.stepCrew(member, 0.05, breaches, cfg, { world, raycast: world.raycast });
+    if (breaches[0].area <= 0) break;
+  }
+
+  assert.ok(member.y < 0, `Expected crew to descend below main deck (y < 0), got y=${member.y}`);
+  assert.equal(breaches[0].area, 0, 'Expected crew to reach and seal the lower-hold breach');
+  console.log('  ok crew descends/jumps into lower holds and seals explosion breach');
+}
+
 test5RaySteeringAndDeflection();
 testDoorTraversalSequence();
 testVerticalLadderClimbing();
 testPortableLadderPlacement();
+testBelowDeckDescentAndDropJump();
 
 console.log('Crew navigation unit tests passed.');
