@@ -62,7 +62,41 @@ function Crosshair({ type, hit, holdProgress }: { type: Settings["crosshair"]; h
   );
 }
 
+function VesselStatus({ h }: { h: HudState }) {
+  const col = (p: number) => (p < 30 ? "#ef4444" : p < 65 ? "#f59e0b" : "#34d399");
+  const state = h.statusHullPct <= 0 ? "100% DESTROYED" : h.statusHullPct < 30 ? "CRITICAL" : h.statusHullPct < 65 ? "DAMAGED" : "INTACT";
+  const icon = h.statusKind === "station" ? "🛰️" : "⚓";
+  const label = h.statusKind === "station" ? "pressure" : "integrity";
+  return (
+    <div className="w-52 rounded-xl border border-white/15 bg-black/55 p-2.5 text-[11px] text-white backdrop-blur-sm">
+      <div className="mb-1 flex items-center justify-between font-bold tracking-wide">
+        <span>{icon} {h.statusTitle}</span>
+        <span style={{ color: col(h.statusHullPct) }} className={h.statusHullPct <= 0 ? "animate-pulse" : ""}>{state}</span>
+      </div>
+      <div className="mb-1 flex items-center justify-between">
+        <span className="text-slate-300">Hull {label}</span>
+        <span className="font-mono">{h.statusHullPct}%</span>
+      </div>
+      <div className="mb-1.5 h-1.5 overflow-hidden rounded-full bg-white/10">
+        <div className="h-full transition-all" style={{ width: `${h.statusHullPct}%`, background: col(h.statusHullPct) }} />
+      </div>
+      <div className="space-y-0.5">
+        {h.statusParts.map((pt, i) => (
+          <div key={i} className="flex items-center gap-1.5">
+            <span className="w-24 truncate text-slate-300" title={pt.name}>{pt.name}</span>
+            <div className="h-1 flex-1 overflow-hidden rounded-full bg-white/10">
+              <div className="h-full transition-all" style={{ width: `${pt.pct}%`, background: col(pt.pct) }} />
+            </div>
+            <span className="w-8 text-right font-mono">{pt.pct}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ShipStatus({ h }: { h: HudState }) {
+  if (h.statusKind !== "freighter") return <VesselStatus h={h} />;
   const col = (f: number) => (f > 0.7 ? "#ef4444" : f > 0.35 ? "#f59e0b" : "#38bdf8");
   const sinkPct = Math.min(100, (h.F / 0.3) * 100);
   return (
@@ -234,7 +268,7 @@ export default function Hud({ h, settings, touch, game }: { h: HudState; setting
 
       {/* Oben rechts: Schiffszustand */}
       <div className="absolute right-2 top-2 origin-top-right" style={{ transform: `scale(${sc})`, marginRight: touch ? 46 : 0 }}>
-        {h.mode === "mission" || h.F > 0 ? <ShipStatus h={h} /> : null}
+        {h.mode === "mission" || h.F > 0 || h.statusKind !== "freighter" ? <ShipStatus h={h} /> : null}
         {settings.showFps && <div className="mt-1 text-right font-mono text-[11px] text-lime-300">{h.fps} FPS</div>}
       </div>
 
@@ -358,12 +392,12 @@ export default function Hud({ h, settings, touch, game }: { h: HudState; setting
       })()}
       {h.tabletOpen && game && (
         <div className="pointer-events-auto absolute inset-0 z-30 flex items-center justify-center bg-black/55 backdrop-blur-sm">
-          <div className="w-[460px] max-w-[92vw] rounded-2xl border border-cyan-400/40 bg-slate-950/95 p-4 text-slate-100 shadow-2xl">
+          <div className="max-h-[90vh] w-[480px] max-w-[92vw] overflow-y-auto rounded-2xl border border-cyan-400/40 bg-slate-950/95 p-4 text-slate-100 shadow-2xl">
             <div className="mb-3 flex items-center justify-between border-b border-white/10 pb-2">
               <div>
                 <div className="text-sm font-black tracking-wider text-cyan-300">📱 BRIDGE COMMAND TABLET</div>
                 <div className="text-[11px] text-slate-400">
-                  Active Vessel: <span className="font-bold uppercase text-amber-300">{h.activeVessel}</span> · Speed {h.vesselSpeed.toFixed(1)} m/s · Rudder {h.vesselRudder.toFixed(0)}°
+                  Active Vessel: <span className="font-bold uppercase text-amber-300">{h.activeVessel}</span> · Freighter Hull {h.freighterIntegrityPct}% · Speed {h.vesselSpeed.toFixed(1)} m/s · Rudder {h.vesselRudder.toFixed(0)}°
                 </div>
               </div>
               <button
@@ -375,18 +409,40 @@ export default function Hud({ h, settings, touch, game }: { h: HudState; setting
             </div>
 
             <div className="mb-3 grid grid-cols-2 gap-2">
-              <button
-                onClick={() => game.switchVessel()}
-                disabled={h.theatre === "orbital"}
-                className="rounded-lg border border-amber-400/40 bg-amber-500/20 px-3 py-2 text-xs font-bold text-amber-200 hover:bg-amber-500/35 disabled:opacity-40"
-              >
-                🚢 Switch Ship [V] ({h.activeVessel === "freighter" ? "→ Battleship" : "→ Freighter"})
-              </button>
+              {(() => {
+                const targetDestroyed =
+                  h.theatre === "orbital"
+                    ? h.freighterDestroyed && h.battleshipSunk
+                    : h.activeVessel === "freighter"
+                      ? h.battleshipSunk
+                      : h.freighterDestroyed;
+                return (
+                  <button
+                    onClick={() => game.switchVessel()}
+                    disabled={targetDestroyed}
+                    className={`rounded-lg border border-amber-400/40 bg-amber-500/20 px-3 py-2 text-xs font-bold text-amber-200 hover:bg-amber-500/35 ${
+                      targetDestroyed ? "cursor-not-allowed opacity-40 grayscale" : ""
+                    }`}
+                  >
+                    🚢 Switch Ship [V] ({h.activeVessel === "freighter" ? "→ Battleship" : "→ Freighter"})
+                    {targetDestroyed && (
+                      <span className="ml-1.5 rounded bg-red-600/80 px-1.5 py-0.5 text-[9px] font-black text-white">
+                        100% DESTROYED
+                      </span>
+                    )}
+                  </button>
+                );
+              })()}
               <button
                 onClick={() => game.restoreFreighter()}
                 className="rounded-lg border border-emerald-400/40 bg-emerald-500/20 px-3 py-2 text-xs font-bold text-emerald-200 hover:bg-emerald-500/35"
               >
-                🔧 Restore Freighter (No Reload)
+                🔄 Restart / Restore Freighter
+                {h.freighterDestroyed && (
+                  <span className="ml-1.5 rounded bg-red-600/80 px-1.5 py-0.5 text-[9px] font-black text-white">
+                    100% DESTROYED
+                  </span>
+                )}
               </button>
               <button
                 onClick={() => game.spawnExtraBattleship()}
@@ -406,18 +462,58 @@ export default function Hud({ h, settings, touch, game }: { h: HudState; setting
               </button>
               <button
                 onClick={() => game.remoteFireSalvo()}
-                disabled={h.theatre === "orbital"}
-                className="rounded-lg border border-red-400/40 bg-red-500/20 px-3 py-2 text-xs font-bold text-red-200 hover:bg-red-500/35 disabled:opacity-40"
+                disabled={h.theatre === "orbital" || h.battleshipSunk}
+                className={`rounded-lg border border-red-400/40 bg-red-500/20 px-3 py-2 text-xs font-bold text-red-200 hover:bg-red-500/35 ${
+                  h.theatre === "orbital" || h.battleshipSunk ? "cursor-not-allowed opacity-40 grayscale" : ""
+                }`}
               >
-                💥 Fire Salvo (HP: {h.battleshipHp})
+                💥 Fire Salvo ({h.battleshipSunk ? "100% DESTROYED" : `HP: ${h.battleshipHp}`})
               </button>
               <button
                 onClick={() => game.fireBattleshipMissile()}
-                disabled={h.theatre === "orbital"}
-                className="rounded-lg border border-purple-400/40 bg-purple-500/20 px-3 py-2 text-xs font-bold text-purple-200 hover:bg-purple-500/35 disabled:opacity-40"
+                disabled={h.theatre === "orbital" || h.battleshipSunk}
+                className={`rounded-lg border border-purple-400/40 bg-purple-500/20 px-3 py-2 text-xs font-bold text-purple-200 hover:bg-purple-500/35 ${
+                  h.theatre === "orbital" || h.battleshipSunk ? "cursor-not-allowed opacity-40 grayscale" : ""
+                }`}
               >
                 🚀 Launch Missile [E]
               </button>
+            </div>
+
+            <div className="mb-3 rounded-xl border border-amber-400/25 bg-amber-950/20 p-2.5">
+              <div className="mb-1.5 flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-amber-300">
+                <span>🎯 Fleet Strike on Freighter ({h.aliveBattleshipCount} Active Ships)</span>
+                {h.freighterDestroyed && <span className="text-red-400">100% DESTROYED</span>}
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  onClick={() => game.fleetStrikeFreighter("salvo")}
+                  disabled={h.freighterDestroyed || h.aliveBattleshipCount === 0}
+                  className={`rounded-lg border border-red-400/40 bg-red-500/20 px-2 py-2 text-[11px] font-bold text-red-200 hover:bg-red-500/35 ${
+                    h.freighterDestroyed || h.aliveBattleshipCount === 0 ? "cursor-not-allowed opacity-40 grayscale" : ""
+                  }`}
+                >
+                  💥 All: Salvo → Freighter
+                </button>
+                <button
+                  onClick={() => game.fleetStrikeFreighter("torpedo")}
+                  disabled={h.freighterDestroyed || h.aliveBattleshipCount === 0}
+                  className={`rounded-lg border border-cyan-400/40 bg-cyan-500/20 px-2 py-2 text-[11px] font-bold text-cyan-200 hover:bg-cyan-500/35 ${
+                    h.freighterDestroyed || h.aliveBattleshipCount === 0 ? "cursor-not-allowed opacity-40 grayscale" : ""
+                  }`}
+                >
+                  ⚓ All: Torpedo → Freighter
+                </button>
+                <button
+                  onClick={() => game.fleetStrikeFreighter("missile")}
+                  disabled={h.freighterDestroyed || h.aliveBattleshipCount === 0}
+                  className={`rounded-lg border border-purple-400/40 bg-purple-500/20 px-2 py-2 text-[11px] font-bold text-purple-200 hover:bg-purple-500/35 ${
+                    h.freighterDestroyed || h.aliveBattleshipCount === 0 ? "cursor-not-allowed opacity-40 grayscale" : ""
+                  }`}
+                >
+                  🚀 All: Missiles → Freighter
+                </button>
+              </div>
             </div>
 
             <div className="mb-3 rounded-xl border border-white/10 bg-white/5 p-2.5">
@@ -458,12 +554,25 @@ export default function Hud({ h, settings, touch, game }: { h: HudState; setting
               <button onClick={() => game.remoteCycleFlood()} className="rounded-lg border border-blue-400/30 bg-blue-900/40 py-2 hover:bg-blue-800/50">
                 🌊 Cycle Flood Rate [F]
               </button>
-              <button
-                onClick={() => game.toggleTheatre()}
-                className="col-span-2 rounded-lg border border-indigo-400/50 bg-indigo-700/40 py-2 text-indigo-100 hover:bg-indigo-600/50"
-              >
-                {h.theatre === "orbital" ? "⚓ Return to Ocean / Ships" : "🛰️ Enter Orbital Space Station (HYPERION-9)"}
-              </button>
+              {(() => {
+                const allDestroyed = h.theatre === "orbital" && h.freighterDestroyed && h.battleshipSunk;
+                return (
+                  <button
+                    onClick={() => game.toggleTheatre()}
+                    disabled={allDestroyed}
+                    className={`col-span-2 rounded-lg border border-indigo-400/50 bg-indigo-700/40 py-2 text-indigo-100 hover:bg-indigo-600/50 ${
+                      allDestroyed ? "cursor-not-allowed opacity-40 grayscale" : ""
+                    }`}
+                  >
+                    {h.theatre === "orbital" ? "⚓ Return to Ocean / Ships" : "🛰️ Enter Orbital Space Station (HYPERION-9)"}
+                    {allDestroyed && (
+                      <span className="ml-1.5 rounded bg-red-600/80 px-1.5 py-0.5 text-[9px] font-black text-white">
+                        100% DESTROYED
+                      </span>
+                    )}
+                  </button>
+                );
+              })()}
               {h.theatre === "orbital" && (
                 <button
                   onClick={() => game.toggleOrbitalLaser()}
@@ -500,7 +609,10 @@ export default function Hud({ h, settings, touch, game }: { h: HudState; setting
       {!h.tabletOpen && h.activeVessel === "battleship" && (
         <div className="pointer-events-none absolute bottom-10 left-1/2 -translate-x-1/2 rounded-xl border border-amber-400/50 bg-slate-950/85 px-4 py-2 text-center shadow-xl backdrop-blur-sm">
           <div className="text-xs font-black tracking-wider text-amber-300">
-            ⚓ BATTLESHIP COMMAND · SPEED {h.vesselSpeed.toFixed(1)} m/s · RUDDER {h.vesselRudder.toFixed(0)}° · FREIGHTER {h.freighterDist}m ({Math.round(h.flood * 100)}% FLOODED)
+            ⚓ BATTLESHIP COMMAND · SPEED {h.vesselSpeed.toFixed(1)} m/s · RUDDER {h.vesselRudder.toFixed(0)}° ·{" "}
+            <span className={h.lockedTargetLabel !== "NONE" ? "text-emerald-300" : "text-slate-400"}>
+              🎯 [X] LOCK: {h.lockedTargetLabel} {h.lockedTargetLabel !== "NONE" ? `(${h.lockedTargetDist}m)` : ""}
+            </span>
           </div>
           <div className="mt-1 flex justify-center gap-4 text-[11px] font-bold">
             <span className={h.cannonCd <= 0 ? "text-emerald-300" : "text-slate-400"}>
@@ -522,9 +634,24 @@ export default function Hud({ h, settings, touch, game }: { h: HudState; setting
             [TAB] Command Tablet
           </button>
           <span className="text-slate-500">·</span>
-          <button onClick={() => game?.switchVessel()} className="hover:text-amber-300">
-            [V] Switch Ship ({h.activeVessel.toUpperCase()})
-          </button>
+          {(() => {
+            const targetDestroyed =
+              h.theatre === "orbital"
+                ? h.freighterDestroyed && h.battleshipSunk
+                : h.activeVessel === "freighter"
+                  ? h.battleshipSunk
+                  : h.freighterDestroyed;
+            return (
+              <button
+                onClick={() => game?.switchVessel()}
+                disabled={targetDestroyed}
+                className={targetDestroyed ? "cursor-not-allowed opacity-40 grayscale" : "hover:text-amber-300"}
+              >
+                [V] {h.theatre === "orbital" ? "Return to Ship" : `Switch Ship (${h.activeVessel.toUpperCase()})`}
+                {targetDestroyed ? " · 100% DESTROYED" : ""}
+              </button>
+            );
+          })()}
           <span className="text-slate-500">·</span>
           <span>[N] Fly</span>
         </div>

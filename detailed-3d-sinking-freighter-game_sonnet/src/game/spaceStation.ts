@@ -92,14 +92,15 @@ export class OrbitalSpaceStationSim {
 
     const earthTex = new THREE.CanvasTexture(earthCanvas);
     this.earthMesh = new THREE.Mesh(
-      new THREE.SphereGeometry(220, 36, 28),
+      new THREE.SphereGeometry(140, 36, 28),
       new THREE.MeshStandardMaterial({ map: earthTex, roughness: 0.75, metalness: 0.1 }),
     );
-    this.earthMesh.position.set(0, -285, 60);
+    // Offset far to the horizon so the Freighter, Ocean, and Orbital Camera below remain unobstructed
+    this.earthMesh.position.set(-240, -230, -320);
     this.root.add(this.earthMesh);
 
     this.atmosphereMesh = new THREE.Mesh(
-      new THREE.SphereGeometry(226, 32, 24),
+      new THREE.SphereGeometry(145, 32, 24),
       new THREE.MeshBasicMaterial({
         color: 0x38bdf8,
         transparent: true,
@@ -232,6 +233,18 @@ export class OrbitalSpaceStationSim {
         screenMesh.position.set(0, 1.25, cz + 2.55);
         screenMesh.rotation.x = -0.45;
         modGroup.add(screenMesh);
+      } else if (spec.id === "mod_docking") {
+        // Docking Bay Return Shuttle Console (z = 54)
+        const shuttleConsole = new THREE.Mesh(new THREE.BoxGeometry(2.8, 1.1, 1.1), tiDark);
+        shuttleConsole.position.set(0, 0.65, 54);
+        modGroup.add(shuttleConsole);
+        const shuttleScreen = new THREE.Mesh(
+          new THREE.BoxGeometry(2.2, 0.45, 0.1),
+          new THREE.MeshBasicMaterial({ color: 0x34d399 }),
+        );
+        shuttleScreen.position.set(0, 1.25, 53.5);
+        shuttleScreen.rotation.x = -0.45;
+        modGroup.add(shuttleScreen);
       }
 
       // Transverse Airlock Bulkhead Wall at z1 (with Stormworks Airlock Door)
@@ -270,7 +283,7 @@ export class OrbitalSpaceStationSim {
           y0: yFloor,
           h: 2.5,
           kind: doorKind,
-          key: doorKey,
+          locked: doorKey ?? null,
           heavy: true,
           bulkhead: true,
         });
@@ -459,6 +472,56 @@ export class OrbitalSpaceStationSim {
     }
   }
 
+  isPointInside(pos: THREE.Vector3): boolean {
+    if (!this.active) return false;
+    if (pos.y < STATION_BASE_Y - 0.5 || pos.y > STATION_BASE_Y + 5.0) return false;
+    return this.modules.some((m) => !m.detached && pos.x >= m.minX && pos.x <= m.maxX && pos.z >= m.minZ && pos.z <= m.maxZ);
+  }
+
+  reset(): void {
+    this.stationAlarm = false;
+    for (const mod of this.modules) {
+      mod.detached = false;
+      mod.pressureKpa = 101.3;
+      mod.structuralHp = 100;
+      mod.group.position.set(0, 0, 0);
+      mod.group.rotation.set(0, 0, 0);
+      mod.driftVel.set(0, 0, 0);
+      mod.driftRot.set(0, 0, 0);
+      for (const c of mod.colliders) c.enabled = true;
+      for (const b of mod.breaches) {
+        mod.group.remove(b.mesh);
+        b.mesh.geometry.dispose();
+        (b.mesh.material as THREE.Material).dispose();
+      }
+      mod.breaches = [];
+    }
+    for (const w of this.solarWings) {
+      w.detached = false;
+      w.hp = 100;
+      w.group.position.set(0, 0, 0);
+      w.group.rotation.set(0, 0, 0);
+      w.driftVel.set(0, 0, 0);
+      w.driftRot.set(0, 0, 0);
+    }
+  }
+
+  dispose(): void {
+    this.root.traverse((obj) => {
+      if (obj instanceof THREE.Mesh || obj instanceof THREE.Points) {
+        obj.geometry?.dispose();
+        const mat = obj.material;
+        if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+        else if (mat) {
+          if ("map" in mat && (mat as THREE.MeshStandardMaterial).map) {
+            (mat as THREE.MeshStandardMaterial).map?.dispose();
+          }
+          mat.dispose();
+        }
+      }
+    });
+  }
+
   /**
    * Steps Orbital Space Station decompression physics, progressive airlock flow,
    * drifting detached modules, and the 12 autonomous 3D station crew members.
@@ -466,12 +529,17 @@ export class OrbitalSpaceStationSim {
   step(
     dt: number,
     time: number,
-    _lockdownActive: boolean,
+    lockdownActive: boolean,
     _onLockdownRequest?: (crewName: string, modName: string, reason: string) => void,
   ): void {
     if (!this.active) return;
     // Rotate Planet Earth slowly below
     this.earthMesh.rotation.y = time * 0.015;
+    if (lockdownActive) {
+      for (const d of this.doors) {
+        if (d.bulkhead) d.target = 0;
+      }
+    }
 
     // 1. Step Module Atmospheric Pressure & Explosive Decompression
     for (const mod of this.modules) {
@@ -543,29 +611,6 @@ export class OrbitalSpaceStationSim {
         });
       }
     }
-
-    const doorHandles = this.doors.map((d) => ({
-      name: d.name,
-      axis: d.axis,
-      fixed: d.fixed,
-      c: d.c,
-      w: d.w,
-      y0: 0,
-      h: d.h,
-      open: d.open,
-      target: d.target,
-      bulkhead: d.bulkhead,
-      locked: d.locked,
-    }));
-
-    const compInfos = this.modules.map((m) => ({
-      id: m.id,
-      name: m.name,
-      minZ: m.minZ,
-      maxZ: m.maxZ,
-      fill: Math.max(0, (101.3 - m.pressureKpa) / 101.3),
-      flow: m.breaches.reduce((s, b) => s + b.area, 0) * 2.5,
-    }));
 
     for (let idx = 0; idx < this.crew.length; idx++) {
       const member = this.crew[idx];

@@ -19,7 +19,8 @@ export type Action =
   | "godmode"
   | "noclip"
   | "floodDial"
-  | "switchShip";
+  | "switchShip"
+  | "targetLock";
 
 export class Input {
   keys = new Set<string>();
@@ -74,7 +75,6 @@ export class Input {
       }
     };
     on(target, "mousedown", handleMouseDown);
-    on(window, "mousedown", handleMouseDown);
     on(window, "mouseup", (e: MouseEvent) => {
       if (e.button === 0) {
         this.mouseDown = false;
@@ -125,6 +125,7 @@ export class Input {
       Tab: "status",
       KeyT: "terminal",
       KeyV: "switchShip",
+      KeyX: "targetLock",
     };
     const a = map[e.code];
     if (a) this.queue.add(a);

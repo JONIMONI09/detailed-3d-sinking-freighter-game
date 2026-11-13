@@ -175,6 +175,11 @@ export class ShipSim {
     this.sinkT = 0;
     this.sunk = false;
     this.F = 0;
+    this.totalFlow = 0;
+    this.tiltDeg = 0;
+    this.waveHeave = 0;
+    this.firstBreach = false;
+    this.heading = 0;
     this.forceSink = false;
   }
 }
