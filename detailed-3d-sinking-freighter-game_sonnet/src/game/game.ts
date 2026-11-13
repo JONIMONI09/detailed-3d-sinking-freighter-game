@@ -712,6 +712,18 @@ export class Game {
         return c.fill > 0.004 ? this.sim.localLevel(c, x, z) : -Infinity;
       }
     }
+    if (
+      Math.abs(x) < 8.85 &&
+      z > -65.7 &&
+      z < -44.3 &&
+      y >= 2.95 &&
+      y < 15.6 &&
+      !this.sim.sunk &&
+      this.sim.sinkDepth < 14 &&
+      !this.ship.sections.some((s) => (s.id === "superstructure" || s.id === "bridge") && s.destroyed)
+    ) {
+      return -Infinity;
+    }
     const m = this.ship.group.matrixWorld.elements;
     const wx = m[0] * x + m[4] * y + m[8] * z + m[12];
     const wz = m[2] * x + m[6] * y + m[10] * z + m[14];

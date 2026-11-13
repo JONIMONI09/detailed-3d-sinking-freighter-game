@@ -63,6 +63,7 @@ void main(){
     float wf = 1.0 - 0.5*smoothstep(-3.5,-6.5,lp.y);
     float hw = hullW(lp.z)*wf;
     if (lp.y < 2.95 && lp.y > -7.0 && lp.z > -70.0 && abs(lp.x) < hw - 0.12) discard;
+    if (lp.y >= 2.95 && lp.y < 15.6 && lp.z > -65.7 && lp.z < -44.3 && abs(lp.x) < 8.85) discard;
     float dd = abs(lp.x) - hw;
     float rng = step(-70.0, lp.z) * step(lp.z, 72.0);
     float nz = noise(vWorld.xz*1.3 + uTime*0.6);

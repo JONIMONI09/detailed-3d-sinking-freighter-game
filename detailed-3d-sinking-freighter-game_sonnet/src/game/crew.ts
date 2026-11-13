@@ -286,10 +286,11 @@ function computeDeckWaypoint(
     return { x: -0.88, z: -52.4 };
   }
 
-  // Descending from main deck into Engine Room via forward open U-stair (x = 4.6..7.6, z = -39.8..-44.2)
-  if (dy < -2.2 && m.y >= 1.5 && target.y < -1.0) {
-    if (m.y > 0.5) return { x: 6.75, z: -43.6 };
-    return { x: 5.3, z: -39.6 };
+  // Descending from main deck into Engine Room via Main Entrance & aft Engine Control Room U-stair (engineHole)
+  if (dy < -2.2 && m.y >= 1.5 && target.y < -1.0 && target.z < -38.0) {
+    if (m.z > -44.0) return { x: 0, z: -44.5 };
+    if (m.z > -57.2) return { x: -0.88, z: -57.6 };
+    return { x: -0.88, z: -58.4 };
   }
 
   return { x: target.x, z: target.z };

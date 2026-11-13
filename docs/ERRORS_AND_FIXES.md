@@ -29,6 +29,18 @@ Do not use this file for speculative risks. Put open limitations in
 - Related files / skills:
 ```
 
+### ERR-2026-11-13-04 - Superstructure Ocean Wave Clipping & Water Query Isolation
+
+- Date (Europe/Berlin): 2026-11-13
+- Area: Ocean Shader Clipping, Superstructure Water Isolation
+- Status: Resolved
+- Symptom: (1) Ocean waves visibly clipped and rendered inside the enclosed superstructure rooms (e.g., Engine Control Room at `y = 3.0`) through solid collision walls when the ship heeled or waves rose above `lp.y = 2.95`, and `waterAt` reported ocean water inside dry superstructure compartments; (2) the temporary `engineHole2` deck cutout and U-stair at `x = 4.6..7.6, z = -44.2..-39.8` obstructed the main deck in front of the superstructure entrance.
+- Root cause: (1) The ocean fragment shader in `ocean.ts` only discarded fragments inside the lower hull (`lp.y < 2.95`), leaving the superstructure volume (`lp.y >= 2.95 && lp.y < 15.6`, `abs(lp.x) < 8.85`, `lp.z` in `-65.7..-44.3`) unclipped, while `waterAt` in `game.ts` only checked `this.ship.compartments` (`y <= 2.95`) before falling back to `this.ocean.height(...)`; (2) `engineHole2` had been placed directly on the open weather deck instead of routing via the aft Engine Control Room staircase (`engineHole`).
+- Solution: Added a superstructure interior discard in `ocean.ts` (`lp.y >= 2.95 && lp.y < 15.6 && lp.z > -65.7 && lp.z < -44.3 && abs(lp.x) < 8.85`), guarded `waterAt` in `game.ts` to return `-Infinity` inside intact superstructure when `sinkDepth < 14`, removed `engineHole2` and its deck railings from `shipBuilder.ts`, and updated `computeDeckWaypoint()` in `crew.ts` to route down into the Engine Room via the Main Entrance and aft `engineHole` U-stair.
+- Verification: `npx tsc --noEmit` (root & sonnet), `npm test`, `npm run build`, and `npm run docs:check` executed after final edit.
+- Prevention: Ensure both visual ocean shader cutouts and physical `waterAt` queries cover all enclosed ship volumes above `y = 2.95` as well as lower hull compartments, and never cut ad-hoc stairwells into the open weather deck outside established superstructure/hold access shafts.
+- Related files / skills: `detailed-3d-sinking-freighter-game_sonnet/src/game/ocean.ts`, `game.ts`, `shipBuilder.ts`, `crew.ts` / `error-fix-document`
+
 ### ERR-2026-11-13-03 - Grounded Crew Routing, Airborne Fall/Swim Animations, Engine Room Staircase, Laser Debris & Battleship Sticky TNT
 
 - Date (Europe/Berlin): 2026-11-13
