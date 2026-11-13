@@ -445,7 +445,7 @@ export class Game {
 
     // Friendly Damage Control Crew (visible on Bridge, Main Deck & Lower Holds in all modes)
     this.deckCrew = [
-      createCrewMember("Bridge Officer", "boatswain", 0, 9.0, -40.0, 5),
+      createCrewMember("Bridge Officer", "boatswain", -3.5, 9.4, -46.5, 5),
       createCrewMember("Aft Deck Eng.", "chief-engineer", 6.0, DECK_Y, -38.5, 5),
       createCrewMember("Mid Deck Crew", "damage-control", -4.0, DECK_Y, -16.0, 5),
       createCrewMember("Fore Deck Crew", "damage-control", 3.5, DECK_Y, 16.0, 5),
@@ -870,10 +870,11 @@ export class Game {
       stepCrew(dm, dt, deckBreaches, undefined, {
         raycast: crewRay,
         world: this.ship.world,
-        deckFloorY: dm.y >= 7.0 ? 9.0 : dm.y >= 2.4 ? DECK_Y : 0.1,
+        deckFloorY: dm.y >= 7.0 ? 9.4 : dm.y >= 2.4 ? DECK_Y : 0.1,
         blastImpulse: blastImp,
         vesselRollDeg: (this.sim.roll * 180) / Math.PI,
         waterLevel: this.waterAt(dm.x, dm.y, dm.z),
+        peers: this.deckCrew,
       });
       const comp = this.compAt(dm.x, dm.y, dm.z);
       if (comp && comp.fill > 0.004 && comp.level - dm.y > 0.12 && dm.state !== "ragdoll" && !dm.isRagdoll) {

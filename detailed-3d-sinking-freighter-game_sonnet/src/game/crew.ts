@@ -138,6 +138,7 @@ export interface CrewStepContext {
   vesselRollDeg?: number;
   deckFloorY?: number;
   waterLevel?: number;
+  peers?: readonly CrewMember[];
 }
 
 export const PATCH_KIT_AREA = 1.5;
@@ -200,6 +201,9 @@ export function enforceShipBoundsAndRespawn(m: CrewMember & { spawnX?: number; s
     m.x = sx;
     m.y = sy;
     m.z = sz;
+    m.vy = 0;
+    m.falling = false;
+    m.airTime = 0;
     m.targetId = null;
     m.state = "patrol";
     return;
@@ -207,6 +211,13 @@ export function enforceShipBoundsAndRespawn(m: CrewMember & { spawnX?: number; s
   m.x = Math.max(-9.2, Math.min(9.2, m.x));
   m.z = Math.max(-65.5, Math.min(62.0, m.z));
   m.y = Math.max(-5.2, m.y);
+  // If hovering above main deck outside superstructure (which only spans z = -65.85..-44.15, |x| <= 9.0), re-align onto main deck
+  if (m.y > 4.2 && (m.z > -44.0 || Math.abs(m.x) > 8.9) && !m.swimming) {
+    m.y = 3.05;
+    m.vy = 0;
+    m.falling = false;
+    m.airTime = 0;
+  }
 }
 
 const dist = (m: CrewMember, b: { x: number; y: number; z: number }) =>
@@ -444,6 +455,39 @@ export function stepCrew(
 ): CrewEvent {
   m.stateTime += dt;
   enforceShipBoundsAndRespawn(m);
+
+  // 0. Peer-to-peer separation & stationary gravity settle so bots never overlap or hover
+  if (ctx?.world && m.state !== "climbing_ladder" && m.state !== "ragdoll") {
+    if (ctx.peers) {
+      for (const other of ctx.peers) {
+        if (other === m || Math.abs(other.y - m.y) > 1.8) continue;
+        const dx = m.x - other.x;
+        const dz = m.z - other.z;
+        const d = Math.hypot(dx, dz);
+        if (d < 0.72) {
+          const push = Math.min(0.18, (0.72 - d) * 0.5 + 0.02);
+          const nx = d > 1e-3 ? dx / d : (m.name < other.name ? -1 : 1);
+          const nz = d > 1e-3 ? dz / d : 0;
+          const sepBody: CrewBody = { x: m.x, y: m.y, z: m.z, vx: 0, vy: 0, vz: 0, r: 0.2, h: 1.75, onGround: m.onGround ?? false, step: 0.48 };
+          ctx.world.move(sepBody, nx * push, 0, nz * push);
+          m.x = sepBody.x;
+          m.z = sepBody.z;
+        }
+      }
+    }
+    if (!m.onGround && m.state !== "moving") {
+      const vy = Math.max(-20, (m.vy ?? 0) - 18 * dt);
+      const gravBody: CrewBody = { x: m.x, y: m.y, z: m.z, vx: 0, vy, vz: 0, r: 0.2, h: 1.75, onGround: false, step: 0.48 };
+      ctx.world.move(gravBody, 0, vy * dt, 0);
+      m.y = gravBody.y;
+      m.vy = gravBody.onGround ? 0 : vy;
+      m.onGround = gravBody.onGround;
+      if (gravBody.onGround) {
+        m.falling = false;
+        m.airTime = 0;
+      }
+    }
+  }
 
   // 1. Dynamic Ragdoll Evaluation (use floor-clamped ragdoll even when CollisionWorld is active)
   const floorY = ctx?.deckFloorY ?? (m.y >= 2.4 ? 3.0 : 0.1);
