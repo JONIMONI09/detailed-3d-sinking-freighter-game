@@ -29,6 +29,18 @@ Do not use this file for speculative risks. Put open limitations in
 - Related files / skills:
 ```
 
+### ERR-2026-11-13-06 - 2D Grid A* Pathfinding, Proactive Door Opening & Patrol Waypoint Routing
+
+- Date (Europe/Berlin): 2026-11-13
+- Area: Crew AI Pathfinding (`navgrid.ts`, `crew.ts`)
+- Status: Resolved
+- Symptom: Bots still walked in place in front of closed corridor doors or against interior walls/corners during patrol and off-axis movement.
+- Root cause: (1) `walkToward()` used a single forward `doorRay` that missed off-axis doors and did not wait for the swinging door collider (`open < 0.65`) to clear, causing `stuckTime` / `exteriorBypass` loops; (2) `patrol` bypassed `computeDeckWaypoint()` and walked straight through walls; (3) local 5-ray steering without a real floor-level A* NavGrid cannot route around L-shaped walls, stair columns, or narrow `1.0m` doorways.
+- Solution: Added `navgrid.ts` (`findNextGridWaypoint`) building a `0.4m` per-floor 8-way A* grid from `CollisionWorld.boxes` with `0.14m` Minkowski inflation, explicit doorway carving, wall-clearance cost weighting, and look-ahead smoothing; added proactive omnidirectional door opening + swing-wait pause in `walkToward()` using the door's actual axis (`axis === "z" ? x : z`); routed `patrol` through `computeDeckWaypoint()` + A*; and added `testGridAStarDoorwayAndWallBypass` in `tests/crew-navigation.test.mjs`.
+- Verification: `npx tsc --noEmit` (root & sonnet), `npm test`, `npm run build`, and `npm run docs:check` executed after final edit.
+- Prevention: Always use floor-level A* (`navgrid.ts`) + proactive doorway clearance for both `patrol` and `moving`, and never count door swing time toward `stuckTime`.
+- Related files / skills: `detailed-3d-sinking-freighter-game_sonnet/src/game/navgrid.ts`, `crew.ts`, `tests/crew-navigation.test.mjs` / `error-fix-document`
+
 ### ERR-2026-11-13-05 - Window Burst Hole Ring, Doorway Steering Lock & Below-Deck Crew Descent
 
 - Date (Europe/Berlin): 2026-11-13

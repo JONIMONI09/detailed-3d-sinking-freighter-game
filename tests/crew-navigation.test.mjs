@@ -180,9 +180,11 @@ function testBelowDeckDescentAndDropJump() {
     if (id === './navmesh3d') return navmesh;
     throw new Error(`Unexpected require in ragdoll: ${id}`);
   });
+  const navgridMod = loadTs('detailed-3d-sinking-freighter-game_sonnet/src/game/navgrid.ts');
   const crewMod = loadTs('detailed-3d-sinking-freighter-game_sonnet/src/game/crew.ts', (id) => {
     if (id === './navmesh3d') return navmesh;
     if (id === './ragdoll') return ragdollMod;
+    if (id === './navgrid') return navgridMod;
     throw new Error(`Unexpected require: ${id}`);
   });
 
@@ -268,10 +270,26 @@ function testBelowDeckDescentAndDropJump() {
   console.log('  ok anti-loop fall respawn & active patrol verified');
 }
 
+// 6. 2D Grid A* Wall Bypass & Proactive Doorway Traversal
+function testGridAStarDoorwayAndWallBypass() {
+  const navgridMod = loadTs('detailed-3d-sinking-freighter-game_sonnet/src/game/navgrid.ts');
+  // Wall at x = -1.7 from z = -57 to -40 with a 1.0m door gap at z = -53.6
+  const boxes = [
+    { minX: -1.8, minY: 3.0, minZ: -57.0, maxX: -1.6, maxY: 6.0, maxZ: -54.1, enabled: true, tag: 'wall' },
+    { minX: -1.8, minY: 3.0, minZ: -53.1, maxX: -1.6, maxY: 6.0, maxZ: -40.0, enabled: true, tag: 'wall' },
+    { minX: -1.8, minY: 3.0, minZ: -54.1, maxX: -1.6, maxY: 5.2, maxZ: -53.1, enabled: true, tag: 'door' },
+  ];
+  const wp = navgridMod.findNextGridWaypoint(boxes, -0.5, 3.0, -48.0, -4.0, -50.0);
+  assert.ok(wp, 'Grid A* must find a valid path through the 1.0m doorway');
+  assert.ok(wp.z < -48.0, `Expected A* to head south toward doorway (-53.6), got z=${wp.z}`);
+  console.log('  ok 2D Grid A* routes around wall and through 1.0m doorway');
+}
+
 test5RaySteeringAndDeflection();
 testDoorTraversalSequence();
 testVerticalLadderClimbing();
 testPortableLadderPlacement();
 testBelowDeckDescentAndDropJump();
+testGridAStarDoorwayAndWallBypass();
 
 console.log('Crew navigation unit tests passed.');

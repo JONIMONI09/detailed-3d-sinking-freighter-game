@@ -22,6 +22,7 @@ import {
   shouldTriggerRagdoll,
   RagdollTriggerSensors,
 } from "./ragdoll";
+import { findNextGridWaypoint, NavBox } from "./navgrid";
 
 export type CrewRole =
   | "chief-engineer"
@@ -85,6 +86,9 @@ export interface CrewMember {
   lastX?: number;
   lastZ?: number;
   exteriorBypass?: number;
+  navWaypoint?: { x: number; z: number } | null;
+  navTimer?: number;
+  waitingForDoor?: boolean;
   patrol?: readonly { x: number; y: number; z: number }[];
 }
 
@@ -98,6 +102,7 @@ export interface CrewConfig {
 }
 
 export interface CrewWorld {
+  boxes?: readonly (NavBox & { owner?: unknown })[];
   raycast: (
     ox: number,
     oy: number,
@@ -368,32 +373,87 @@ function walkToward(
   waterLevel = -Infinity,
   swimTargetY?: number,
 ) {
-  const dx = tx - m.x,
-    dz = tz - m.z;
+  let steerX = tx;
+  let steerZ = tz;
+  if (world?.boxes) {
+    m.navTimer = (m.navTimer ?? 0) - dt;
+    const wpClose = m.navWaypoint ? Math.hypot(m.navWaypoint.x - m.x, m.navWaypoint.z - m.z) < 0.55 : true;
+    if (m.navTimer <= 0 || wpClose || !m.navWaypoint) {
+      const next = findNextGridWaypoint(world.boxes, m.x, m.y, m.z, tx, tz);
+      m.navWaypoint = next ?? { x: tx, z: tz };
+      m.navTimer = 0.25;
+    }
+    steerX = m.navWaypoint.x;
+    steerZ = m.navWaypoint.z;
+  }
+
+  const dx = steerX - m.x,
+    dz = steerZ - m.z;
   const d = Math.hypot(dx, dz);
   if (d <= 1e-6 && waterLevel <= m.y + 0.55) return;
 
   const nx = d > 1e-6 ? dx / d : 0;
   const nz = d > 1e-6 ? dz / d : 0;
 
-  // Enemy-AI style automatic door opening when approaching closed unlocked doors
+  // Proactive omnidirectional door opening on the current deck
   let doorAhead = false;
-  if (world && d > 1e-6) {
+  let waitingForDoor = false;
+  if (world?.boxes) {
+    for (const box of world.boxes) {
+      if (box.tag !== "door" || !box.owner) continue;
+      if (m.y < box.minY - 0.6 || m.y > box.maxY + 0.4) continue;
+      const cx = (box.minX + box.maxX) * 0.5;
+      const cz = (box.minZ + box.maxZ) * 0.5;
+      const distToDoor = Math.hypot(cx - m.x, cz - m.z);
+      if (distToDoor > 2.3) continue;
+      const dot = distToDoor > 1e-4 ? ((cx - m.x) * nx + (cz - m.z) * nz) / distToDoor : 1;
+      if (dot < -0.15) continue;
+      doorAhead = true;
+      const door = box.owner as {
+        axis?: "x" | "z";
+        locked?: boolean;
+        key?: string;
+        target: number;
+        open?: number;
+        fixed: number;
+        forceOpen: (dir: number) => void;
+      };
+      if (door.target === 0 && (!door.locked || door.key)) {
+        const side = door.axis === "z" ? Math.sign(m.x - door.fixed) : Math.sign(m.z - door.fixed);
+        door.forceOpen(side || 1);
+      }
+      if (distToDoor < 1.35 && door.target === 1 && door.open !== undefined && door.open < 0.65) {
+        waitingForDoor = true;
+      }
+    }
+  } else if (world && d > 1e-6) {
     const doorRay = world.raycast(m.x, m.y + 1.0, m.z, nx, 0, nz, 2.4, (c) => c.tag === "door");
     if (doorRay && doorRay.collider?.owner) {
       doorAhead = true;
-      const door = doorRay.collider.owner as { locked?: boolean; key?: string; target: number; fixed: number; forceOpen: (dir: number) => void };
-      // Damage control crew carry master keys for keycard doors and can open unlocked watertight doors
+      const door = doorRay.collider.owner as {
+        axis?: "x" | "z";
+        locked?: boolean;
+        key?: string;
+        target: number;
+        open?: number;
+        fixed: number;
+        forceOpen: (dir: number) => void;
+      };
       if (door.target === 0 && (!door.locked || door.key)) {
-        door.forceOpen(Math.sign(m.z - door.fixed) || 1);
+        const side = door.axis === "z" ? Math.sign(m.x - door.fixed) : Math.sign(m.z - door.fixed);
+        door.forceOpen(side || 1);
+      }
+      if (doorRay.dist < 1.35 && door.target === 1 && door.open !== undefined && door.open < 0.65) {
+        waitingForDoor = true;
       }
     }
   }
+  m.waitingForDoor = waitingForDoor;
 
-  let desiredStep: Vector3Like = v3(nx * step, 0, nz * step);
+  let desiredStep: Vector3Like = waitingForDoor ? v3(0, 0, 0) : v3(nx * step, 0, nz * step);
 
   // Apply 5-ray anti-clipping steering + 90-degree wall-slide clearance when not threading a narrow doorway
-  if (raycast && d > 1e-6 && !doorAhead) {
+  if (raycast && d > 1e-6 && !doorAhead && !waitingForDoor) {
     const centerHit = raycast(v3(m.x, m.y + 0.9, m.z), v3(nx, 0, nz), 1.05);
     if (centerHit.hit) {
       // Pick the 90-degree lateral tangent with greater open clearance so crew walks around walls cleanly
@@ -610,19 +670,22 @@ export function stepCrew(
       }
       const patrol = m.patrol && m.patrol.length > 0 ? m.patrol : cfg.patrol;
       if (patrol.length > 0) {
-        const wp = patrol[m.patrolIndex % patrol.length];
+        const patrolTarget = patrol[m.patrolIndex % patrol.length];
+        const wp = ctx?.world ? computeDeckWaypoint(m, patrolTarget) : patrolTarget;
         const prevPX = m.lastX ?? m.x;
         const prevPZ = m.lastZ ?? m.z;
         walkToward(m, wp.x, wp.z, cfg.walkSpeed * 0.65 * dt, ctx?.raycast, ctx?.world, dt, ctx?.waterLevel ?? -Infinity);
         const pMoved = Math.hypot(m.x - prevPX, m.z - prevPZ);
         m.lastX = m.x;
         m.lastZ = m.z;
-        if (Math.hypot(m.x - wp.x, m.z - wp.z) < 0.9) {
+        if (Math.hypot(m.x - patrolTarget.x, m.z - patrolTarget.z) < 0.9) {
           m.patrolIndex = (m.patrolIndex + 1) % patrol.length;
           m.stuckTime = 0;
-        } else if (ctx?.world && pMoved < 0.15 * dt) {
+          m.navWaypoint = null;
+        } else if (ctx?.world && !m.waitingForDoor && pMoved < 0.15 * dt) {
           m.stuckTime = (m.stuckTime ?? 0) + dt;
-          if (m.stuckTime > 0.7) {
+          if (m.stuckTime > 0.45) m.navWaypoint = null;
+          if (m.stuckTime > 0.9) {
             m.patrolIndex = (m.patrolIndex + 1) % patrol.length;
             m.stuckTime = 0;
           }
@@ -692,13 +755,14 @@ export function stepCrew(
         } else {
           m.stuckTime = 0;
         }
-      } else if (ctx?.world && moved < 0.2 * dt) {
-        // Escalate from exterior catwalk bypass (0.65s) to clean obstacle vault (1.35s) so bots never walk in place
+      } else if (ctx?.world && !m.waitingForDoor && moved < 0.2 * dt) {
+        // Escalate from A* replan (0.35s) -> exterior catwalk bypass (0.75s) -> clean obstacle vault (1.45s)
         m.stuckTime = (m.stuckTime ?? 0) + dt;
-        if (m.stuckTime > 0.65 && (m.exteriorBypass ?? 0) <= 0 && m.y >= 2.7 && m.y < 5.2) {
+        if (m.stuckTime > 0.35) m.navWaypoint = null;
+        if (m.stuckTime > 0.75 && (m.exteriorBypass ?? 0) <= 0 && m.y >= 2.7 && m.y < 5.2) {
           m.exteriorBypass = 6.0;
         }
-        if (m.stuckTime > 1.35) {
+        if (m.stuckTime > 1.45) {
           const ndx = wp.x - m.x;
           const ndz = wp.z - m.z;
           const nd = Math.hypot(ndx, ndz);
