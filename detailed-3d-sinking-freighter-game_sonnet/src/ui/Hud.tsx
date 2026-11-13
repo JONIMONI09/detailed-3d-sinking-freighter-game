@@ -460,24 +460,6 @@ export default function Hud({ h, settings, touch, game }: { h: HudState; setting
               >
                 ⚔️ {h.fleetBattle ? "Stop Fleet Battle" : "Start Fleet Battle"}
               </button>
-              <button
-                onClick={() => game.remoteFireSalvo()}
-                disabled={h.theatre === "orbital" || h.battleshipSunk}
-                className={`rounded-lg border border-red-400/40 bg-red-500/20 px-3 py-2 text-xs font-bold text-red-200 hover:bg-red-500/35 ${
-                  h.theatre === "orbital" || h.battleshipSunk ? "cursor-not-allowed opacity-40 grayscale" : ""
-                }`}
-              >
-                💥 Fire Salvo ({h.battleshipSunk ? "100% DESTROYED" : `HP: ${h.battleshipHp}`})
-              </button>
-              <button
-                onClick={() => game.fireBattleshipMissile()}
-                disabled={h.theatre === "orbital" || h.battleshipSunk}
-                className={`rounded-lg border border-purple-400/40 bg-purple-500/20 px-3 py-2 text-xs font-bold text-purple-200 hover:bg-purple-500/35 ${
-                  h.theatre === "orbital" || h.battleshipSunk ? "cursor-not-allowed opacity-40 grayscale" : ""
-                }`}
-              >
-                🚀 Launch Missile [E]
-              </button>
             </div>
 
             <div className="mb-3 rounded-xl border border-amber-400/25 bg-amber-950/20 p-2.5">

@@ -29,6 +29,18 @@ Do not use this file for speculative risks. Put open limitations in
 - Related files / skills:
 ```
 
+### ERR-2026-11-13-01 - Orbital Death Ray, Multi-Part Destruction, Hull Collisions & Fleet Battle AI
+
+- Date (Europe/Berlin): 2026-11-13
+- Area: Orbital Death Ray, Space Station, Multi-Part Ships, Hull Collisions, Fleet AI, HUD
+- Status: Resolved
+- Symptom: (1) Orbital laser spawned 80ms cylinder bursts instead of a persistent beam; (2) Earth sphere occluded ocean/ships until zoomed inside; (3) Freighter vanished in 1 frame or left giant floating hull/container plates; (4) `[TAB]` Tablet had duplicate Salvo/Missile buttons alongside Fleet Strike; (5) Fleet Battle AI rammed vessels without avoiding collisions or firing real projectiles at both Battleships and Freighter.
+- Root cause: (1) Per-burst geometry creation + `setTimeout`/`setInterval`; (2) `earthMesh` visible in orbital view regardless of zoom; (3) unpartitioned `InstancedMesh` containers & missing `ShipSim.reset()` fields; (4) redundant single-ship fire buttons in `Hud.tsx`; (5) `stepBattleshipAI()` lacked obstacle avoidance and `onTurretFire` only drew tracers without spawning `navalProjectiles`.
+- Solution: Added persistent `orbitalBeamGroup`, zoom-gated `earthMesh`, 13-section Freighter + `InstancedMesh` partitioning, 8-part Battleships, complete `ShipSim.reset()` & `restoreFreighter()`, `vesselCollision.ts` OBB hull collisions + quadratic speed damage, `[TAB]` Fleet Strike (`fleetStrikeFreighter`), `[X]` Target Lock + seeking missiles, live `vesselStatusSnapshot()` HUD, and obstacle-avoidance + real shell projectiles in Fleet Battle AI.
+- Verification: `npx tsc --noEmit` (root & sonnet), `npm test` (12 Node suites + 10 Python CI checks), `npm run build`, GitHub CI runs `43400718381` & `43400718327` passed.
+- Prevention: Keep `tests/orbital-laser-and-multipart.test.mjs` and `tests/vessel-collision.test.mjs` wired in `npm test`, and avoid duplicating single-ship attack buttons in `Hud.tsx`.
+- Related files / skills: `detailed-3d-sinking-freighter-game_sonnet/src/game/game.ts`, `battleships.ts`, `vesselCollision.ts`, `shipBuilder.ts`, `spaceStation.ts`, `Hud.tsx` / `error-fix-document`
+
 Keep secrets, tokens, account identifiers, and private URLs out of this ledger.
 Use exact commands and real run IDs when they exist.
 

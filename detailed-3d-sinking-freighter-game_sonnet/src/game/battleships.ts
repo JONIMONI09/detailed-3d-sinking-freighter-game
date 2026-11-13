@@ -197,22 +197,51 @@ export function createBattleship(
   };
 }
 
-/** Steers an AI battleship into a dynamic naval broadside orbit around its target. */
-export function stepBattleshipAI(bs: Battleship, targetWorldPos: THREE.Vector3, dt: number): void {
+/** Steers an AI battleship into a dynamic naval broadside orbit while avoiding hull collisions. */
+export function stepBattleshipAI(
+  bs: Battleship,
+  targetWorldPos: THREE.Vector3,
+  dt: number,
+  obstacles: { x: number; z: number; radius: number }[] = [],
+): void {
   if (bs.sunk) return;
   const dx = targetWorldPos.x - bs.baseX;
   const dz = targetWorldPos.z - bs.baseZ;
   const dist = Math.hypot(dx, dz);
   const directHeading = Math.atan2(-dx, -dz);
-  // Broadside orbit: approach if far (>135m), peel off if close (<85m), else circle at 90 deg
-  const offsetAngle = dist > 135 ? 0 : dist < 85 ? Math.PI * 0.72 : Math.PI * 0.48;
-  const desiredHeading = directHeading + offsetAngle;
+  // Broadside orbit: approach if far (>165m), peel off if close (<105m), else circle at 90 deg
+  const offsetAngle = dist > 165 ? 0 : dist < 105 ? Math.PI * 0.78 : Math.PI * 0.5;
+  let desiredVecX = -Math.sin(directHeading + offsetAngle);
+  let desiredVecZ = -Math.cos(directHeading + offsetAngle);
+  let speedScale = 1.0;
+
+  // Repulsive collision-avoidance steering against Freighter and other Battleships
+  const fx = -Math.sin(bs.heading);
+  const fz = -Math.cos(bs.heading);
+  for (const ob of obstacles) {
+    const ox = bs.baseX - ob.x;
+    const oz = bs.baseZ - ob.z;
+    const od = Math.hypot(ox, oz);
+    const safeDist = ob.radius + 36;
+    if (od > 0.01 && od < safeDist) {
+      const weight = ((safeDist - od) / safeDist) * 2.8;
+      desiredVecX += (ox / od) * weight;
+      desiredVecZ += (oz / od) * weight;
+      // Check if obstacle lies ahead of bow: slow down or reverse briefly to avoid ramming
+      const ahead = (-ox * fx - oz * fz) / od;
+      if (ahead > 0.35 && od < ob.radius + 22) {
+        speedScale = Math.min(speedScale, od < ob.radius + 12 ? -0.35 : 0.3);
+      }
+    }
+  }
+
+  const desiredHeading = Math.atan2(-desiredVecX, -desiredVecZ);
   let diff = desiredHeading - bs.heading;
   while (diff > Math.PI) diff -= Math.PI * 2;
   while (diff < -Math.PI) diff += Math.PI * 2;
-  const desiredRudder = Math.max(-28, Math.min(28, (diff * 180) / Math.PI * 0.65));
-  bs.rudderDeg += (desiredRudder - bs.rudderDeg) * Math.min(1, dt * 3.0);
-  bs.targetSpeed = 7.5 + bs.level * 1.2;
+  const desiredRudder = Math.max(-28, Math.min(28, (diff * 180) / Math.PI * 0.8));
+  bs.rudderDeg += (desiredRudder - bs.rudderDeg) * Math.min(1, dt * 3.5);
+  bs.targetSpeed = (7.5 + bs.level * 1.2) * speedScale;
 }
 
 /** Updates battleship wave motion, turret tracking, and sinking kinematics. */

@@ -880,12 +880,29 @@ export class Game {
       let targetPos = freighterTarget;
       let opp: Battleship | undefined;
       if (isPlayerShip) {
-        targetPos = bs.group.position.clone().addScaledVector(bsAimDir, 120);
+        const lockedPos = this.resolveTargetPos(this.lockedTarget);
+        targetPos = lockedPos ?? bs.group.position.clone().addScaledVector(bsAimDir, 120);
       } else if (this.fleetBattle) {
         opp = this.battleships.find((other, oi) => oi !== bi && !other.sunk && other.team !== bs.team)
           ?? this.battleships.find((other, oi) => oi !== bi && !other.sunk);
-        if (opp) targetPos = opp.group.position.clone().add(V(0, 3, 0));
-        stepBattleshipAI(bs, targetPos, dt);
+        const freighterAlive = !this.isFreighterDestroyed();
+        // Mix Fleet Battle targets: Red team or alternating ships engage the Freighter too, not just each other
+        const engageFreighter = freighterAlive && (!opp || bs.team === "red" || bi % 2 === 1);
+        if (engageFreighter) {
+          targetPos = freighterTarget;
+          opp = undefined;
+        } else if (opp) {
+          targetPos = opp.group.position.clone().add(V(0, 3, 0));
+        }
+        const obstacles: { x: number; z: number; radius: number }[] = [];
+        if (freighterAlive) {
+          obstacles.push({ x: this.ship.group.position.x, z: this.ship.group.position.z, radius: 74 });
+        }
+        for (let oi = 0; oi < this.battleships.length; oi++) {
+          if (oi === bi || this.battleships[oi].sunk) continue;
+          obstacles.push({ x: this.battleships[oi].baseX, z: this.battleships[oi].baseZ, radius: 36 });
+        }
+        stepBattleshipAI(bs, targetPos, dt, obstacles);
       }
       stepBattleship(
         bs,
@@ -896,16 +913,24 @@ export class Game {
         (muzzle, dir) => {
           this.tracer(muzzle, muzzle.clone().addScaledVector(dir, 55), bs.team === "red" ? 0xef4444 : 0x38bdf8);
           if (this.fleetBattle) {
-            if (opp && muzzle.distanceTo(opp.group.position) < 280) {
-              const sunkNow = damageBattleship(opp, 35 + bs.level * 14);
-              this.pn.emit(opp.baseX, 4, opp.baseZ, 0, 5, 0, 3, 0.35, 0.7, 1, 0.5, 0.1, 0.7, -1, 0.8);
-              if (sunkNow) this.say(`⚓ ${opp.id.toUpperCase()} (Lv.${opp.level}) SUNK by ${bs.id.toUpperCase()}!`, "alert");
-            } else if (!opp && !this.sim.sunk && muzzle.distanceTo(freighterTarget) < 300) {
-              this.pn.emit(freighterTarget.x, 4, freighterTarget.z, 0, 6, 0, 4, 0.4, 0.9, 1, 0.5, 0.1, 0.8, -1, 0.8);
-              if (this.activeFires.length < 18 && Math.random() < 0.35) {
-                this.activeFires.push({ pos: freighterTarget.clone().add(V((Math.random() - 0.5) * 10, 0, (Math.random() - 0.5) * 30)), life: 18, spreadCd: 3.0 });
-              }
-            }
+            const shellDir = dir.clone().add(V(0, 0.05, 0)).normalize();
+            const mesh = new THREE.Mesh(
+              new THREE.SphereGeometry(0.26, 6, 6),
+              new THREE.MeshBasicMaterial({ color: bs.team === "red" ? 0xff5533 : 0x38bdf8 }),
+            );
+            mesh.position.copy(muzzle);
+            this.scene.add(mesh);
+            this.navalProjectiles.push({
+              mesh,
+              pos: muzzle.clone(),
+              vel: shellDir.multiplyScalar(115),
+              kind: "shell",
+              life: 3.5,
+              ownerIdx: bi,
+              targetKind: opp ? "battleship" : "freighter",
+              targetId: opp?.id,
+            });
+            this.pn.emit(muzzle.x, muzzle.y, muzzle.z, dir.x * 4, 2, dir.z * 4, 1.6, 0.3, 0.6, 0.9, 0.7, 0.4, 0.7, -0.2, 0.35);
           }
         },
         !isPlayerShip && this.fleetBattle,
@@ -972,7 +997,7 @@ export class Game {
         ? undefined
         : this.battleships.find(
             (bs, bi) =>
-              bi > 0 &&
+              (proj.ownerIdx !== undefined ? bi !== proj.ownerIdx : bi > 0) &&
               !bs.sunk &&
               pointInHull(proj.pos.x, proj.pos.z, this.battleshipHull(bs), 1.5) &&
               proj.pos.y > bs.group.position.y - 4 &&
