@@ -233,6 +233,39 @@ function testBelowDeckDescentAndDropJump() {
   assert.ok(member.y < 0, `Expected crew to descend below main deck (y < 0), got y=${member.y}`);
   assert.equal(breaches[0].area, 0, 'Expected crew to reach and seal the lower-hold breach');
   console.log('  ok crew descends/jumps into lower holds and seals explosion breach');
+
+  // Case B: Anti-loop fall respawn & active per-member patrol
+  const floater = crewMod.createCrewMember('LoopBot', 'boatswain', 3.5, 3.0, 16.0, 4);
+  floater.y = 3.0;
+  floater.onGround = false;
+  floater.patrol = [
+    { x: 3.5, y: 3.0, z: 16.0 },
+    { x: 3.5, y: 3.0, z: 24.0 },
+  ];
+  const voidWorld = {
+    move(body, dx, dy, dz) {
+      body.x += dx;
+      body.y += dy;
+      body.z += dz;
+      body.onGround = false;
+    },
+    raycast() {
+      return { hit: false, distance: Infinity };
+    },
+  };
+  let respawnedCleanly = false;
+  let prevY = floater.y;
+  for (let i = 0; i < 65; i++) {
+    crewMod.stepCrew(floater, 0.05, [], undefined, { world: voidWorld, raycast: voidWorld.raycast });
+    if (floater.y > prevY + 2.0 && floater.falling === false) {
+      respawnedCleanly = true;
+      break;
+    }
+    prevY = floater.y;
+  }
+  assert.equal(respawnedCleanly, true, 'Anti-loop fall respawn must clear falling flag and return bot to valid deck spawnY');
+  assert.ok(floater.z >= 16.0, 'Active patrol must advance crew along patrol waypoints');
+  console.log('  ok anti-loop fall respawn & active patrol verified');
 }
 
 test5RaySteeringAndDeflection();

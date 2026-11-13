@@ -443,12 +443,60 @@ export class Game {
       }
     }
 
-    // Friendly Damage Control Crew (visible on Bridge, Main Deck & Lower Holds in all modes)
+    // Friendly Damage Control Crew (visible upstairs & downstairs with active patrol routes)
+    const makeCrew = (
+      name: string,
+      role: CrewMember["role"],
+      x: number,
+      y: number,
+      z: number,
+      patrol: { x: number; y: number; z: number }[],
+    ) => {
+      const m = createCrewMember(name, role, x, y, z, 5);
+      m.patrol = patrol;
+      return m;
+    };
     this.deckCrew = [
-      createCrewMember("Bridge Officer", "boatswain", -3.5, 9.4, -46.5, 5),
-      createCrewMember("Aft Deck Eng.", "chief-engineer", 6.0, DECK_Y, -38.5, 5),
-      createCrewMember("Mid Deck Crew", "damage-control", -4.0, DECK_Y, -16.0, 5),
-      createCrewMember("Fore Deck Crew", "damage-control", 3.5, DECK_Y, 16.0, 5),
+      // Upstairs (Superstructure, Engine Control Room, Main Deck)
+      makeCrew("Bridge Officer", "boatswain", -3.5, 9.4, -46.5, [
+        { x: -4.0, y: 9.4, z: -46.5 },
+        { x: 4.0, y: 9.4, z: -46.5 },
+      ]),
+      makeCrew("Control Room Eng.", "electrician", 3.5, 3.0, -61.5, [
+        { x: 4.5, y: 3.0, z: -61.5 },
+        { x: -4.5, y: 3.0, z: -61.5 },
+      ]),
+      makeCrew("Aft Deck Eng.", "chief-engineer", 6.0, DECK_Y, -38.5, [
+        { x: 6.0, y: DECK_Y, z: -38.5 },
+        { x: 6.0, y: DECK_Y, z: -14.0 },
+        { x: -6.0, y: DECK_Y, z: -14.0 },
+        { x: -6.0, y: DECK_Y, z: -38.5 },
+      ]),
+      makeCrew("Fore Deck Crew", "damage-control", 3.5, DECK_Y, 16.0, [
+        { x: 3.5, y: DECK_Y, z: 16.0 },
+        { x: 3.5, y: DECK_Y, z: 44.0 },
+        { x: -3.5, y: DECK_Y, z: 44.0 },
+        { x: -3.5, y: DECK_Y, z: 16.0 },
+      ]),
+      // Downstairs (Engine Room & Cargo Holds 3, 2, 1)
+      makeCrew("Engine Room Chief", "chief-engineer", 3.8, -5.0, -56.0, [
+        { x: 3.8, y: -5.0, z: -56.0 },
+        { x: 3.8, y: -5.0, z: -42.0 },
+        { x: -3.8, y: -5.0, z: -42.0 },
+        { x: -3.8, y: -5.0, z: -56.0 },
+      ]),
+      makeCrew("Hold 3 Crew", "damage-control", 0, -5.0, -24.0, [
+        { x: -3.0, y: -5.0, z: -34.0 },
+        { x: 3.0, y: -5.0, z: -12.0 },
+      ]),
+      makeCrew("Hold 2 Crew", "boatswain", 0, -5.0, 8.0, [
+        { x: -3.0, y: -5.0, z: -2.0 },
+        { x: 3.0, y: -5.0, z: 20.0 },
+      ]),
+      makeCrew("Hold 1 Crew", "medic", 0, -5.0, 40.0, [
+        { x: -3.0, y: -5.0, z: 30.0 },
+        { x: 3.0, y: -5.0, z: 50.0 },
+      ]),
     ];
     for (const m of [...this.supervisor.crew, ...this.deckCrew]) {
       const cv = new CrewVisual(m);
@@ -870,12 +918,29 @@ export class Game {
       stepCrew(dm, dt, deckBreaches, undefined, {
         raycast: crewRay,
         world: this.ship.world,
-        deckFloorY: dm.y >= 7.0 ? 9.4 : dm.y >= 2.4 ? DECK_Y : 0.1,
+        deckFloorY: dm.y >= 7.0 ? 9.4 : dm.y >= 2.4 ? DECK_Y : -5.0,
         blastImpulse: blastImp,
         vesselRollDeg: (this.sim.roll * 180) / Math.PI,
         waterLevel: this.waterAt(dm.x, dm.y, dm.z),
         peers: this.deckCrew,
       });
+      // Player <-> Crew character collision and shoving
+      if (this.theatre !== "orbital" && this.activeVessel === "freighter" && Math.abs(this.player.body.y - dm.y) < 1.75) {
+        const pdx = dm.x - this.player.body.x;
+        const pdz = dm.z - this.player.body.z;
+        const pd = Math.hypot(pdx, pdz);
+        if (pd < 0.78) {
+          const pnx = pd > 1e-3 ? pdx / pd : 1;
+          const pnz = pd > 1e-3 ? pdz / pd : 0;
+          const crewPush = (0.78 - pd) * 0.78 + 0.04;
+          const pBody = { x: dm.x, y: dm.y, z: dm.z, vx: 0, vy: 0, vz: 0, r: 0.2, h: 1.75, onGround: dm.onGround ?? false, step: 0.48 };
+          this.ship.world.move(pBody, pnx * crewPush, 0, pnz * crewPush);
+          dm.x = pBody.x;
+          dm.z = pBody.z;
+          const playerPush = (0.78 - pd) * 0.22;
+          this.ship.world.move(this.player.body, -pnx * playerPush, 0, -pnz * playerPush);
+        }
+      }
       const comp = this.compAt(dm.x, dm.y, dm.z);
       if (comp && comp.fill > 0.004 && comp.level - dm.y > 0.12 && dm.state !== "ragdoll" && !dm.isRagdoll) {
         dm.pumping = true;

@@ -84,6 +84,7 @@ export interface CrewMember {
   stuckTime?: number;
   lastX?: number;
   lastZ?: number;
+  patrol?: readonly { x: number; y: number; z: number }[];
 }
 
 export interface CrewConfig {
@@ -485,7 +486,24 @@ export function stepCrew(
       if (gravBody.onGround) {
         m.falling = false;
         m.airTime = 0;
+      } else if (!m.swimming) {
+        m.airTime = (m.airTime ?? 0) + dt;
+        if (m.airTime > 0.35 || vy < -4.5) m.falling = true;
       }
+    }
+    // Anti-loop fall protection: if falling/airborne for > 2.8s without landing or swimming, respawn cleanly at valid ship station
+    if (!m.onGround && !m.swimming && (m.airTime ?? 0) > 2.8) {
+      const mWithSpawn = m as CrewMember & { spawnX?: number; spawnY?: number; spawnZ?: number };
+      m.x = mWithSpawn.spawnX ?? 0;
+      m.y = mWithSpawn.spawnY ?? 3.0;
+      m.z = mWithSpawn.spawnZ ?? -36.0;
+      m.vy = 0;
+      m.airTime = 0;
+      m.falling = false;
+      m.onGround = true;
+      m.targetId = null;
+      enter(m, "patrol");
+      return null;
     }
   }
 
@@ -575,10 +593,11 @@ export function stepCrew(
         enter(m, "alert");
         return "spotted";
       }
-      if (cfg.patrol.length > 0) {
-        const wp = cfg.patrol[m.patrolIndex % cfg.patrol.length];
-        walkToward(m, wp.x, wp.z, cfg.walkSpeed * 0.5 * dt, ctx?.raycast, ctx?.world, dt, ctx?.waterLevel ?? -Infinity);
-        if (dist(m, wp) < 0.5) m.patrolIndex = (m.patrolIndex + 1) % cfg.patrol.length;
+      const patrol = m.patrol && m.patrol.length > 0 ? m.patrol : cfg.patrol;
+      if (patrol.length > 0) {
+        const wp = patrol[m.patrolIndex % patrol.length];
+        walkToward(m, wp.x, wp.z, cfg.walkSpeed * 0.65 * dt, ctx?.raycast, ctx?.world, dt, ctx?.waterLevel ?? -Infinity);
+        if (Math.hypot(m.x - wp.x, m.z - wp.z) < 0.9) m.patrolIndex = (m.patrolIndex + 1) % patrol.length;
       }
       return null;
     }
