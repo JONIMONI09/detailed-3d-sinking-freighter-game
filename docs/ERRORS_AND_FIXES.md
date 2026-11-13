@@ -29,6 +29,17 @@ Do not use this file for speculative risks. Put open limitations in
 - Related files / skills:
 ```
 
+### ERR-2026-11-13-08 - Progress-Based Crew Replanning, Doorway Centering & Interactive Ship Bilge Pumps
+
+- Date (Europe/Berlin): 2026-11-13
+- Area: Crew AI Replanning & Ship Dewatering (`crew.ts`, `shipNavGraph.ts`, `shipBuilder.ts`, `game.ts`)
+- Status: Resolved
+- Symptom: Bots that bounced off peers or doorframes could run in place without recomputing paths, failed to align cleanly through all doorways, and the ship lacked physical interactive bilge pumps to pump water out.
+- Root cause: (1) Stuck detection checked single-frame speed (`moved < 0.2 * dt`), which missed lateral oscillation/bouncing and did not clear `navWaypoint` on peer collisions; (2) `shipNavGraph.ts` lacked explicit doorway-center nodes for Level 0 interior/exterior doors and `barrierHit` deflected bots at open doorframes; (3) only portable crew pumps existed with no physical ship-mounted bilge pumps or master consoles.
+- Fix: Added `monitorProgressAndUnstick()` (0.45s net-displacement check -> immediate `navWaypoint` reset, `slideSign` flip, and self-unstick hop), peer-bounce path reset, doorway-center nodes in `shipNavGraph.ts`, open-doorway `barrierHit` suppression, and 6 interactive `BilgePumpUnit` stations (4 compartment pumps at `16 m^3/s` each + Bridge & Control Room master consoles).
+- Prevention: Measure net progress over a time window rather than single-step speed when triggering A* replanning, and anchor graph edges at exact doorway centers.
+- Related files / skills: `detailed-3d-sinking-freighter-game_sonnet/src/game/crew.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/shipNavGraph.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/shipBuilder.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/game.ts`, `tests/crew-navigation.test.mjs`.
+
 ### ERR-2026-11-13-07 - 3D ShipNavGraph Stair Mode, Stair Tagging & Narrow Catwalk Separation Fix
 
 - Date (Europe/Berlin): 2026-11-13

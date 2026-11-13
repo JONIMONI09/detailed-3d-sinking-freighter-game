@@ -864,8 +864,17 @@ export class Game {
       if (comp && comp.fill > 0.004 && comp.level - sm.y > 0.12 && sm.state !== "ragdoll" && !sm.isRagdoll) {
         sm.pumping = true;
         comp.water = Math.max(0, comp.water - 1.8 * dt);
+        const compPump = this.ship.bilgePumps.find((p) => p.compId === comp.id);
+        if (compPump && !compPump.active) compPump.active = true;
       } else {
         sm.pumping = false;
+      }
+    }
+    for (const bp of this.ship.bilgePumps) {
+      if (!bp.active || bp.rateM3s <= 0) continue;
+      const comp = this.ship.compartments.find((c) => c.id === bp.compId);
+      if (comp && comp.water > 0) {
+        comp.water = Math.max(0, comp.water - bp.rateM3s * dt);
       }
     }
     const destroyedIds = new Set(this.ship.sections.filter((s) => s.destroyed).map((s) => s.id));
@@ -3462,6 +3471,33 @@ export class Game {
         }
       }
     }
+    // Ship Bilge Pumps & Master Bilge Consoles [E]
+    for (const bp of this.ship.bilgePumps) {
+      const dPump = bp.pos.distanceTo(eye);
+      if (dPump < 3.0) {
+        const score = 4.5 - dPump * 0.2;
+        if (score > best) {
+          best = score;
+          bestKind = bp.active ? "confirm" : "normal";
+          const comp = bp.compId === "master" ? null : this.ship.compartments.find((c) => c.id === bp.compId);
+          const fillPct = comp ? ` · ${Math.round(comp.fill * 100)}% flooded` : "";
+          bestText = `${bp.active ? "Stop" : "Start"} ${bp.name} [E] (${bp.active ? "PUMPING" : "OFF"}${fillPct})`;
+          bestAct = () => {
+            if (bp.compId === "master") {
+              const nextState = !this.ship.bilgePumps.some((p) => p.compId !== "master" && p.active);
+              for (const p of this.ship.bilgePumps) p.active = nextState;
+              this.audio.click();
+              this.say(`MASTER BILGE PUMPS ${nextState ? "ENGAGED (64 m³/s total)" : "SHUT DOWN"}`, nextState ? "good" : "info");
+            } else {
+              bp.active = !bp.active;
+              this.audio.click();
+              this.say(`${bp.name} ${bp.active ? "STARTED (16 m³/s)" : "STOPPED"}`, bp.active ? "good" : "info");
+            }
+          };
+        }
+      }
+    }
+
     // Wheelhouse Bridge Helm & Telegraph Station
     const bridgeHelmPos = new THREE.Vector3(0, 12.6, -46.5);
     const toHelm = bridgeHelmPos.clone().sub(eye);

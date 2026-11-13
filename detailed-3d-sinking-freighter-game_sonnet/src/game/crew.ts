@@ -92,6 +92,10 @@ export interface CrewMember {
   waitingForDoor?: boolean;
   slideSign?: number;
   slideTimer?: number;
+  progressTimer?: number;
+  progressX?: number;
+  progressZ?: number;
+  stuckCount?: number;
   patrol?: readonly { x: number; y: number; z: number }[];
 }
 
@@ -390,6 +394,11 @@ function walkToward(
       if (doorRay.dist < 1.35 && door.target === 1 && door.open !== undefined && door.open < 0.65) {
         waitingForDoor = true;
       }
+      if (door.target === 1 && (door.open === undefined || door.open >= 0.55)) {
+        doorAhead = true;
+      } else {
+        doorAhead = false;
+      }
     }
   }
   m.waitingForDoor = waitingForDoor;
@@ -398,8 +407,8 @@ function walkToward(
 
   if ((m.slideTimer ?? 0) > 0) m.slideTimer = Math.max(0, (m.slideTimer ?? 0) - dt);
 
-  // Smooth tangential barrier sliding + anti-oscillation memory (disabled on stairs so steps aren't treated as walls)
-  if (!waitingForDoor && !stairMode && d > 1e-6) {
+  // Smooth tangential barrier sliding + anti-oscillation memory (disabled on stairs and through open doorways)
+  if (!waitingForDoor && !stairMode && !doorAhead && d > 1e-6) {
     const barrierHit = world?.raycast(m.x, m.y + 0.75, m.z, nx, 0, nz, 0.85, (c) => c.tag !== "door" && c.tag !== "stair");
     if (barrierHit && (barrierHit.nx !== undefined || barrierHit.nz !== undefined)) {
       const hnx = barrierHit.nx ?? 0;
@@ -498,6 +507,62 @@ function walkToward(
   }
 }
 
+function monitorProgressAndUnstick(
+  m: CrewMember,
+  wp: { x: number; z: number },
+  dt: number,
+  world?: CrewWorld,
+): boolean {
+  if (!world || m.waitingForDoor) {
+    m.progressTimer = 0;
+    m.progressX = m.x;
+    m.progressZ = m.z;
+    m.stuckCount = 0;
+    return false;
+  }
+  if (m.progressX === undefined || m.progressZ === undefined) {
+    m.progressX = m.x;
+    m.progressZ = m.z;
+    m.progressTimer = 0;
+  }
+  m.progressTimer = (m.progressTimer ?? 0) + dt;
+  if (m.progressTimer < 0.45) return false;
+
+  const netDist = Math.hypot(m.x - m.progressX, m.z - m.progressZ);
+  m.progressX = m.x;
+  m.progressZ = m.z;
+  m.progressTimer = 0;
+
+  if (netDist >= 0.14) {
+    m.stuckCount = 0;
+    return false;
+  }
+
+  // Net progress stalled (running in place or oscillating against peer/doorframe) -> immediate replan + flip slide
+  m.stuckCount = (m.stuckCount ?? 0) + 1;
+  m.navWaypoint = null;
+  m.navTimer = 0;
+  m.slideSign = -(m.slideSign || 1);
+  m.slideTimer = 0.55;
+
+  if (m.stuckCount >= 2 && m.onGround) {
+    // Self-unstick hop + tangential sidestep so player never needs to push bots free
+    const dx = wp.x - m.x;
+    const dz = wp.z - m.z;
+    const d = Math.hypot(dx, dz) || 1;
+    const tx = (-dz / d) * m.slideSign;
+    const tz = (dx / d) * m.slideSign;
+    const hopBody: CrewBody = { x: m.x, y: m.y, z: m.z, vx: 0, vy: 3.6, vz: 0, r: 0.2, h: 1.75, onGround: false, step: 0.48 };
+    world.move(hopBody, tx * 0.35 + (dx / d) * 0.15, 0.12, tz * 0.35 + (dz / d) * 0.15);
+    m.x = hopBody.x;
+    m.y = hopBody.y;
+    m.z = hopBody.z;
+    m.vy = 3.4;
+    m.onGround = false;
+  }
+  return m.stuckCount >= 3;
+}
+
 /** Advances one crew member by dt seconds; mutates the member and the breach it repairs. */
 export function stepCrew(
   m: CrewMember,
@@ -517,14 +582,21 @@ export function stepCrew(
         const dx = m.x - other.x;
         const dz = m.z - other.z;
         const d = Math.hypot(dx, dz);
-        if (d < 0.48) {
-          const push = Math.min(0.06, (0.48 - d) * 0.25 + 0.01);
+        if (d < 0.42) {
+          const push = Math.min(0.04, (0.42 - d) * 0.2 + 0.008);
           const nx = d > 1e-3 ? dx / d : (m.name < other.name ? -1 : 1);
           const nz = d > 1e-3 ? dz / d : 0;
+          const prevSepX = m.x;
+          const prevSepZ = m.z;
           const sepBody: CrewBody = { x: m.x, y: m.y, z: m.z, vx: 0, vy: 0, vz: 0, r: 0.2, h: 1.75, onGround: m.onGround ?? false, step: 0.48 };
           ctx.world.move(sepBody, nx * push, 0, nz * push);
           m.x = sepBody.x;
           m.z = sepBody.z;
+          // Force immediate path replanning whenever peer collision deflects this bot
+          if (Math.hypot(m.x - prevSepX, m.z - prevSepZ) > 0.015) {
+            m.navWaypoint = null;
+            m.navTimer = 0;
+          }
         }
       }
     }
@@ -655,16 +727,19 @@ export function stepCrew(
         const pMoved = Math.hypot(m.x - prevPX, m.z - prevPZ);
         m.lastX = m.x;
         m.lastZ = m.z;
+        const patrolStalled = monitorProgressAndUnstick(m, wp, dt, ctx?.world);
         if (Math.hypot(m.x - patrolTarget.x, m.z - patrolTarget.z) < 0.9) {
           m.patrolIndex = (m.patrolIndex + 1) % patrol.length;
           m.stuckTime = 0;
+          m.stuckCount = 0;
           m.navWaypoint = null;
-        } else if (ctx?.world && !m.waitingForDoor && pMoved < 0.15 * dt) {
+        } else if (patrolStalled || (ctx?.world && !m.waitingForDoor && pMoved < 0.15 * dt)) {
           m.stuckTime = (m.stuckTime ?? 0) + dt;
           if (m.stuckTime > 0.45) m.navWaypoint = null;
-          if (m.stuckTime > 0.9) {
+          if (patrolStalled || m.stuckTime > 1.2) {
             m.patrolIndex = (m.patrolIndex + 1) % patrol.length;
             m.stuckTime = 0;
+            m.stuckCount = 0;
           }
         } else {
           m.stuckTime = 0;
@@ -732,7 +807,7 @@ export function stepCrew(
         } else {
           m.stuckTime = 0;
         }
-      } else if (ctx?.world && !m.waitingForDoor && moved < 0.2 * dt) {
+      } else if (monitorProgressAndUnstick(m, wp, dt, ctx?.world) || (ctx?.world && !m.waitingForDoor && moved < 0.2 * dt)) {
         // Escalate from A* replan (0.35s) -> exterior catwalk bypass (0.75s) -> clean obstacle vault (1.45s)
         m.stuckTime = (m.stuckTime ?? 0) + dt;
         if (m.stuckTime > 0.35) m.navWaypoint = null;
@@ -745,10 +820,13 @@ export function stepCrew(
           const nd = Math.hypot(ndx, ndz);
           if (nd > 1e-4) {
             const stepLen = Math.min(1.6, nd);
-            m.x += (ndx / nd) * stepLen;
-            m.z += (ndz / nd) * stepLen;
+            const vaultBody: CrewBody = { x: m.x, y: m.y, z: m.z, vx: 0, vy: 0, vz: 0, r: 0.2, h: 1.75, onGround: m.onGround ?? false, step: 0.48 };
+            ctx?.world?.move(vaultBody, (ndx / nd) * stepLen, 0.2, (ndz / nd) * stepLen);
+            m.x = vaultBody.x;
+            m.z = vaultBody.z;
           }
           m.stuckTime = 0;
+          m.stuckCount = 0;
         }
       } else {
         m.stuckTime = 0;

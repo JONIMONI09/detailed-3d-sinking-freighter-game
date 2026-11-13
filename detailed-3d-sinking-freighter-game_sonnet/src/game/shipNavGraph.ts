@@ -38,16 +38,24 @@ const NODES: ShipNavNode[] = [
   { id: "d0_stbd_aft_ext", x: 9.45, y: 3.0, z: -60.0 },
   { id: "d0_stern", x: 0, y: 3.0, z: -66.8 },
 
-  // --- Superstructure Level 0 (y = 3.0) ---
+  // --- Superstructure Level 0 (y = 3.0) with explicit doorway center nodes ---
+  { id: "d0_main_door", x: 0, y: 3.0, z: -44.15 },
   { id: "d0_main_in", x: 0, y: 3.0, z: -45.2 },
   { id: "d0_corr_mid", x: 0, y: 3.0, z: -47.0 },
   { id: "d0_corr_aft", x: 0, y: 3.0, z: -53.6 },
-  { id: "d0_ctrl_door", x: 0, y: 3.0, z: -56.6 },
-  { id: "d0_eng_top", x: -0.875, y: 3.0, z: -57.4, stair: true },
+  { id: "d0_ctrl_door", x: 0, y: 3.0, z: -57.2 },
+  { id: "d0_eng_top", x: -0.875, y: 3.0, z: -57.8, stair: true },
   { id: "d0_stair_bot", x: -0.875, y: 3.0, z: -52.8, stair: true },
 
+  { id: "d0_port_corr_door", x: -1.7, y: 3.0, z: -47.0 },
+  { id: "d0_port_corr_aft", x: -1.7, y: 3.0, z: -53.6 },
+  { id: "d0_port_side_door", x: -8.85, y: 3.0, z: -47.0 },
   { id: "d0_port_mid", x: -5.0, y: 3.0, z: -47.0 },
   { id: "d0_port_aft", x: -5.0, y: 3.0, z: -53.6 },
+
+  { id: "d0_stbd_corr_door", x: 1.7, y: 3.0, z: -47.0 },
+  { id: "d0_stbd_corr_aft", x: 1.7, y: 3.0, z: -53.6 },
+  { id: "d0_stbd_side_door", x: 8.85, y: 3.0, z: -47.0 },
   { id: "d0_stbd_mid", x: 5.0, y: 3.0, z: -47.0 },
   { id: "d0_stbd_aft", x: 5.0, y: 3.0, z: -53.6 },
 
@@ -97,7 +105,8 @@ const EDGES: ShipNavEdge[] = [
   { a: "deck_fwd", b: "d0_hold_gate" },
   { a: "d0_hold_gate", b: "d0_hold_top" },
   { a: "deck_mid", b: "deck_aft" },
-  { a: "deck_aft", b: "d0_main_in" },
+  { a: "deck_aft", b: "d0_main_door" },
+  { a: "d0_main_door", b: "d0_main_in" },
   { a: "deck_aft", b: "d0_port_fwd_ext" },
   { a: "deck_aft", b: "d0_stbd_fwd_ext" },
   { a: "d0_port_fwd_ext", b: "d0_port_ext" },
@@ -106,16 +115,22 @@ const EDGES: ShipNavEdge[] = [
   { a: "d0_stbd_fwd_ext", b: "d0_stbd_ext" },
   { a: "d0_stbd_ext", b: "d0_stbd_aft_ext" },
   { a: "d0_stbd_aft_ext", b: "d0_stern" },
-  { a: "d0_port_ext", b: "d0_port_mid" },
-  { a: "d0_stbd_ext", b: "d0_stbd_mid" },
+  { a: "d0_port_ext", b: "d0_port_side_door" },
+  { a: "d0_port_side_door", b: "d0_port_mid" },
+  { a: "d0_stbd_ext", b: "d0_stbd_side_door" },
+  { a: "d0_stbd_side_door", b: "d0_stbd_mid" },
 
   // Level 0 interior
   { a: "d0_main_in", b: "d0_corr_mid" },
-  { a: "d0_corr_mid", b: "d0_port_mid" },
-  { a: "d0_corr_mid", b: "d0_stbd_mid" },
+  { a: "d0_corr_mid", b: "d0_port_corr_door" },
+  { a: "d0_port_corr_door", b: "d0_port_mid" },
+  { a: "d0_corr_mid", b: "d0_stbd_corr_door" },
+  { a: "d0_stbd_corr_door", b: "d0_stbd_mid" },
   { a: "d0_corr_mid", b: "d0_corr_aft" },
-  { a: "d0_corr_aft", b: "d0_port_aft" },
-  { a: "d0_corr_aft", b: "d0_stbd_aft" },
+  { a: "d0_corr_aft", b: "d0_port_corr_aft" },
+  { a: "d0_port_corr_aft", b: "d0_port_aft" },
+  { a: "d0_corr_aft", b: "d0_stbd_corr_aft" },
+  { a: "d0_stbd_corr_aft", b: "d0_stbd_aft" },
   { a: "d0_port_mid", b: "d0_port_aft" },
   { a: "d0_stbd_mid", b: "d0_stbd_aft" },
   { a: "d0_corr_aft", b: "d0_stair_bot" },
@@ -290,9 +305,9 @@ export function findNextShipGraphWaypoint(
       let nextIdx = path.length > 1 ? path[1] : path[0];
       const n1 = NODES[nextIdx];
       const d1 = Math.hypot(n1.x - sx, n1.z - sz);
-      if (path.length > 2 && d1 < 1.15 && Math.abs(n1.y - sy) < 1.2) {
+      if (path.length > 2 && d1 < 0.85 && Math.abs(n1.y - sy) < 1.2) {
         nextIdx = path[2];
-      } else if (path.length === 1 && Math.hypot(NODES[path[0]].x - sx, NODES[path[0]].z - sz) < 1.15 && Math.abs(NODES[path[0]].y - sy) < 1.2) {
+      } else if (path.length === 1 && Math.hypot(NODES[path[0]].x - sx, NODES[path[0]].z - sz) < 0.85 && Math.abs(NODES[path[0]].y - sy) < 1.2) {
         return { x: tx, y: ty, z: tz, onStair: isInStairwellBand(sx, sy, sz) };
       }
 

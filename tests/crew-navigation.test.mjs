@@ -308,7 +308,47 @@ function test3DShipNavGraphStairAndCatwalkRouting() {
   ];
   const wp = navgridMod.findNextGridWaypoint(boxesWithStair, -0.875, 3.0, -52.5, -0.875, -48.0);
   assert.ok(wp, 'Grid A* must pass cleanly over stair-tagged colliders');
-  console.log('  ok 3D ShipNavGraph stair routing, catwalk entry & stair-tag exclusion verified');
+
+  // Doorway center node alignment: Level 0 corridor -> port aft room routes through (-1.7, 3.0, -53.6)
+  const doorWp = shipNavGraphMod.findNextShipGraphWaypoint(0, 3.0, -53.6, -5.0, 3.0, -53.6);
+  assert.ok(Math.abs(doorWp.x - -1.7) < 0.25 && Math.abs(doorWp.z - -53.6) < 0.25, `Expected doorway center (-1.7, -53.6), got (${doorWp.x}, ${doorWp.z})`);
+
+  // Progress-based self-unstick hop & replanning when a bot is pinned against an obstacle
+  const ragdollMod = loadTs('detailed-3d-sinking-freighter-game_sonnet/src/game/ragdoll.ts', (id) => {
+    if (id === './navmesh3d') return navmesh;
+    throw new Error(`Unexpected require in ragdoll: ${id}`);
+  });
+  const crewMod = loadTs('detailed-3d-sinking-freighter-game_sonnet/src/game/crew.ts', (id) => {
+    if (id === './navmesh3d') return navmesh;
+    if (id === './ragdoll') return ragdollMod;
+    if (id === './navgrid') return navgridMod;
+    if (id === './shipNavGraph') return shipNavGraphMod;
+    throw new Error(`Unexpected require: ${id}`);
+  });
+  const pinnedBot = crewMod.createCrewMember('PinnedBot', 'damage-control', 0, 3.0, -48.0, 4);
+  pinnedBot.state = 'moving';
+  pinnedBot.targetId = 'b_pin';
+  pinnedBot.onGround = true;
+  pinnedBot.navWaypoint = { x: 0, z: -44.0 };
+  const pinnedWorld = {
+    move(body, _dx, dy, _dz) {
+      body.y += dy;
+      body.onGround = body.y <= 3.0;
+    },
+    raycast() {
+      return { hit: false, distance: Infinity };
+    },
+  };
+  let sawSelfHop = false;
+  for (let i = 0; i < 25; i++) {
+    crewMod.stepCrew(pinnedBot, 0.05, [{ id: 'b_pin', x: 0, y: 3.0, z: -40.0, area: 1.0, repair() {} }], undefined, {
+      world: pinnedWorld,
+      raycast: pinnedWorld.raycast,
+    });
+    if ((pinnedBot.vy ?? 0) > 2.0) sawSelfHop = true;
+  }
+  assert.equal(sawSelfHop, true, 'Pinned bot with zero net progress must trigger self-unstick hop and replanning');
+  console.log('  ok 3D ShipNavGraph stair routing, doorway centering & self-unstick replanning verified');
 }
 
 test5RaySteeringAndDeflection();

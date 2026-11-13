@@ -37,6 +37,17 @@ export interface ShipSection {
   colliders: Collider[];
 }
 
+export interface BilgePumpUnit {
+  id: string;
+  name: string;
+  compId: string; // "engine" | "hold3" | "hold2" | "hold1" | "master"
+  pos: THREE.Vector3;
+  active: boolean;
+  rateM3s: number;
+  rotor: THREE.Object3D;
+  indicatorMat: THREE.MeshBasicMaterial;
+}
+
 export interface ShipModel {
   group: THREE.Group;
   waterGroup: THREE.Group;
@@ -51,6 +62,7 @@ export interface ShipModel {
   lampMat: THREE.MeshBasicMaterial;
   zones: THREE.Box3[];
   compartments: Compartment[];
+  bilgePumps: BilgePumpUnit[];
   markers: Marker[];
   lifeboats: Lifeboat[];
   guardSpawns: GuardSpawn[];
@@ -1534,11 +1546,73 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
     }
   }
 
+  const bilgePumps: BilgePumpUnit[] = [];
+  const addBilgePump = (id: string, name: string, compId: string, px: number, py: number, pz: number, isConsole = false) => {
+    const pumpGrp = new THREE.Group();
+    pumpGrp.position.set(px, py, pz);
+    if (isConsole) {
+      const ped = new THREE.Mesh(new THREE.BoxGeometry(0.55, 1.05, 0.42), mats.steelDark);
+      ped.position.y = 0.525;
+      pumpGrp.add(ped);
+      const top = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.14, 0.46), mats.yellow);
+      top.position.y = 1.08;
+      pumpGrp.add(top);
+    } else {
+      const base = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.65, 0.72), mats.yellow);
+      base.position.y = 0.34;
+      pumpGrp.add(base);
+      const motor = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.58, 12), mats.engine);
+      motor.rotation.z = Math.PI / 2;
+      motor.position.set(0.1, 0.48, 0);
+      pumpGrp.add(motor);
+      const riser = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 2.4, 10), mats.blue);
+      riser.position.set(-0.28, 1.35, 0);
+      pumpGrp.add(riser);
+    }
+    const rotor = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.08, 0.08), mats.chrome);
+    rotor.position.set(isConsole ? 0 : 0.44, isConsole ? 1.19 : 0.48, 0);
+    pumpGrp.add(rotor);
+    const indicatorMat = new THREE.MeshBasicMaterial({ color: 0xff8800 });
+    const led = new THREE.Mesh(new THREE.SphereGeometry(0.085, 8, 8), indicatorMat);
+    led.position.set(0, isConsole ? 1.24 : 0.82, 0.22);
+    pumpGrp.add(led);
+    group.add(pumpGrp);
+
+    const unit: BilgePumpUnit = {
+      id,
+      name,
+      compId,
+      pos: v3(px, py + (isConsole ? 1.0 : 0.6), pz),
+      active: false,
+      rateM3s: isConsole ? 0 : 16.0,
+      rotor,
+      indicatorMat,
+    };
+    bilgePumps.push(unit);
+    animated.push((_t, dt) => {
+      if (unit.active) {
+        unit.rotor.rotation.x += dt * 14.0;
+        unit.rotor.rotation.y += dt * 10.0;
+        unit.indicatorMat.color.setHex(0x22ff66);
+      } else {
+        unit.indicatorMat.color.setHex(0xff8800);
+      }
+    });
+  };
+
+  addBilgePump("pump_engine", "Engine Room Bilge Pump", "engine", -7.2, FLOOR_Y, -52.0);
+  addBilgePump("pump_hold3", "Cargo Hold 3 Bilge Pump", "hold3", -7.8, FLOOR_Y, -24.0);
+  addBilgePump("pump_hold2", "Cargo Hold 2 Bilge Pump", "hold2", -7.8, FLOOR_Y, 8.0);
+  addBilgePump("pump_hold1", "Cargo Hold 1 Bilge Pump", "hold1", -7.8, FLOOR_Y, 40.0);
+  addBilgePump("pump_master_bridge", "Bridge Master Bilge Pumps", "master", -1.8, LV[3], -46.2, true);
+  addBilgePump("pump_master_ctrl", "Control Room Master Bilge Pumps", "master", 1.8, LV[0], -56.0, true);
+
   const dispose = () => {
     geoms.forEach((g) => g.dispose());
     Object.values(mats).forEach((m) => m.dispose());
     glassMat.dispose();
     heavyDoorMat.dispose();
+    bilgePumps.forEach((p) => p.indicatorMat.dispose());
     compartments.forEach((c) => {
       (c.waterMesh.material as THREE.Material).dispose();
       c.waterMesh.geometry.dispose();
@@ -1559,6 +1633,7 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
     lampMat,
     zones,
     compartments,
+    bilgePumps,
     markers,
     lifeboats,
     guardSpawns,
