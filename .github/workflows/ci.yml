@@ -33,8 +33,10 @@ jobs:
       - name: Prepare CodeGraph Base Branch
         run: |
           # actions/checkout can leave a feature checkout without origin/main.
-          git fetch --no-tags origin main:refs/remotes/origin/main
-          git show-ref --verify --quiet refs/heads/main || git branch main origin/main
+          # A missing base ref must not fail the gate: the docs check falls back
+          # to another available ref and CodeGraph itself is optional.
+          git fetch --no-tags origin main:refs/remotes/origin/main || true
+          git show-ref --verify --quiet refs/heads/main || git branch main origin/main || true
 
       - name: Install Node Dependencies
         run: npm ci
@@ -54,4 +56,12 @@ jobs:
         run: npx vite build
 
       - name: Build Sonnet Distribution
-        run: npx vite build detailed-3d-sinking-freighter-game_sonnet
+        run: npx vite build detailed-3d-sinking-freighter-game_sonnet --outDir ../dist/sonnet --base ./
+
+      - name: Verify Pages Artifact
+        run: |
+          # Mirror the Pages workflow exactly so a deploy-only build break is
+          # caught here instead of on main.
+          test -f dist/index.html
+          test -f dist/sonnet/index.html
+          du -sh dist

@@ -1,6 +1,6 @@
 # Error and Solution Ledger
 
-Last reviewed: 2026-11-12 (Europe/Berlin)
+Last reviewed: 2026-11-13 (Europe/Berlin)
 Audience: Freebuff AI agent working in this repository only
 Owner skill: `error-fix-document`
 
@@ -323,6 +323,75 @@ Use exact commands and real run IDs when they exist.
   3. In `game.ts` and `bridge.ts`: Fixed Freighter autopilot telegraph to `"half-ahead"`, added `TELEGRAPH_SPEED[h.telegraph] ?? 0` guard, kept `ship.group.visible = true` while sinking in Sandbox/Battleship mode, and parked the FPS body safely on deck during Battleship command.
 - Verification: `npm test` (all 10 unit test suites + 10 Python CI checks pass) and `npm run build` (clean single-file production bundle).
 - Related files / skills: `detailed-3d-sinking-freighter-game_sonnet/src/game/crew.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/stormworksSupervisor.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/battleships.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/bridge.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/game.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/ui/Hud.tsx`, `error-fix-document`.
+### ERR-2026-11-13-01 - Sonnet edition TypeScript gate failed on main
+
+- Date (Europe/Berlin): 2026-11-13
+- Area: CI typecheck of `detailed-3d-sinking-freighter-game_sonnet`
+- Status: Resolved
+- Symptom: Every `Continuous Integration & Physics Verification` and
+  `Deploy to GitHub Pages` run failed in the Typecheck step. The Sonnet project
+  reported 14 errors: unused `ty`/`bs`/`i`/`doorHandles`/`compInfos`, a
+  `CollisionWorld`/`CrewWorld` mismatch at the supervisor call, `Input.jump`
+  instead of `Input.jumpHeld`, numeric first arguments to
+  `SoundEngine.explosion(pos, power)`, an unknown `key` door option instead of
+  `locked`, station crew roles `electrician`/`medic` missing from `CrewRole`,
+  and an arithmetic operation on the HUD `flood` compartment array.
+- Root cause: New gameplay code was merged without running the Sonnet
+  typecheck locally. CI is the first gate that typechecks that project, and the
+  Sonnet build step never ran because the typecheck failed first.
+- Solution:
+  1. `crew.ts`: added `electrician` and `medic` to `CrewRole`; introduced the
+     shared `CrewBody` (including `step: 0.35`) so `CollisionWorld.move` satisfies
+     `CrewWorld.move`; dropped the unused `ty` argument from `walkToward`.
+  2. `game.ts`: `SoundEngine.explosion` now receives a positional object plus a
+     power value, and the unused battleship local was removed.
+  3. `player.ts`: noclip vertical translation reads `input.jumpHeld`.
+  4. `shipBuilder.ts`: unused compartment map index removed.
+  5. `spaceStation.ts`: airlock doors pass `locked: doorKey ?? null`; the dead
+     `doorHandles`/`compInfos` copies were deleted.
+  6. `Hud.tsx`: flooded percentage is the mean compartment fill, not arithmetic
+     on the array.
+- Verification: `npx tsc --noEmit` and
+  `npx tsc -p detailed-3d-sinking-freighter-game_sonnet/tsconfig.json --noEmit`
+  both exit 0; `npm test` passes all 10 suites and 10 Python checks; both Vite
+  builds produce `dist/index.html` and `dist/sonnet/index.html`.
+- Prevention: `.github/workflows/ci.yml` now builds the Sonnet edition into
+  `dist/sonnet` with the exact Pages flags and asserts both HTML artifacts, so a
+  Pages-only break cannot pass CI again.
+- Related files / skills: `detailed-3d-sinking-freighter-game_sonnet/src/game/crew.ts`,
+  `.../game/game.ts`, `.../game/player.ts`, `.../game/shipBuilder.ts`,
+  `.../game/spaceStation.ts`, `.../ui/Hud.tsx`, `.github/workflows/ci.yml`,
+  `ci-workflow-audit`, `error-fix-document`.
+
+### ERR-2026-11-13-02 - Documentation gate blocked by the optional CodeGraph engine
+
+- Date (Europe/Berlin): 2026-11-13
+- Area: `npm run docs:check` / `tools/check_skill_docs.py`
+- Status: Resolved
+- Symptom: `npm run docs:check` exited 1 with
+  `CodeGraph MCP failed with exit 1: Binary not found:
+  node_modules/@astudioplus/codegraph-mcp/bin/codegraph-server-linux-x64 |
+  Platform: linux-x64 | Available binaries: none`, even though every file-level
+  documentation check had already passed.
+- Root cause: `@astudioplus/codegraph-mcp` downloads its native analysis engine
+  in a best-effort postinstall step. The download can be skipped or blocked
+  (air-gapped host, TLS interception, unsupported platform), leaving the npm
+  wrapper installed but no engine. `check_skill_docs.py` treated that optional
+  tooling gap as a documentation failure.
+- Solution: The gate now checks for `CODEGRAPH_SERVER_PATH` or a
+  `codegraph-server-*` engine in the package `bin` directory. A missing engine,
+  a launch failure that reports `Binary not found`/`no engine`, or a 120-second
+  MCP timeout prints an explicit `[WARN]` with the
+  `npx codegraph-mcp-fetch-engine` recovery command and then continues with the
+  file-level checks. Real CodeGraph errors (non-zero exit for another reason,
+  non-JSON output, unknown tool) still fail the gate.
+- Verification: `npm run docs:check` exits 0 with the WARN line and all PASS
+  lines; YAML and Python syntax checks pass.
+- Prevention: `docs/AGENT_TOOLS.md` and `AGENTS.md` document the optional-engine
+  rule so the behavior is not mistaken for a silently weakened gate.
+- Related files / skills: `tools/check_skill_docs.py`, `docs/AGENT_TOOLS.md`,
+  `AGENTS.md`, `documentation-maintenance`, `ci-workflow-audit`.
+
 
 ## Open incidents
 
