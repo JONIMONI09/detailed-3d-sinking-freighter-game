@@ -29,6 +29,17 @@ Do not use this file for speculative risks. Put open limitations in
 - Related files / skills:
 ```
 
+### ERR-2026-11-13-07 - 3D ShipNavGraph Stair Mode, Stair Tagging & Narrow Catwalk Separation Fix
+
+- Date (Europe/Berlin): 2026-11-13
+- Area: Crew AI 3D Pathfinding & Stair/Catwalk Navigation (`shipNavGraph.ts`, `navgrid.ts`, `crew.ts`, `shipBuilder.ts`)
+- Status: Resolved
+- Symptom: Bots got stuck on overlapping superstructure/lower-deck stair flights (sliding sideways into stairwell divider walls) and on the narrow `1.15m` exterior catwalk (`|x| ~ 9.45m`).
+- Root cause: (1) `stairSteps` colliders were untagged (`"wall"`), so `navgrid.ts` marked stairs as impassable floor obstacles and `walkToward()`'s `barrierHit` ray at `y + 0.75` mistook the next stair step for a vertical wall and pushed bots sideways into the center divider; (2) `computeDeckWaypoint` used ad-hoc heuristics instead of an explicit 3D deck/stair/doorway graph; (3) `0.72m` peer separation pushed passing bots sideways into the `1.15m` catwalk walls and railings.
+- Fix: Added `shipNavGraph.ts` (~46 nodes across exterior deck/catwalks, Deck 0-3 corridors/rooms, A/B stairs, `engineHole`, `holdHole`, and lower holds), tagged `stairSteps` colliders `"stair"` in `shipBuilder.ts`, skipped `"stair"` colliders in `navgrid.ts` and `walkToward()`, bypassed wall-slide/grid-steering when `onStair` is active, and suppressed peer separation on narrow catwalks and inside stairwells.
+- Prevention: Never treat sloped/stepped stair colliders as horizontal wall obstacles in 2D floor grids or chest-height barrier rays; route multi-deck and narrow-corridor movement through an explicit 3D node-edge graph with `onStair` mode.
+- Related files / skills: `detailed-3d-sinking-freighter-game_sonnet/src/game/shipNavGraph.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/crew.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/navgrid.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/shipBuilder.ts`, `tests/crew-navigation.test.mjs`.
+
 ### ERR-2026-11-13-06 - 2D Grid A* Pathfinding, Proactive Door Opening & Patrol Waypoint Routing
 
 - Date (Europe/Berlin): 2026-11-13

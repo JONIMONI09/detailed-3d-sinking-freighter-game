@@ -23,6 +23,7 @@ import {
   RagdollTriggerSensors,
 } from "./ragdoll";
 import { findNextGridWaypoint, NavBox } from "./navgrid";
+import { findNextShipGraphWaypoint, isInStairwellBand, isOnNarrowCatwalk } from "./shipNavGraph";
 
 export type CrewRole =
   | "chief-engineer"
@@ -282,86 +283,23 @@ function nearestBreach(
 function computeDeckWaypoint(
   m: CrewMember,
   target: { x: number; y: number; z: number },
-): { x: number; z: number } {
+): { x: number; z: number; onStair: boolean } {
   // Exterior catwalk bypass when an interior route/doorway is blocked
   if ((m.exteriorBypass ?? 0) > 0 && m.y >= 2.7 && m.y < 5.2 && Math.abs(target.y - m.y) <= 2.4) {
-    const sideX = m.x >= 0 ? 9.6 : -9.6;
+    const sideX = m.x >= 0 ? 9.45 : -9.45;
     const insideSuper = Math.abs(m.x) < 8.9 && m.z <= -44.0 && m.z >= -66.0;
     if (insideSuper) {
-      if (Math.abs(m.x) < 2.2 && m.z > -49.5) return { x: 0.88, z: -43.0 };
-      if (Math.abs(m.z - -47.0) > 1.0) return { x: m.x >= 0 ? 3.0 : -3.0, z: -47.0 };
-      return { x: sideX, z: -47.0 };
+      if (Math.abs(m.x) < 2.2 && m.z > -49.5) return { x: 0.88, z: -43.0, onStair: false };
+      if (Math.abs(m.z - -47.0) > 1.0) return { x: m.x >= 0 ? 3.0 : -3.0, z: -47.0, onStair: false };
+      return { x: sideX, z: -47.0, onStair: false };
     }
-    if (Math.abs(m.z - target.z) > 2.2 && Math.abs(m.x) < 9.0) return { x: sideX, z: m.z };
-    if (Math.abs(m.z - target.z) > 2.2) return { x: sideX, z: target.z };
-    return { x: target.x, z: target.z };
+    if (Math.abs(m.z - target.z) > 2.2 && Math.abs(m.x) < 9.0) return { x: sideX, z: m.z, onStair: false };
+    if (Math.abs(m.z - target.z) > 2.2) return { x: sideX, z: target.z, onStair: false };
+    return { x: target.x, z: target.z, onStair: false };
   }
 
-  const dy = target.y - m.y;
-  if (Math.abs(dy) <= 2.2) return { x: target.x, z: target.z };
-
-  // Climbing up into superstructure / bridge (LV = [3.0, 6.2, 9.4, 12.6], Main Entrance at z = -44.15)
-  if (dy > 2.2 && target.y >= 5.0) {
-    if (m.y < 4.5 && m.z > -44.5) {
-      return { x: 0, z: -45.2 };
-    }
-    if (m.y < 5.8) {
-      return m.z < -51.6 || Math.abs(m.x - -0.88) < 1.1 ? { x: -0.88, z: -47.8 } : { x: -0.88, z: -52.4 };
-    }
-    if (m.y < 9.0 && target.y >= 8.5) {
-      return m.z > -48.8 || Math.abs(m.x - 0.88) < 1.1 ? { x: 0.88, z: -52.4 } : { x: 0.88, z: -47.8 };
-    }
-    if (m.y < 12.2 && target.y >= 11.5) {
-      return m.z < -51.6 || Math.abs(m.x - -0.88) < 1.1 ? { x: -0.88, z: -47.8 } : { x: -0.88, z: -52.4 };
-    }
-  }
-
-  // Descending from superstructure back to main deck
-  if (dy < -2.2 && m.y >= 5.2 && target.y < 4.5) {
-    if (m.y >= 11.5) return { x: -0.88, z: -52.4 };
-    if (m.y >= 8.5) return { x: 0.88, z: -47.8 };
-    return { x: -0.88, z: -52.4 };
-  }
-
-  // Descending from main deck into Engine Room via Main Entrance, right lobby lane (x = 0.88), & aft engineHole U-stair
-  if (dy < -2.2 && m.y >= 1.5 && target.y < -0.5 && target.z < -38.0) {
-    if (m.z > -44.0) return { x: 0, z: -44.8 };
-    if (m.z > -57.0) return Math.abs(m.x) < 1.7 && m.z > -53.0 ? { x: 0.88, z: -53.5 } : { x: 0.4, z: -57.8 };
-    return { x: -0.88, z: -58.6 };
-  }
-
-  // Descending from main deck into Cargo Holds via Cargo Hold 2 Gate & holdHole (x = -9.35..-6.05, z = 18.5..25.5)
-  if (dy < -2.2 && m.y >= 1.5 && target.y < -0.5 && target.z >= -38.0) {
-    if (m.z < 27.0 && (m.x > -6.0 || m.x < -9.5 || m.z < 18.0)) return { x: -8.6, z: 28.2 };
-    if (m.z >= 27.0) return { x: -8.6, z: 25.0 };
-    return { x: -6.8, z: 19.0 };
-  }
-
-  // Navigating between lower-deck compartments through watertight bulkhead doors (z = -39, -8, 26 at x = 0)
-  if (m.y < 1.2 && target.y < 1.2) {
-    if ((m.z < -39.0) !== (target.z < -39.0)) return { x: 0, z: m.z < -39.0 ? -38.0 : -40.0 };
-    if ((m.z < -8.0) !== (target.z < -8.0)) return { x: 0, z: m.z < -8.0 ? -7.0 : -9.0 };
-    if ((m.z < 26.0) !== (target.z < 26.0)) return { x: 0, z: m.z < 26.0 ? 27.0 : 25.0 };
-  }
-
-  // Superstructure level 0 side-room <-> central corridor door routing (doors at x = ±1.7, z = -47.0 / -53.6)
-  if (m.y >= 2.7 && m.y < 5.2 && m.z <= -44.0 && m.z >= -66.0 && target.y >= 2.7 && target.y < 5.5) {
-    const inCorridor = Math.abs(m.x) < 1.7 && m.z > -57.2;
-    const targetInSideRoom = Math.abs(target.x) > 2.0 && target.z > -57.2;
-    if (inCorridor && targetInSideRoom) {
-      const doorZ = target.z < -50.2 ? -53.6 : -47.0;
-      if (Math.abs(m.z - doorZ) > 0.7) return { x: Math.sign(target.x) * 0.88, z: doorZ };
-      return { x: Math.sign(target.x) * 2.2, z: doorZ };
-    }
-    const inSideRoom = Math.abs(m.x) >= 1.7 && m.z > -57.2;
-    if (inSideRoom && (Math.abs(target.x) < 1.7 || Math.sign(target.x) !== Math.sign(m.x) || target.z <= -57.2)) {
-      const doorZ = m.z < -50.2 ? -53.6 : -47.0;
-      if (Math.abs(m.z - doorZ) > 0.7) return { x: Math.sign(m.x) * 2.4, z: doorZ };
-      return { x: 0.88, z: doorZ };
-    }
-  }
-
-  return { x: target.x, z: target.z };
+  const wp = findNextShipGraphWaypoint(m.x, m.y, m.z, target.x, target.y, target.z);
+  return { x: wp.x, z: wp.z, onStair: wp.onStair };
 }
 
 function walkToward(
@@ -374,10 +312,12 @@ function walkToward(
   dt = 0.016,
   waterLevel = -Infinity,
   swimTargetY?: number,
+  onStair = false,
 ) {
+  const stairMode = onStair || isInStairwellBand(m.x, m.y, m.z);
   let steerX = tx;
   let steerZ = tz;
-  if (world?.boxes) {
+  if (world?.boxes && !stairMode) {
     m.navTimer = (m.navTimer ?? 0) - dt;
     const wpClose = m.navWaypoint ? Math.hypot(m.navWaypoint.x - m.x, m.navWaypoint.z - m.z) < 0.55 : true;
     if (m.navTimer <= 0 || wpClose || !m.navWaypoint) {
@@ -387,6 +327,8 @@ function walkToward(
     }
     steerX = m.navWaypoint.x;
     steerZ = m.navWaypoint.z;
+  } else if (stairMode) {
+    m.navWaypoint = null;
   }
 
   const dx = steerX - m.x,
@@ -456,9 +398,9 @@ function walkToward(
 
   if ((m.slideTimer ?? 0) > 0) m.slideTimer = Math.max(0, (m.slideTimer ?? 0) - dt);
 
-  // Smooth tangential barrier sliding + anti-oscillation memory (stays active near doorways for doorframes/walls)
-  if (!waitingForDoor && d > 1e-6) {
-    const barrierHit = world?.raycast(m.x, m.y + 0.75, m.z, nx, 0, nz, 0.85, (c) => c.tag !== "door");
+  // Smooth tangential barrier sliding + anti-oscillation memory (disabled on stairs so steps aren't treated as walls)
+  if (!waitingForDoor && !stairMode && d > 1e-6) {
+    const barrierHit = world?.raycast(m.x, m.y + 0.75, m.z, nx, 0, nz, 0.85, (c) => c.tag !== "door" && c.tag !== "stair");
     if (barrierHit && (barrierHit.nx !== undefined || barrierHit.nz !== undefined)) {
       const hnx = barrierHit.nx ?? 0;
       const hnz = barrierHit.nz ?? 0;
@@ -569,14 +511,14 @@ export function stepCrew(
 
   // 0. Peer-to-peer separation & stationary gravity settle so bots never overlap or hover
   if (ctx?.world && m.state !== "climbing_ladder" && m.state !== "ragdoll") {
-    if (ctx.peers) {
+    if (ctx.peers && !isOnNarrowCatwalk(m.x, m.y, m.z) && !isInStairwellBand(m.x, m.y, m.z)) {
       for (const other of ctx.peers) {
         if (other === m || Math.abs(other.y - m.y) > 1.8) continue;
         const dx = m.x - other.x;
         const dz = m.z - other.z;
         const d = Math.hypot(dx, dz);
-        if (d < 0.72) {
-          const push = Math.min(0.18, (0.72 - d) * 0.5 + 0.02);
+        if (d < 0.48) {
+          const push = Math.min(0.06, (0.48 - d) * 0.25 + 0.01);
           const nx = d > 1e-3 ? dx / d : (m.name < other.name ? -1 : 1);
           const nz = d > 1e-3 ? dz / d : 0;
           const sepBody: CrewBody = { x: m.x, y: m.y, z: m.z, vx: 0, vy: 0, vz: 0, r: 0.2, h: 1.75, onGround: m.onGround ?? false, step: 0.48 };
@@ -706,10 +648,10 @@ export function stepCrew(
       const patrol = m.patrol && m.patrol.length > 0 ? m.patrol : cfg.patrol;
       if (patrol.length > 0) {
         const patrolTarget = patrol[m.patrolIndex % patrol.length];
-        const wp = ctx?.world ? computeDeckWaypoint(m, patrolTarget) : patrolTarget;
+        const wp = ctx?.world ? computeDeckWaypoint(m, patrolTarget) : { x: patrolTarget.x, z: patrolTarget.z, onStair: false };
         const prevPX = m.lastX ?? m.x;
         const prevPZ = m.lastZ ?? m.z;
-        walkToward(m, wp.x, wp.z, cfg.walkSpeed * 0.65 * dt, ctx?.raycast, ctx?.world, dt, ctx?.waterLevel ?? -Infinity);
+        walkToward(m, wp.x, wp.z, cfg.walkSpeed * 0.65 * dt, ctx?.raycast, ctx?.world, dt, ctx?.waterLevel ?? -Infinity, undefined, wp.onStair);
         const pMoved = Math.hypot(m.x - prevPX, m.z - prevPZ);
         m.lastX = m.x;
         m.lastZ = m.z;
@@ -758,10 +700,10 @@ export function stepCrew(
       }
 
       if ((m.exteriorBypass ?? 0) > 0) m.exteriorBypass = Math.max(0, (m.exteriorBypass ?? 0) - dt);
-      const wp = ctx?.world ? computeDeckWaypoint(m, target) : { x: target.x, z: target.z };
+      const wp = ctx?.world ? computeDeckWaypoint(m, target) : { x: target.x, z: target.z, onStair: false };
       const prevX = m.lastX ?? m.x;
       const prevZ = m.lastZ ?? m.z;
-      walkToward(m, wp.x, wp.z, cfg.walkSpeed * dt, ctx?.raycast, ctx?.world, dt, ctx?.waterLevel ?? -Infinity, target.y);
+      walkToward(m, wp.x, wp.z, cfg.walkSpeed * dt, ctx?.raycast, ctx?.world, dt, ctx?.waterLevel ?? -Infinity, target.y, wp.onStair);
       const moved = Math.hypot(m.x - prevX, m.z - prevZ);
       m.lastX = m.x;
       m.lastZ = m.z;

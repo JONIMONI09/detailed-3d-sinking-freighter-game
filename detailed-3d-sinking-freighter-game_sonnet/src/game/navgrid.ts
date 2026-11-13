@@ -65,7 +65,7 @@ function buildFloorGrid(boxes: readonly NavBox[], floorY: number, now: number): 
 
   // 1. Mark wall/furniture obstacles with slight Minkowski inflation
   for (const b of boxes) {
-    if (!b.enabled || b.tag === "door") continue;
+    if (!b.enabled || b.tag === "door" || b.tag === "stair") continue;
     if (b.maxY <= yLow || b.minY >= yHigh) continue;
     const gx0 = toGridX(b.minX - pad);
     const gx1 = toGridX(b.maxX + pad);

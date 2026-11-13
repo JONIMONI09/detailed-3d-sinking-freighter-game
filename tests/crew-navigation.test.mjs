@@ -181,10 +181,12 @@ function testBelowDeckDescentAndDropJump() {
     throw new Error(`Unexpected require in ragdoll: ${id}`);
   });
   const navgridMod = loadTs('detailed-3d-sinking-freighter-game_sonnet/src/game/navgrid.ts');
+  const shipNavGraphMod = loadTs('detailed-3d-sinking-freighter-game_sonnet/src/game/shipNavGraph.ts');
   const crewMod = loadTs('detailed-3d-sinking-freighter-game_sonnet/src/game/crew.ts', (id) => {
     if (id === './navmesh3d') return navmesh;
     if (id === './ragdoll') return ragdollMod;
     if (id === './navgrid') return navgridMod;
+    if (id === './shipNavGraph') return shipNavGraphMod;
     throw new Error(`Unexpected require: ${id}`);
   });
 
@@ -285,11 +287,36 @@ function testGridAStarDoorwayAndWallBypass() {
   console.log('  ok 2D Grid A* routes around wall and through 1.0m doorway');
 }
 
+// 7. 3D ShipNavGraph Stair Routing & Narrow Catwalk Entry + Stair Tag Exclusion
+function test3DShipNavGraphStairAndCatwalkRouting() {
+  const shipNavGraphMod = loadTs('detailed-3d-sinking-freighter-game_sonnet/src/game/shipNavGraph.ts');
+  const navgridMod = loadTs('detailed-3d-sinking-freighter-game_sonnet/src/game/navgrid.ts');
+
+  // Stairwell landing on Level 0 -> Level 1 should engage stair mode along A-run (x = -0.875)
+  const stairWp = shipNavGraphMod.findNextShipGraphWaypoint(-0.875, 3.0, -52.8, 0.0, 9.4, -47.0);
+  assert.equal(stairWp.onStair, true, '3D graph must flag stair traversal so wall-slide does not trigger on steps');
+  assert.ok(Math.abs(stairWp.x - -0.875) < 0.25, `Expected A-run stair centerline x=-0.875, got ${stairWp.x}`);
+
+  // Narrow exterior catwalk (x = 9.45, z = -58) -> Engine Control Room routes via Side Entrance (z = -47.0)
+  const catwalkWp = shipNavGraphMod.findNextShipGraphWaypoint(9.45, 3.0, -58.0, 0.0, 3.0, -56.6);
+  assert.ok(Math.abs(catwalkWp.x - 9.45) < 0.25 && catwalkWp.z >= -47.5, `Expected catwalk route toward Side Entrance (-47.0), got (${catwalkWp.x}, ${catwalkWp.z})`);
+  assert.equal(shipNavGraphMod.isOnNarrowCatwalk(9.45, 3.0, -58.0), true, 'Must detect narrow exterior catwalk zone');
+
+  // navgrid must ignore stair-tagged boxes so stairwells do not appear as impassable walls
+  const boxesWithStair = [
+    { minX: -1.6, minY: 3.0, minZ: -51.5, maxX: -0.15, maxY: 4.5, maxZ: -49.5, enabled: true, tag: 'stair' },
+  ];
+  const wp = navgridMod.findNextGridWaypoint(boxesWithStair, -0.875, 3.0, -52.5, -0.875, -48.0);
+  assert.ok(wp, 'Grid A* must pass cleanly over stair-tagged colliders');
+  console.log('  ok 3D ShipNavGraph stair routing, catwalk entry & stair-tag exclusion verified');
+}
+
 test5RaySteeringAndDeflection();
 testDoorTraversalSequence();
 testVerticalLadderClimbing();
 testPortableLadderPlacement();
 testBelowDeckDescentAndDropJump();
 testGridAStarDoorwayAndWallBypass();
+test3DShipNavGraphStairAndCatwalkRouting();
 
 console.log('Crew navigation unit tests passed.');

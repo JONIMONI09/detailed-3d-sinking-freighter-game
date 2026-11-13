@@ -284,12 +284,12 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
     sectionMap.get(sectionIdAt(cx, cy, cz))?.colliders.push(col);
     return col;
   };
-  const rectBox = (mat: string, x0: number, x1: number, y0: number, y1: number, z0: number, z1: number, collide = true) => {
+  const rectBox = (mat: string, x0: number, x1: number, y0: number, y1: number, z0: number, z1: number, collide = true, tag = "wall") => {
     if (x1 <= x0 || y1 <= y0 || z1 <= z0) throw new Error(`rectBox with invalid dimensions: ${mat} ${x0},${x1} ${y0},${y1} ${z0},${z1}`);
     const cx = (x0 + x1) / 2,
       cy = (y0 + y1) / 2,
       cz = (z0 + z1) / 2;
-    if (collide) sbox(mat, cx, cy, cz, x1 - x0, y1 - y0, z1 - z0);
+    if (collide) sbox(mat, cx, cy, cz, x1 - x0, y1 - y0, z1 - z0, tag);
     else B.box(mat, cx, cy, cz, x1 - x0, y1 - y0, z1 - z0);
   };
   const floorPad = (mat: string, x0: number, x1: number, z0: number, z1: number, y: number) => {
@@ -432,7 +432,7 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
       const top = yStart + i * h;
       const za = zStart + (i - 1) * d,
         zb = zStart + i * d;
-      rectBox(mat, x0, x1, Math.min(bottomY, top - 0.1), top, Math.min(za, zb), Math.max(za, zb));
+      rectBox(mat, x0, x1, Math.min(bottomY, top - 0.1), top, Math.min(za, zb), Math.max(za, zb), true, "stair");
     }
   };
 
