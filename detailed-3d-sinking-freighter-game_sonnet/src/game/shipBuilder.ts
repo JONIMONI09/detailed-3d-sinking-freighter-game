@@ -657,7 +657,7 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
     const volume = (max.x - min.x) * (max.y - min.y) * (max.z - min.z) * 0.78;
     const planes = Array.from({ length: 6 }, () => new THREE.Plane());
     const wm = new THREE.Mesh(
-      new THREE.PlaneGeometry(WI * 2 + 2, c.z1 - c.z0 + 2),
+      new THREE.PlaneGeometry(WI * 2, c.z1 - c.z0),
       new THREE.MeshStandardMaterial({
         color: 0x1c6478,
         transparent: true,

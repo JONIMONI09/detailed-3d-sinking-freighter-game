@@ -7,7 +7,7 @@ import { Input } from "./input";
 import { Player } from "./player";
 import { buildShip, ShipModel } from "./shipBuilder";
 import { ShipSim } from "./shipSim";
-import { Compartment, DECK_Y, Door, Lifeboat, WI } from "./shipTypes";
+import { Compartment, DECK_Y, Door, Lifeboat } from "./shipTypes";
 import type { Settings } from "./settings";
 import { createTextures, setAnisotropy, TexSet } from "./textures";
 import { ViewModel, WEAPONS, WeaponId } from "./weapons";
@@ -706,7 +706,7 @@ export class Game {
   waterAt = (x: number, y: number, z: number): number => {
     if (this.theatre === "orbital" || y > 120) return -Infinity;
     for (const c of this.ship.compartments) {
-      if (Math.abs(x) <= WI + 0.4 && z >= c.min.z - 0.3 && z <= c.max.z + 0.3 && y >= c.min.y - 0.4 && y <= c.max.y + 0.05) {
+      if (x >= c.min.x && x <= c.max.x && z >= c.min.z && z <= c.max.z && y >= c.min.y - 0.4 && y <= c.max.y + 0.05) {
         return c.fill > 0.004 ? this.sim.localLevel(c, x, z) : -Infinity;
       }
     }
@@ -787,7 +787,7 @@ export class Game {
 
     // Schiff
     const crewRay = (orig: { x: number; y: number; z: number }, dir: { x: number; y: number; z: number }, maxD: number) => {
-      const hit = this.ship.world.raycast(orig.x, orig.y, orig.z, dir.x, dir.y, dir.z, maxD);
+      const hit = this.ship.world.raycast(orig.x, orig.y, orig.z, dir.x, dir.y, dir.z, maxD, (c) => c.tag !== "door");
       return {
         hit: !!hit,
         distance: hit ? hit.dist : maxD,
@@ -797,6 +797,15 @@ export class Game {
     };
     const blastImp = this.shake > 1.5 ? this.shake * 180 : 0;
     this.supervisor.step(dt, t, this.ocean, st.floodSpeed, crewRay, blastImp, this.ship.world);
+    for (const sm of this.supervisor.crew) {
+      const comp = this.compAt(sm.x, sm.y, sm.z);
+      if (comp && comp.fill > 0.004 && comp.level - sm.y > 0.12 && sm.state !== "ragdoll" && !sm.isRagdoll) {
+        sm.pumping = true;
+        comp.water = Math.max(0, comp.water - 1.8 * dt);
+      } else {
+        sm.pumping = false;
+      }
+    }
     const deckBreaches = [
       ...this.ship.compartments.flatMap((c, ci) =>
         c.holes
@@ -845,6 +854,13 @@ export class Game {
         blastImpulse: blastImp,
         vesselRollDeg: (this.sim.roll * 180) / Math.PI,
       });
+      const comp = this.compAt(dm.x, dm.y, dm.z);
+      if (comp && comp.fill > 0.004 && comp.level - dm.y > 0.12 && dm.state !== "ragdoll" && !dm.isRagdoll) {
+        dm.pumping = true;
+        comp.water = Math.max(0, comp.water - 1.8 * dt);
+      } else {
+        dm.pumping = false;
+      }
     }
 
     // Freighter AI evasive autopilot when player commands the Battleship (stays within 220m so it never vanishes)

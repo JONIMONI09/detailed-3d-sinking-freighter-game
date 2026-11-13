@@ -29,6 +29,18 @@ Do not use this file for speculative risks. Put open limitations in
 - Related files / skills:
 ```
 
+### ERR-2026-11-13-02 - Crew Window Repair, Door/Stair Traversal, Bilge Pumping & Closed-Door Water Bleed
+
+- Date (Europe/Berlin): 2026-11-13
+- Area: Damage Control Crew AI, Crew Visuals, Compartment Water Containment
+- Status: Resolved
+- Symptom: (1) Crew could not repair broken windows (`repair` callback never fired); (2) crew got stuck in front of doors and on stairs; (3) crew standing in flooded compartments did not hold a bilge pump or pump water out; (4) water level queries and water planes bled slightly past closed bulkhead doors.
+- Root cause: (1) `stepCrew()` in `crew.ts` decremented `target.area` without invoking `target.repair?.(sealedDelta)`; (2) `crewRay` in `game.ts` included `"door"` colliders causing `computeAntiClippingSteering` to steer crew away before `doorRay` opened them, and `body.step` was `0.35`; (3) `CrewVisual` only had a welding torch and `game.ts` did not drain flooded compartments when crew stood in water; (4) `waterAt` checked `z >= c.min.z - 0.3 && z <= c.max.z + 0.3` and compartment water `PlaneGeometry` had `+ 2` margin.
+- Solution: Added `repair?: (amount: number) => void` invocation in `crew.ts`, increased `doorRay` range to `1.8` and `body.step` to `0.48`, filtered `"door"` out of `crewRay` in `game.ts`, added a visible portable bilge pump in `crewVisual.ts` (`member.pumping`) paired with active compartment draining (`1.8 m^3/s` per pumping crew member) in `game.ts`, tightened `waterAt` bounds to `[c.min, c.max]`, and removed the `+ 2` margin on compartment `PlaneGeometry` in `shipBuilder.ts`.
+- Verification: `npx tsc --noEmit` (root & sonnet), `npm test`, `npm run build`, and `npm run docs:check` executed after final edit.
+- Prevention: Always pass custom `repair` callbacks through `CrewBreach`, exclude dynamic `"door"` colliders from anti-clipping steering rays, and keep `waterAt` / `PlaneGeometry` bounds strictly inside `[c.min, c.max]`.
+- Related files / skills: `detailed-3d-sinking-freighter-game_sonnet/src/game/crew.ts`, `crewVisual.ts`, `game.ts`, `shipBuilder.ts` / `error-fix-document`
+
 ### ERR-2026-11-13-01 - Orbital Death Ray, Multi-Part Destruction, Hull Collisions & Fleet Battle AI
 
 - Date (Europe/Berlin): 2026-11-13

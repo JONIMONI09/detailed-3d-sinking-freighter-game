@@ -37,6 +37,7 @@ export class CrewVisual {
   armL = new THREE.Group();
   armR = new THREE.Group();
   torch = new THREE.Group();
+  pump = new THREE.Group();
   tipWorldPos = new THREE.Vector3();
 
   walk = 0;
@@ -128,6 +129,16 @@ export class CrewVisual {
     addMesh(this.torch, new THREE.SphereGeometry(0.03, 6, 6), mats.torchTip, 0, 0, -0.25);
     this.armR.add(this.torch);
 
+    // --- Portable Bilge Pump (held when standing in flooded compartment) ---
+    this.pump.position.set(-0.14, -0.52, -0.16);
+    const pumpBodyMat = new THREE.MeshStandardMaterial({ color: 0xe6a817, roughness: 0.4, metalness: 0.35 });
+    const pumpHoseMat = new THREE.MeshStandardMaterial({ color: 0x1d4ed8, roughness: 0.65 });
+    addMesh(this.pump, new THREE.BoxGeometry(0.24, 0.22, 0.28), pumpBodyMat, 0, 0, 0);
+    addMesh(this.pump, new THREE.CylinderGeometry(0.05, 0.05, 0.34, 8), mats.torchMetal, 0, 0.14, -0.04);
+    addMesh(this.pump, new THREE.CylinderGeometry(0.032, 0.032, 0.42, 6), pumpHoseMat, 0, -0.18, -0.16).rotation.x = 0.65;
+    this.pump.visible = false;
+    this.armR.add(this.pump);
+
     this.group.position.set(member.x, member.y, member.z);
   }
 
@@ -161,16 +172,27 @@ export class CrewVisual {
     }
     this.group.rotation.y = this.yaw;
 
+    const isPumping = Boolean(this.member.pumping) && this.member.state !== "repairing";
+    this.pump.visible = isPumping;
+    this.torch.visible = !isPumping;
+
     // Walking animation
     if (this.member.state === "moving" || this.member.state === "patrol") {
       this.walk += dt * (spd * 3.5 + 0.001);
       const sw = Math.sin(this.walk) * Math.min(1, spd / 1.8) * 0.65;
       this.legL.rotation.x = sw;
       this.legR.rotation.x = -sw;
-      this.armL.rotation.x = -sw * 0.7;
-      this.armR.rotation.x = sw * 0.7;
-      this.armL.rotation.z = 0;
-      this.armR.rotation.z = 0;
+      if (isPumping) {
+        this.armL.rotation.x = 0.88;
+        this.armR.rotation.x = 0.95;
+        this.armL.rotation.z = 0.22;
+        this.armR.rotation.z = -0.22;
+      } else {
+        this.armL.rotation.x = -sw * 0.7;
+        this.armR.rotation.x = sw * 0.7;
+        this.armL.rotation.z = 0;
+        this.armR.rotation.z = 0;
+      }
       this.torso.position.y = 0.85 + Math.abs(Math.sin(this.walk)) * 0.03 * Math.min(1, spd / 1.5);
     } else if (this.member.state === "repairing") {
       // Welding repair pose: both hands raised forward toward -Z

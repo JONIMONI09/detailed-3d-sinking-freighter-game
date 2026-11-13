@@ -49,6 +49,8 @@ export interface CrewBreach {
   inflowRate?: number;
   isEngineRoom?: boolean;
   kind?: "hull-breach" | "broken-window";
+  /** Optional callback invoked as breach area is repaired (receives sealed delta). */
+  repair?: (amount: number) => void;
 }
 
 export interface CrewMember {
@@ -75,6 +77,7 @@ export interface CrewMember {
   navPath?: Vector3Like[];
   portableLadders?: number;
   deployedLadderId?: string | null;
+  pumping?: boolean;
 }
 
 export interface CrewConfig {
@@ -268,7 +271,7 @@ function walkToward(
 
   // Enemy-AI style automatic door opening when approaching closed unlocked doors
   if (world) {
-    const doorRay = world.raycast(m.x, m.y + 1.0, m.z, nx, 0, nz, 1.4, (c) => c.tag === "door");
+    const doorRay = world.raycast(m.x, m.y + 1.0, m.z, nx, 0, nz, 1.8, (c) => c.tag === "door");
     if (doorRay && doorRay.collider.owner) {
       const door = doorRay.collider.owner as { locked?: boolean; target: number; fixed: number; forceOpen: (dir: number) => void };
       if (!door.locked && door.target === 0) {
@@ -302,7 +305,7 @@ function walkToward(
       r: 0.34,
       h: 1.75,
       onGround: m.onGround ?? false,
-      step: 0.35,
+      step: 0.48,
     };
     world.move(body, desiredStep.x, body.vy * dt, desiredStep.z);
     m.x = body.x;
@@ -502,8 +505,10 @@ export function stepCrew(
       }
       const before = target.area;
       target.area = Math.max(0, target.area - cfg.repairRate * dt);
+      const sealedDelta = before - target.area;
+      if (sealedDelta > 0) target.repair?.(sealedDelta);
       // A kit is consumed in proportion to the area it sealed
-      m.patchKits = Math.max(0, m.patchKits - (before - target.area) / PATCH_KIT_AREA);
+      m.patchKits = Math.max(0, m.patchKits - sealedDelta / PATCH_KIT_AREA);
       if (target.area <= 1e-3) {
         target.area = 0;
         m.targetId = null;
