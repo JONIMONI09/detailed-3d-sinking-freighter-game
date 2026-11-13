@@ -29,6 +29,17 @@ Do not use this file for speculative risks. Put open limitations in
 - Related files / skills:
 ```
 
+### ERR-2026-11-13-10 - Peer Yielding, Catwalk Lateral Sidestep & Exterior Wall-Climb Fallback
+
+- Date (Europe/Berlin): 2026-11-13
+- Area: Crew AI Peer Separation & Exterior Traversal (`crew.ts`)
+- Status: Resolved
+- Symptom: Bots could overlap inside each other on narrow catwalks (`isOnNarrowCatwalk` previously skipped separation), push continuously head-on without yielding, or stall outside elevated hull/superstructure walls.
+- Root cause: `stepCrew()` skipped peer separation on narrow catwalks and had no priority-based `yieldTimer` waiting or exterior vertical wall-climbing fallback.
+- Fix: Enabled `0.52m` no-cramming peer separation everywhere (with lateral sidestepping on catwalks), added `yieldTimer` so lower-priority bots wait cleanly instead of pushing forever, and added `wallClimbing` fallback when blocked outside (climbs up to fix the breach and jumps down cleanly onto the deck upon `"sealed"`).
+- Prevention: Never disable peer separation completely on narrow corridors; use lateral sidestep + priority yielding, and provide a clean exterior wall-climb/jump-down fallback.
+- Related files / skills: `detailed-3d-sinking-freighter-game_sonnet/src/game/crew.ts`, `tests/crew-navigation.test.mjs`.
+
 ### ERR-2026-11-13-09 - Stair-Entry Ping-Pong Fix, Anti-Oscillation Replanning & Expanded 22-NPC Crew Roster
 
 - Date (Europe/Berlin): 2026-11-13

@@ -96,6 +96,8 @@ export interface CrewMember {
   progressX?: number;
   progressZ?: number;
   stuckCount?: number;
+  yieldTimer?: number;
+  wallClimbing?: boolean;
   patrol?: readonly { x: number; y: number; z: number }[];
 }
 
@@ -578,33 +580,49 @@ export function stepCrew(
   m.stateTime += dt;
   enforceShipBoundsAndRespawn(m);
 
-  // 0. Peer-to-peer separation & stationary gravity settle so bots never overlap or hover
+  if ((m.yieldTimer ?? 0) > 0) m.yieldTimer = Math.max(0, (m.yieldTimer ?? 0) - dt);
+
+  // 0. Peer-to-peer separation (push apart + lateral catwalk sidestep + yield/wait, zero cramming damage)
   if (ctx?.world && m.state !== "climbing_ladder" && m.state !== "ragdoll") {
-    if (ctx.peers && !isOnNarrowCatwalk(m.x, m.y, m.z) && !isInStairwellBand(m.x, m.y, m.z)) {
+    if (ctx.peers && !isInStairwellBand(m.x, m.y, m.z)) {
+      const onCatwalk = isOnNarrowCatwalk(m.x, m.y, m.z);
       for (const other of ctx.peers) {
         if (other === m || Math.abs(other.y - m.y) > 1.8) continue;
         const dx = m.x - other.x;
         const dz = m.z - other.z;
         const d = Math.hypot(dx, dz);
-        if (d < 0.42) {
-          const push = Math.min(0.04, (0.42 - d) * 0.2 + 0.008);
-          const nx = d > 1e-3 ? dx / d : (m.name < other.name ? -1 : 1);
-          const nz = d > 1e-3 ? dz / d : 0;
+        if (d < 0.52) {
+          const push = Math.min(0.10, (0.52 - d) * 0.45 + 0.015);
+          let nx = d > 1e-3 ? dx / d : (m.name < other.name ? -1 : 1);
+          let nz = d > 1e-3 ? dz / d : 0;
+          if (onCatwalk) {
+            // Sidestep laterally across the catwalk so bots can slide past each other along the ship side
+            const lat = m.name < other.name ? 1 : -1;
+            nx = nx * 0.4 + lat * 0.6;
+            const len = Math.hypot(nx, nz) || 1;
+            nx /= len;
+            nz /= len;
+          }
           const prevSepX = m.x;
           const prevSepZ = m.z;
           const sepBody: CrewBody = { x: m.x, y: m.y, z: m.z, vx: 0, vy: 0, vz: 0, r: 0.2, h: 1.75, onGround: m.onGround ?? false, step: 0.48 };
           ctx.world.move(sepBody, nx * push, 0, nz * push);
           m.x = sepBody.x;
           m.z = sepBody.z;
-          // Force immediate path replanning whenever peer collision deflects this bot
           if (Math.hypot(m.x - prevSepX, m.z - prevSepZ) > 0.015) {
             m.navWaypoint = null;
             m.navTimer = 0;
           }
+          // Lower-priority bot waits briefly so they don't push into each other forever
+          const otherPriority = other.state === "moving" || other.state === "repairing";
+          const selfPatrol = m.state === "patrol";
+          if ((selfPatrol && otherPriority) || (!otherPriority && m.name > other.name)) {
+            m.yieldTimer = Math.max(m.yieldTimer ?? 0, 0.45);
+          }
         }
       }
     }
-    if (!m.onGround && m.state !== "moving") {
+    if (!m.onGround && m.state !== "moving" && !m.wallClimbing) {
       const vy = Math.max(-20, (m.vy ?? 0) - 18 * dt);
       const gravBody: CrewBody = { x: m.x, y: m.y, z: m.z, vx: 0, vy, vz: 0, r: 0.2, h: 1.75, onGround: false, step: 0.48 };
       ctx.world.move(gravBody, 0, vy * dt, 0);
@@ -721,6 +739,7 @@ export function stepCrew(
         enter(m, "alert");
         return "spotted";
       }
+      if ((m.yieldTimer ?? 0) > 0) return null;
       const patrol = m.patrol && m.patrol.length > 0 ? m.patrol : cfg.patrol;
       if (patrol.length > 0) {
         const patrolTarget = patrol[m.patrolIndex % patrol.length];
@@ -778,6 +797,34 @@ export function stepCrew(
         return null;
       }
 
+      if ((m.yieldTimer ?? 0) > 0) return null;
+      // Exterior wall-climbing fallback: if blocked outside against a wall while heading to a breach, climb straight up
+      const isOutsideHull = Math.abs(m.x) > 8.6 || m.z > -44.1 || m.z < -66.0;
+      if (m.wallClimbing) {
+        const climbTargetY = Math.min(13.0, Math.max(target.y, m.y + 0.5));
+        m.y = Math.min(climbTargetY, m.y + 2.6 * dt);
+        m.vy = 0;
+        m.onGround = false;
+        const dx = target.x - m.x;
+        const dz = target.z - m.z;
+        const d = Math.hypot(dx, dz) || 1;
+        const stepBody: CrewBody = { x: m.x, y: m.y, z: m.z, vx: 0, vy: 0, vz: 0, r: 0.2, h: 1.75, onGround: false, step: 0.48 };
+        ctx?.world?.move(stepBody, (dx / d) * 1.4 * dt, 0, (dz / d) * 1.4 * dt);
+        m.x = stepBody.x;
+        m.z = stepBody.z;
+        if (m.y >= target.y - 0.35) {
+          m.wallClimbing = false;
+          m.stuckTime = 0;
+          m.stuckCount = 0;
+        }
+        if (dist(m, target) <= REPAIR_REACH || (horizontalDist <= REPAIR_REACH + 0.8 && Math.abs(target.y - m.y) <= 2.2)) {
+          m.wallClimbing = false;
+          enter(m, "repairing");
+          return "arrived";
+        }
+        return null;
+      }
+
       if ((m.exteriorBypass ?? 0) > 0) m.exteriorBypass = Math.max(0, (m.exteriorBypass ?? 0) - dt);
       const wp = ctx?.world ? computeDeckWaypoint(m, target) : { x: target.x, z: target.z, onStair: false };
       const prevX = m.lastX ?? m.x;
@@ -815,6 +862,11 @@ export function stepCrew(
         // Escalate from A* replan (0.35s) -> exterior catwalk bypass (0.75s) -> clean obstacle vault (1.45s)
         m.stuckTime = (m.stuckTime ?? 0) + dt;
         if (m.stuckTime > 0.35) m.navWaypoint = null;
+        if (m.stuckTime > 0.75 && isOutsideHull && target.y > m.y + 0.6) {
+          m.wallClimbing = true;
+          m.stuckTime = 0;
+          return null;
+        }
         if (m.stuckTime > 0.75 && (m.exteriorBypass ?? 0) <= 0 && m.y >= 2.7 && m.y < 5.2) {
           m.exteriorBypass = 6.0;
         }
@@ -895,6 +947,12 @@ export function stepCrew(
       if (target.area <= 1e-3) {
         target.area = 0;
         m.targetId = null;
+        m.wallClimbing = false;
+        // If elevated on an exterior wall/ledge after repairing, jump cleanly down toward deck
+        if (m.y > 3.5 && (Math.abs(m.x) > 8.5 || m.z > -44.1)) {
+          m.vy = 2.4;
+          m.onGround = false;
+        }
         enter(m, "patrol");
         return "sealed";
       }
