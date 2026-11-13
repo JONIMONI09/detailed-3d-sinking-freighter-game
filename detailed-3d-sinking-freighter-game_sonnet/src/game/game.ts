@@ -253,6 +253,9 @@ export class Game {
   godModeHoldProgress = 0;
   crewVisuals: CrewVisual[] = [];
   deckCrew: CrewMember[] = [];
+  superlaserTimer = 0;
+  superlaserTarget: "freighter" | "battleship" = "freighter";
+  superlaserDmgCd = 0;
   battleships: Battleship[] = [];
   helmMode = false;
   helmThrottleCooldown = 0;
@@ -438,10 +441,12 @@ export class Game {
       }
     }
 
-    // Friendly Damage Control Crew (visible on both lower holds and main deck in all modes)
+    // Friendly Damage Control Crew (visible on Bridge, Main Deck & Lower Holds in all modes)
     this.deckCrew = [
-      createCrewMember("Deck Officer", "boatswain", -4.5, DECK_Y, -28.0, 4),
-      createCrewMember("Deck Engineer", "damage-control", 4.5, DECK_Y, 12.0, 5),
+      createCrewMember("Bridge Officer", "boatswain", 0, 9.0, -40.0, 5),
+      createCrewMember("Aft Deck Eng.", "chief-engineer", 6.0, DECK_Y, -38.5, 5),
+      createCrewMember("Mid Deck Crew", "damage-control", -4.0, DECK_Y, -16.0, 5),
+      createCrewMember("Fore Deck Crew", "damage-control", 3.5, DECK_Y, 16.0, 5),
     ];
     for (const m of [...this.supervisor.crew, ...this.deckCrew]) {
       const cv = new CrewVisual(m);
@@ -792,26 +797,51 @@ export class Game {
     };
     const blastImp = this.shake > 1.5 ? this.shake * 180 : 0;
     this.supervisor.step(dt, t, this.ocean, st.floodSpeed, crewRay, blastImp, this.ship.world);
-    const deckBreaches = this.ship.compartments.flatMap((c, ci) =>
-      c.holes
-        .filter((h) => h.area > 0.005)
-        .map((h, hi) => ({
-          id: ci * 1000 + hi,
-          x: h.pos.x,
-          y: h.pos.y,
-          z: h.pos.z,
-          area: h.area,
-          compartmentId: c.id,
+    const deckBreaches = [
+      ...this.ship.compartments.flatMap((c, ci) =>
+        c.holes
+          .filter((h) => h.area > 0.005)
+          .map((h, hi) => ({
+            id: ci * 1000 + hi,
+            x: h.pos.x,
+            y: h.pos.y,
+            z: h.pos.z,
+            area: h.area,
+            compartmentId: c.id,
+            repair: (amt: number) => {
+              h.area = Math.max(0, h.area - amt);
+            },
+          })),
+      ),
+      ...this.ship.glass
+        .filter((g) => g.broken)
+        .map((g, gi) => ({
+          id: 90000 + gi,
+          x: g.pos.x,
+          y: g.pos.y,
+          z: g.pos.z,
+          area: Math.max(0.05, 1.0 - ((g as unknown as { repairProgress?: number }).repairProgress ?? 0)),
+          compartmentId: g.pos.y >= 5.0 ? "bridge" : "superstructure",
           repair: (amt: number) => {
-            h.area = Math.max(0, h.area - amt);
+            const pane = g as unknown as { repairProgress?: number };
+            pane.repairProgress = (pane.repairProgress ?? 0) + amt * 1.4;
+            if (pane.repairProgress >= 1.0 && g.broken) {
+              g.broken = false;
+              pane.repairProgress = 0;
+              g.mesh.visible = true;
+              g.collider.enabled = true;
+              g.collider.tag = "glass";
+              this.say("🔧 Fensterscheibe von Crew repariert!", "good");
+              this.terminal.push(this.time, "info", "DEBUG", "Broken window repaired by crew.");
+            }
           },
         })),
-    );
+    ];
     for (const dm of this.deckCrew) {
       stepCrew(dm, dt, deckBreaches, undefined, {
         raycast: crewRay,
         world: this.ship.world,
-        deckFloorY: dm.y >= 2.4 ? DECK_Y : 0.1,
+        deckFloorY: dm.y >= 7.0 ? 9.0 : dm.y >= 2.4 ? DECK_Y : 0.1,
         blastImpulse: blastImp,
         vesselRollDeg: (this.sim.roll * 180) / Math.PI,
       });
@@ -863,6 +893,31 @@ export class Game {
     this.laserCd = Math.max(0, this.laserCd - dt);
     this.orbitalBeamAudioCd = Math.max(0, this.orbitalBeamAudioCd - dt);
     this.orbitalBeamFxCd = Math.max(0, this.orbitalBeamFxCd - dt);
+
+    // 5-second Superlaser Strike sweeping across the ship the player is currently on
+    if (this.superlaserTimer > 0) {
+      this.superlaserTimer = Math.max(0, this.superlaserTimer - dt);
+      const bsTarget = this.superlaserTarget === "battleship" && this.battleships[0] && !this.battleships[0].sunk
+        ? this.battleships[0]
+        : null;
+      const basePos = bsTarget ? bsTarget.group.position : this.ship.group.position;
+      const heading = bsTarget ? bsTarget.heading : this.supervisor.helm.heading;
+      const sweepOffset = ((5.0 - this.superlaserTimer) / 5.0 - 0.5) * (bsTarget ? 46 : 110);
+      const sx = basePos.x - Math.sin(heading) * sweepOffset;
+      const sz = basePos.z - Math.cos(heading) * sweepOffset;
+      this.orbitalAimX = sx;
+      this.orbitalAimZ = sz;
+      const beam = this.ensureOrbitalBeam();
+      beam.visible = true;
+      const pulse = 1.0 + Math.sin(t * 24) * 0.14;
+      beam.position.set(sx, 0, sz);
+      beam.scale.set(pulse, STATION_BASE_Y + 24, pulse);
+      this.fireOrbitalDeathRay();
+      if (this.superlaserTimer <= 0 && !this.orbitalLaserMode && this.orbitalBeamGroup) {
+        this.orbitalBeamGroup.visible = false;
+        this.say("☄️ Superlaser Strike abgeschlossen!", "info");
+      }
+    }
 
     // Step spreading 3D fires (extinguished if flooded, capped at 18 for 60 FPS)
     for (let i = this.activeFires.length - 1; i >= 0; i--) {
@@ -1147,15 +1202,20 @@ export class Game {
       b.onGround = true;
     } else if (this.activeVessel === "battleship" && this.battleships[0]) {
       if (this.battleships[0].sunk) {
-        const aliveIdx = this.battleships.findIndex((other) => !other.sunk);
-        if (aliveIdx > 0) {
-          const [alive] = this.battleships.splice(aliveIdx, 1);
-          this.battleships.unshift(alive);
-          this.say(`Command transferred to intact Battleship ${alive.id.toUpperCase()}!`, "alert");
-        } else if (!this.isFreighterDestroyed()) {
-          this.switchVessel();
+        if (!this.isFreighterDestroyed()) {
+          this.activeVessel = "freighter";
+          this.player.teleport(9.8, DECK_Y + 0.3, -42, Math.PI);
+          this.say("⚓ Battleship gesunken – auf MV NORDWIND evakuiert!", "alert");
         } else {
-          this.toggleTheatre("orbital");
+          const aliveIdx = this.battleships.findIndex((other) => !other.sunk);
+          if (aliveIdx > 0) {
+            const [alive] = this.battleships.splice(aliveIdx, 1);
+            this.battleships.unshift(alive);
+            this.say(`⚓ Battleship gesunken – auf ${alive.id.toUpperCase()} evakuiert!`, "alert");
+          } else {
+            this.toggleTheatre("orbital");
+            this.say("🛰️ Alle Schiffe gesunken – Not-Evakuierung auf HYPERION-9!", "alert");
+          }
         }
       }
       const bs = this.battleships[0];
@@ -2062,6 +2122,20 @@ export class Game {
     else if (!this.paused && !this.isTouch()) this.requestLock();
   }
 
+  triggerSuperlaserStrike() {
+    if (this.theatre === "orbital") return;
+    this.superlaserTarget = this.activeVessel === "battleship" && this.battleships[0] && !this.battleships[0].sunk
+      ? "battleship"
+      : "freighter";
+    this.superlaserTimer = 5.0;
+    if (this.tabletOpen) this.toggleTablet(false);
+    const label = this.superlaserTarget === "battleship" && this.battleships[0]
+      ? this.battleships[0].id.toUpperCase()
+      : "MV NORDWIND";
+    this.say(`☄️ SUPERLASER STRIKE (5s) AUF ${label}!`, "alert");
+    this.terminal.push(this.time, "alert", "ORBITAL", `5s Superlaser Strike activated over ${label}`);
+  }
+
   toggleOrbitalLaser(force?: boolean) {
     if (this.theatre !== "orbital") return;
     const next = force ?? !this.orbitalLaserMode;
@@ -2279,6 +2353,7 @@ export class Game {
           }
           this.sim.sinking = true;
           this.say(`☄️ ORBITAL LASER OBLITERATED: ${sec.name.toUpperCase()}!`, "alert");
+          this.terminal.push(this.time, "alert", "DAMAGE", `Freighter section destroyed: ${sec.name}`);
         }
       }
     }
@@ -2609,6 +2684,8 @@ export class Game {
     pane.collider.enabled = false;
     pane.collider.tag = "glassbroken";
     this.audio.glass(this.posAudio(pane.pos));
+    this.say("🪟 FENSTERSCHEIBE KAPUTT – Crew rückt zur Reparatur aus!", "alert");
+    this.terminal.push(this.time, "warn", "DAMAGE", `Window shattered at (${pane.pos.x.toFixed(1)}, ${pane.pos.y.toFixed(1)}, ${pane.pos.z.toFixed(1)}) — crew dispatched`);
     const w = this.worldPos(pane.pos, V());
     for (let i = 0; i < 26; i++) {
       const dx = (Math.random() - 0.5) * pane.w * (pane.axis === "x" ? 1 : 0),

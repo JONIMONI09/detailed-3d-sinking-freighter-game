@@ -539,6 +539,7 @@ export default function Hud({ h, settings, touch, game }: { h: HudState; setting
               {(() => {
                 const allDestroyed = h.theatre === "orbital" && h.freighterDestroyed && h.battleshipSunk;
                 return (
+                  <>
                   <button
                     onClick={() => game.toggleTheatre()}
                     disabled={allDestroyed}
@@ -553,6 +554,16 @@ export default function Hud({ h, settings, touch, game }: { h: HudState; setting
                       </span>
                     )}
                   </button>
+                  <button
+                    onClick={() => game.triggerSuperlaserStrike()}
+                    disabled={h.theatre === "orbital"}
+                    className={`col-span-2 rounded-lg border border-sky-400/50 bg-sky-600/35 px-3 py-2 text-sky-100 hover:bg-sky-500/50 ${
+                      h.theatre === "orbital" ? "cursor-not-allowed opacity-40 grayscale" : ""
+                    }`}
+                  >
+                    ☄️ Superlaser Strike (5s over Current Ship)
+                  </button>
+                  </>
                 );
               })()}
               {h.theatre === "orbital" && (
