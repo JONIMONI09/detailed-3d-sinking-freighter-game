@@ -84,6 +84,7 @@ export interface CrewMember {
   stuckTime?: number;
   lastX?: number;
   lastZ?: number;
+  exteriorBypass?: number;
   patrol?: readonly { x: number; y: number; z: number }[];
 }
 
@@ -275,6 +276,20 @@ function computeDeckWaypoint(
   m: CrewMember,
   target: { x: number; y: number; z: number },
 ): { x: number; z: number } {
+  // Exterior catwalk bypass when an interior route/doorway is blocked
+  if ((m.exteriorBypass ?? 0) > 0 && m.y >= 2.7 && m.y < 5.2 && Math.abs(target.y - m.y) <= 2.4) {
+    const sideX = m.x >= 0 ? 9.6 : -9.6;
+    const insideSuper = Math.abs(m.x) < 8.9 && m.z <= -44.0 && m.z >= -66.0;
+    if (insideSuper) {
+      if (Math.abs(m.x) < 2.2 && m.z > -49.5) return { x: 0.88, z: -43.0 };
+      if (Math.abs(m.z - -47.0) > 1.0) return { x: m.x >= 0 ? 3.0 : -3.0, z: -47.0 };
+      return { x: sideX, z: -47.0 };
+    }
+    if (Math.abs(m.z - target.z) > 2.2 && Math.abs(m.x) < 9.0) return { x: sideX, z: m.z };
+    if (Math.abs(m.z - target.z) > 2.2) return { x: sideX, z: target.z };
+    return { x: target.x, z: target.z };
+  }
+
   const dy = target.y - m.y;
   if (Math.abs(dy) <= 2.2) return { x: target.x, z: target.z };
 
@@ -596,8 +611,24 @@ export function stepCrew(
       const patrol = m.patrol && m.patrol.length > 0 ? m.patrol : cfg.patrol;
       if (patrol.length > 0) {
         const wp = patrol[m.patrolIndex % patrol.length];
+        const prevPX = m.lastX ?? m.x;
+        const prevPZ = m.lastZ ?? m.z;
         walkToward(m, wp.x, wp.z, cfg.walkSpeed * 0.65 * dt, ctx?.raycast, ctx?.world, dt, ctx?.waterLevel ?? -Infinity);
-        if (Math.hypot(m.x - wp.x, m.z - wp.z) < 0.9) m.patrolIndex = (m.patrolIndex + 1) % patrol.length;
+        const pMoved = Math.hypot(m.x - prevPX, m.z - prevPZ);
+        m.lastX = m.x;
+        m.lastZ = m.z;
+        if (Math.hypot(m.x - wp.x, m.z - wp.z) < 0.9) {
+          m.patrolIndex = (m.patrolIndex + 1) % patrol.length;
+          m.stuckTime = 0;
+        } else if (ctx?.world && pMoved < 0.15 * dt) {
+          m.stuckTime = (m.stuckTime ?? 0) + dt;
+          if (m.stuckTime > 0.7) {
+            m.patrolIndex = (m.patrolIndex + 1) % patrol.length;
+            m.stuckTime = 0;
+          }
+        } else {
+          m.stuckTime = 0;
+        }
       }
       return null;
     }
@@ -628,6 +659,7 @@ export function stepCrew(
         return null;
       }
 
+      if ((m.exteriorBypass ?? 0) > 0) m.exteriorBypass = Math.max(0, (m.exteriorBypass ?? 0) - dt);
       const wp = ctx?.world ? computeDeckWaypoint(m, target) : { x: target.x, z: target.z };
       const prevX = m.lastX ?? m.x;
       const prevZ = m.lastZ ?? m.z;
@@ -660,17 +692,22 @@ export function stepCrew(
         } else {
           m.stuckTime = 0;
         }
-      } else if (ctx?.world && moved < 0.15 * dt) {
-        // Same-deck doorway / corner unstick nudge so crew never freezes in a doorframe
+      } else if (ctx?.world && moved < 0.2 * dt) {
+        // Escalate from exterior catwalk bypass (0.65s) to clean obstacle vault (1.35s) so bots never walk in place
         m.stuckTime = (m.stuckTime ?? 0) + dt;
-        if (m.stuckTime > 0.6) {
+        if (m.stuckTime > 0.65 && (m.exteriorBypass ?? 0) <= 0 && m.y >= 2.7 && m.y < 5.2) {
+          m.exteriorBypass = 6.0;
+        }
+        if (m.stuckTime > 1.35) {
           const ndx = wp.x - m.x;
           const ndz = wp.z - m.z;
           const nd = Math.hypot(ndx, ndz);
           if (nd > 1e-4) {
-            m.x += (ndx / nd) * cfg.walkSpeed * 0.55 * dt;
-            m.z += (ndz / nd) * cfg.walkSpeed * 0.55 * dt;
+            const stepLen = Math.min(1.6, nd);
+            m.x += (ndx / nd) * stepLen;
+            m.z += (ndz / nd) * stepLen;
           }
+          m.stuckTime = 0;
         }
       } else {
         m.stuckTime = 0;

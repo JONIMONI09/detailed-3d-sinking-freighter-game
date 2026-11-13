@@ -857,7 +857,7 @@ export class Game {
         point: hit ? v3(orig.x + dir.x * hit.dist, orig.y + dir.y * hit.dist, orig.z + dir.z * hit.dist) : v3(0, 0, 0),
       };
     };
-    const blastImp = this.shake > 1.5 ? this.shake * 180 : 0;
+    const blastImp = this.shake > 0.35 ? this.shake * 420 : 0;
     this.supervisor.step(dt, t, this.ocean, st.floodSpeed, crewRay, blastImp, this.ship.world);
     for (const sm of this.supervisor.crew) {
       const comp = this.compAt(sm.x, sm.y, sm.z);
