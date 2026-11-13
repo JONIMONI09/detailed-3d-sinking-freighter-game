@@ -78,6 +78,9 @@ export interface CrewMember {
   portableLadders?: number;
   deployedLadderId?: string | null;
   pumping?: boolean;
+  swimming?: boolean;
+  falling?: boolean;
+  airTime?: number;
 }
 
 export interface CrewConfig {
@@ -131,6 +134,7 @@ export interface CrewStepContext {
   blastImpulse?: number;
   vesselRollDeg?: number;
   deckFloorY?: number;
+  waterLevel?: number;
 }
 
 export const PATCH_KIT_AREA = 1.5;
@@ -252,6 +256,45 @@ function nearestBreach(
   return selectBestBreach(m, breaches, radius);
 }
 
+function computeDeckWaypoint(
+  m: CrewMember,
+  target: { x: number; y: number; z: number },
+): { x: number; z: number } {
+  const dy = target.y - m.y;
+  if (Math.abs(dy) <= 2.2) return { x: target.x, z: target.z };
+
+  // Climbing up into superstructure / bridge (LV = [3.0, 6.2, 9.4, 12.6], Main Entrance at z = -44.15)
+  if (dy > 2.2 && target.y >= 5.0) {
+    if (m.y < 4.5 && m.z > -44.5) {
+      return { x: 0, z: -45.2 };
+    }
+    if (m.y < 5.8) {
+      return m.z < -51.6 || Math.abs(m.x - -0.88) < 1.1 ? { x: -0.88, z: -47.8 } : { x: -0.88, z: -52.4 };
+    }
+    if (m.y < 9.0 && target.y >= 8.5) {
+      return m.z > -48.8 || Math.abs(m.x - 0.88) < 1.1 ? { x: 0.88, z: -52.4 } : { x: 0.88, z: -47.8 };
+    }
+    if (m.y < 12.2 && target.y >= 11.5) {
+      return m.z < -51.6 || Math.abs(m.x - -0.88) < 1.1 ? { x: -0.88, z: -47.8 } : { x: -0.88, z: -52.4 };
+    }
+  }
+
+  // Descending from superstructure back to main deck
+  if (dy < -2.2 && m.y >= 5.2 && target.y < 4.5) {
+    if (m.y >= 11.5) return { x: -0.88, z: -52.4 };
+    if (m.y >= 8.5) return { x: 0.88, z: -47.8 };
+    return { x: -0.88, z: -52.4 };
+  }
+
+  // Descending from main deck into Engine Room via forward open U-stair (x = 4.6..7.6, z = -39.8..-44.2)
+  if (dy < -2.2 && m.y >= 1.5 && target.y < -1.0) {
+    if (m.y > 0.5) return { x: 6.75, z: -43.6 };
+    return { x: 5.3, z: -39.6 };
+  }
+
+  return { x: target.x, z: target.z };
+}
+
 function walkToward(
   m: CrewMember,
   tx: number,
@@ -260,17 +303,19 @@ function walkToward(
   raycast?: RaycastFn,
   world?: CrewWorld,
   dt = 0.016,
+  waterLevel = -Infinity,
+  swimTargetY?: number,
 ) {
   const dx = tx - m.x,
     dz = tz - m.z;
   const d = Math.hypot(dx, dz);
-  if (d <= 1e-6) return;
+  if (d <= 1e-6 && waterLevel <= m.y + 0.55) return;
 
-  const nx = dx / d;
-  const nz = dz / d;
+  const nx = d > 1e-6 ? dx / d : 0;
+  const nz = d > 1e-6 ? dz / d : 0;
 
   // Enemy-AI style automatic door opening when approaching closed unlocked doors
-  if (world) {
+  if (world && d > 1e-6) {
     const doorRay = world.raycast(m.x, m.y + 1.0, m.z, nx, 0, nz, 1.8, (c) => c.tag === "door");
     if (doorRay && doorRay.collider.owner) {
       const door = doorRay.collider.owner as { locked?: boolean; target: number; fixed: number; forceOpen: (dir: number) => void };
@@ -283,7 +328,7 @@ function walkToward(
   let desiredStep: Vector3Like = v3(nx * step, 0, nz * step);
 
   // Apply 5-ray anti-clipping steering if raycast function is provided
-  if (raycast) {
+  if (raycast && d > 1e-6) {
     const steering = computeAntiClippingSteering(
       v3(m.x, m.y, m.z),
       desiredStep,
@@ -293,8 +338,19 @@ function walkToward(
     desiredStep = steering.vel;
   }
 
+  const inWater = waterLevel > m.y + 0.55;
+  m.swimming = inWater;
+
   if (world) {
-    const vy = Math.max(-20, (m.vy ?? 0) - 18 * dt);
+    let vy = m.vy ?? 0;
+    if (inWater) {
+      const desiredY = Math.min(waterLevel - 0.65, swimTargetY ?? (waterLevel - 0.85));
+      vy = Math.max(-2.2, Math.min(2.2, (desiredY - m.y) * 2.5));
+      m.falling = false;
+      m.airTime = 0;
+    } else {
+      vy = Math.max(-20, vy - 18 * dt);
+    }
     const body: CrewBody = {
       x: m.x,
       y: m.y,
@@ -313,6 +369,13 @@ function walkToward(
     m.z = body.z;
     m.vy = body.onGround ? 0 : body.vy;
     m.onGround = body.onGround;
+    if (!inWater && !body.onGround) {
+      m.airTime = (m.airTime ?? 0) + dt;
+      if (m.airTime > 0.35 || m.vy < -4.5) m.falling = true;
+    } else {
+      m.airTime = 0;
+      m.falling = false;
+    }
   } else {
     m.x += desiredStep.x;
     m.y += desiredStep.y;
@@ -419,7 +482,7 @@ export function stepCrew(
       }
       if (cfg.patrol.length > 0) {
         const wp = cfg.patrol[m.patrolIndex % cfg.patrol.length];
-        walkToward(m, wp.x, wp.z, cfg.walkSpeed * 0.5 * dt, ctx?.raycast, ctx?.world, dt);
+        walkToward(m, wp.x, wp.z, cfg.walkSpeed * 0.5 * dt, ctx?.raycast, ctx?.world, dt, ctx?.waterLevel ?? -Infinity);
         if (dist(m, wp) < 0.5) m.patrolIndex = (m.patrolIndex + 1) % cfg.patrol.length;
       }
       return null;
@@ -442,18 +505,19 @@ export function stepCrew(
         return null;
       }
 
-      // Check for High Breach Requiring Portable Ladder
+      // Check for High Breach Requiring Portable Ladder (strictly inside lower holds/engine room, never outer walls)
       const verticalDiff = target.y - m.y;
       const horizontalDist = Math.hypot(target.x - m.x, target.z - m.z);
 
-      if (verticalDiff >= HIGH_BREACH_THRESHOLD_Y && horizontalDist < 2.5 && (m.portableLadders ?? 0) > 0 && !m.deployedLadderId) {
+      if (verticalDiff >= HIGH_BREACH_THRESHOLD_Y && target.y <= 3.2 && m.y < 2.0 && horizontalDist < 2.5 && (m.portableLadders ?? 0) > 0 && !m.deployedLadderId) {
         enter(m, "deploying_ladder");
         return null;
       }
 
-      walkToward(m, target.x, target.z, cfg.walkSpeed * dt, ctx?.raycast, ctx?.world, dt);
+      const wp = ctx?.world ? computeDeckWaypoint(m, target) : { x: target.x, z: target.z };
+      walkToward(m, wp.x, wp.z, cfg.walkSpeed * dt, ctx?.raycast, ctx?.world, dt, ctx?.waterLevel ?? -Infinity, target.y);
 
-      if (dist(m, target) <= REPAIR_REACH || (horizontalDist <= REPAIR_REACH + 0.8 && Math.abs(target.y - m.y) <= 3.5)) {
+      if (dist(m, target) <= REPAIR_REACH || (horizontalDist <= REPAIR_REACH + 0.8 && Math.abs(target.y - m.y) <= 2.2)) {
         enter(m, "repairing");
         return "arrived";
       }

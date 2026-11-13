@@ -139,6 +139,8 @@ interface Dyn {
   led: THREE.Mesh;
   placedMarker: boolean;
   remote: number;
+  attachedBs?: Battleship;
+  attachLocal?: THREE.Vector3;
 }
 
 interface Effect {
@@ -806,25 +808,30 @@ export class Game {
         sm.pumping = false;
       }
     }
+    const destroyedIds = new Set(this.ship.sections.filter((s) => s.destroyed).map((s) => s.id));
     const deckBreaches = [
       ...this.ship.compartments.flatMap((c, ci) =>
-        c.holes
-          .filter((h) => h.area > 0.005)
-          .map((h, hi) => ({
-            id: ci * 1000 + hi,
-            x: h.pos.x,
-            y: h.pos.y,
-            z: h.pos.z,
-            area: h.area,
-            compartmentId: c.id,
-            repair: (amt: number) => {
-              h.area = Math.max(0, h.area - amt);
-            },
-          })),
+        destroyedIds.has(c.id)
+          ? []
+          : c.holes
+              .filter((h) => h.area > 0.005)
+              .map((h, hi) => ({
+                id: ci * 1000 + hi,
+                x: h.pos.x,
+                y: h.pos.y,
+                z: h.pos.z,
+                area: h.area,
+                compartmentId: c.id,
+                repair: (amt: number) => {
+                  h.area = Math.max(0, h.area - amt);
+                },
+              })),
       ),
-      ...this.ship.glass
-        .filter((g) => g.broken)
-        .map((g, gi) => ({
+      ...(destroyedIds.has("bridge") || destroyedIds.has("superstructure")
+        ? []
+        : this.ship.glass
+            .filter((g) => g.broken)
+            .map((g, gi) => ({
           id: 90000 + gi,
           x: g.pos.x,
           y: g.pos.y,
@@ -844,7 +851,8 @@ export class Game {
               this.terminal.push(this.time, "info", "DEBUG", "Broken window repaired by crew.");
             }
           },
-        })),
+        }))
+      ),
     ];
     for (const dm of this.deckCrew) {
       stepCrew(dm, dt, deckBreaches, undefined, {
@@ -853,6 +861,7 @@ export class Game {
         deckFloorY: dm.y >= 7.0 ? 9.0 : dm.y >= 2.4 ? DECK_Y : 0.1,
         blastImpulse: blastImp,
         vesselRollDeg: (this.sim.roll * 180) / Math.PI,
+        waterLevel: this.waterAt(dm.x, dm.y, dm.z),
       });
       const comp = this.compAt(dm.x, dm.y, dm.z);
       if (comp && comp.fill > 0.004 && comp.level - dm.y > 0.12 && dm.state !== "ragdoll" && !dm.isRagdoll) {
@@ -2362,6 +2371,60 @@ export class Game {
           if (comp) {
             comp.water = comp.volume;
             comp.fill = 1;
+            comp.holes.length = 0;
+          }
+          // Detach nearby crates so items/crates fall into the ocean and float
+          let detached = 0;
+          for (const cr of this.ship.crates) {
+            if (cr.dead || detached >= 6) continue;
+            if (Math.hypot(cr.pos.x - sec.center.x, cr.pos.z - sec.center.z) <= sec.radius + 6) {
+              cr.dead = true;
+              cr.collider.enabled = false;
+              cr.mesh.visible = false;
+              detached++;
+              const cw = this.worldPos(cr.pos, V());
+              const crateMesh = new THREE.Mesh(
+                new THREE.BoxGeometry(1.1, 0.9, 1.1),
+                new THREE.MeshStandardMaterial({ color: 0xb45309, roughness: 0.75 }),
+              );
+              crateMesh.position.copy(cw);
+              this.scene.add(crateMesh);
+              let vy = 3 + Math.random() * 4;
+              const vx = (Math.random() - 0.5) * 6;
+              const vz = (Math.random() - 0.5) * 6;
+              let life = 18;
+              this.effects.push({
+                update: (dt2) => {
+                  life -= dt2;
+                  const oh = this.ocean.height(crateMesh.position.x, crateMesh.position.z, this.time);
+                  if (crateMesh.position.y < oh) {
+                    vy += (oh - crateMesh.position.y) * 18 * dt2;
+                    vy *= Math.exp(-dt2 * 4);
+                  } else {
+                    vy -= 14 * dt2;
+                  }
+                  crateMesh.position.x += vx * Math.exp(-Math.max(0, 18 - life) * 0.4) * dt2;
+                  crateMesh.position.z += vz * Math.exp(-Math.max(0, 18 - life) * 0.4) * dt2;
+                  crateMesh.position.y += vy * dt2;
+                  crateMesh.rotation.x += dt2 * 0.7;
+                  crateMesh.rotation.z += dt2 * 0.5;
+                  return life > 0;
+                },
+                dispose: () => {
+                  this.scene.remove(crateMesh);
+                  crateMesh.geometry.dispose();
+                  (crateMesh.material as THREE.Material).dispose();
+                },
+              });
+            }
+          }
+          // Nudge crew on obliterated section so they fall and swim
+          for (const m of [...this.deckCrew, ...this.supervisor.crew]) {
+            if (Math.hypot(m.x - sec.center.x, m.z - sec.center.z) <= sec.radius + 4) {
+              m.onGround = false;
+              m.vy = 2.5;
+              m.targetId = null;
+            }
           }
           if (sec.id === "engine") {
             this.supervisor.engineDestroyed = true;
@@ -2765,6 +2828,10 @@ export class Game {
   }
 
   private spawnDyn(pos: THREE.Vector3, vel: THREE.Vector3, fuse: number) {
+    if (this.dyns.length >= 24) {
+      const oldest = this.dyns.shift()!;
+      this.ship.group.remove(oldest.mesh);
+    }
     const { g, led } = this.makeTntMesh();
     g.position.copy(pos);
     this.ship.group.add(g);
@@ -2869,6 +2936,10 @@ export class Game {
     if (idx < 0) return;
     this.dyns.splice(idx, 1);
     this.ship.group.remove(d.mesh);
+    if (d.attachedBs && !d.attachedBs.sunk && d.attachedBs.hp > 0) {
+      d.attachedBs.hp = Math.max(0, d.attachedBs.hp - 260);
+      this.say(`💥 TNT attached to Battleship #${d.attachedBs.id} detonated (-260 HP)!`, "good");
+    }
     const p = V(d.body.x, d.body.y + 0.15, d.body.z);
     this.detonated = true;
     this.explode(p, 1.0, "tnt");
@@ -2876,6 +2947,8 @@ export class Game {
 
   private updateDyns(dt: number) {
     const w = this.ship.world;
+    const tmpW = V();
+    const tmpL = V();
     for (const d of [...this.dyns]) {
       const b = d.body;
       if (d.remote >= 0) {
@@ -2885,31 +2958,60 @@ export class Game {
           continue;
         }
       }
-      b.vy -= 14 * dt;
-      const sl = this.sim.tiltDeg > 6 ? this.sim.slideVector() : [0, 0];
-      if (b.onGround) {
-        b.vx *= Math.exp(-dt * 7);
-        b.vz *= Math.exp(-dt * 7);
-        b.vx += sl[0] * dt * 0.6;
-        b.vz += sl[1] * dt * 0.6;
+      if (d.attachedBs && !d.attachedBs.sunk && d.attachedBs.hp > 0 && d.attachLocal) {
+        tmpW.copy(d.attachLocal).applyMatrix4(d.attachedBs.group.matrixWorld);
+        tmpL.copy(tmpW);
+        this.ship.group.worldToLocal(tmpL);
+        b.x = tmpL.x;
+        b.y = tmpL.y;
+        b.z = tmpL.z;
+        b.vx = b.vy = b.vz = 0;
+        b.onGround = true;
+        d.mesh.position.set(b.x, b.y + 0.12, b.z);
+      } else {
+        d.attachedBs = undefined;
+        b.vy -= 14 * dt;
+        const sl = this.sim.tiltDeg > 6 ? this.sim.slideVector() : [0, 0];
+        if (b.onGround) {
+          b.vx *= Math.exp(-dt * 7);
+          b.vz *= Math.exp(-dt * 7);
+          b.vx += sl[0] * dt * 0.6;
+          b.vz += sl[1] * dt * 0.6;
+        }
+        const vx0 = b.vx,
+          vy0 = b.vy,
+          vz0 = b.vz;
+        const res = w.move(b, b.vx * dt, b.vy * dt, b.vz * dt);
+        if (res.hitX) b.vx = -vx0 * 0.35;
+        if (res.hitZ) b.vz = -vz0 * 0.35;
+        if (res.hitY && vy0 < -1.5) {
+          b.vy = -vy0 * 0.25;
+          this.audio.step("metal", 0.6);
+        }
+        // Stick thrown/placed TNT onto any Battleship hull/deck OBB
+        this.worldPos(V(b.x, b.y, b.z), tmpW);
+        for (const bs of this.battleships) {
+          if (bs.sunk || bs.hp <= 0) continue;
+          tmpL.copy(tmpW);
+          bs.group.worldToLocal(tmpL);
+          if (Math.abs(tmpL.x) <= 6.2 && Math.abs(tmpL.z) <= 29.2 && tmpL.y >= -2.2 && tmpL.y <= 7.8) {
+            d.attachedBs = bs;
+            d.attachLocal = tmpL.clone();
+            d.resting = true;
+            b.vx = b.vy = b.vz = 0;
+            b.onGround = true;
+            this.audio.step("metal", 0.7);
+            break;
+          }
+        }
+        if (b.y < -30) {
+          this.dyns.splice(this.dyns.indexOf(d), 1);
+          this.ship.group.remove(d.mesh);
+          continue;
+        }
+        d.mesh.position.set(b.x, b.y + 0.12, b.z);
+        d.mesh.rotation.y += dt * (Math.abs(b.vx) + Math.abs(b.vz)) * 1.5;
       }
-      const vx0 = b.vx,
-        vy0 = b.vy,
-        vz0 = b.vz;
-      const res = w.move(b, b.vx * dt, b.vy * dt, b.vz * dt);
-      if (res.hitX) b.vx = -vx0 * 0.35;
-      if (res.hitZ) b.vz = -vz0 * 0.35;
-      if (res.hitY && vy0 < -1.5) {
-        b.vy = -vy0 * 0.25;
-        this.audio.step("metal", 0.6);
-      }
-      if (b.y < -30) {
-        this.dyns.splice(this.dyns.indexOf(d), 1);
-        this.ship.group.remove(d.mesh);
-        continue;
-      }
-      d.mesh.position.set(b.x, b.y + 0.12, b.z);
-      d.mesh.rotation.y += dt * (Math.abs(b.vx) + Math.abs(b.vz)) * 1.5;
       const spd = Math.hypot(b.vx, b.vz, b.vy);
       if (!d.resting && b.onGround && spd < 0.4) {
         d.resting = true;

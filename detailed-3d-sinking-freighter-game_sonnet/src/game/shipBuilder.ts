@@ -557,6 +557,7 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
   // ------------------------------------------------------------------ Deck
   const ZB0 = 52; // Bugbeginn
   const engineHole: [number, number, number, number] = [-1.6, 1.6, -64.6, -58.0];
+  const engineHole2: [number, number, number, number] = [4.6, 7.6, -44.2, -39.8];
   const holdHole: [number, number, number, number] = [-9.35, -6.05, 18.5, 25.5];
   for (const [dz0, dz1] of [
     [Z_STERN, -56],
@@ -565,7 +566,7 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
     [-8, 26],
     [26, ZB0],
   ]) {
-    slab(-HULL_HW, HULL_HW, dz0, dz1, DECK_Y, 0.3, "deck", [engineHole, holdHole]);
+    slab(-HULL_HW, HULL_HW, dz0, dz1, DECK_Y, 0.3, "deck", [engineHole, engineHole2, holdHole]);
   }
   // Bugdeck als Polygon
   {
@@ -751,6 +752,11 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
     }
     // Treppe von der Brücke / dem Leitstand
     uStair(-1.6, 1.45, -58.0, DECK_Y, -1.0, FLOOR_Y);
+    // Zweite offene Treppe vom Hauptdeck direkt in den Maschinenraum
+    uStair(4.6, 1.4, -39.8, DECK_Y, -1.0, FLOOR_Y, 3.0, 1.4);
+    rail(4.55, 4.65, -44.2, -39.8, DECK_Y);
+    rail(7.55, 7.65, -44.2, -39.8, DECK_Y);
+    rail(4.6, 7.6, -44.25, -44.15, DECK_Y);
     // Geländer um die Öffnung
     rail(-1.65, -1.55, -64.6, -58.0, DECK_Y);
     rail(1.55, 1.65, -64.6, -58.0, DECK_Y);

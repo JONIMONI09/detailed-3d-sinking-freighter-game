@@ -163,6 +163,26 @@ export class CrewVisual {
       return;
     }
 
+    if (this.member.falling) {
+      // Airborne fall / flailing pose until landing on deck
+      this.walk += dt * 11;
+      const flail = Math.sin(this.walk) * 0.65;
+      this.group.rotation.x = 0.22;
+      this.group.rotation.z = Math.cos(this.walk * 0.7) * 0.15;
+      this.legL.rotation.x = flail * 0.7;
+      this.legR.rotation.x = -flail * 0.7;
+      this.armL.rotation.x = 2.4 + flail * 0.4;
+      this.armR.rotation.x = 2.4 - flail * 0.4;
+      this.armL.rotation.z = 0.45;
+      this.armR.rotation.z = -0.45;
+      this.torso.position.y = 0.85;
+      this.group.position.set(this.member.x, this.member.y, this.member.z);
+      this.lastX = this.member.x;
+      this.lastY = this.member.y;
+      this.lastZ = this.member.z;
+      return;
+    }
+
     this.group.rotation.x = 0;
     this.group.rotation.z = 0;
 
@@ -173,11 +193,23 @@ export class CrewVisual {
     this.group.rotation.y = this.yaw;
 
     const isPumping = Boolean(this.member.pumping) && this.member.state !== "repairing";
-    this.pump.visible = isPumping;
-    this.torch.visible = !isPumping;
+    const isSwimming = Boolean(this.member.swimming) && this.member.state !== "repairing";
+    this.pump.visible = isPumping && !isSwimming;
+    this.torch.visible = !this.pump.visible;
 
-    // Walking animation
-    if (this.member.state === "moving" || this.member.state === "patrol") {
+    // Swimming animation (horizontal stroke + flutter kick)
+    if (isSwimming) {
+      this.walk += dt * 5.2;
+      const stroke = Math.sin(this.walk);
+      this.group.rotation.x = 1.15;
+      this.legL.rotation.x = stroke * 0.55;
+      this.legR.rotation.x = -stroke * 0.55;
+      this.armL.rotation.x = 1.5 + stroke * 0.75;
+      this.armR.rotation.x = 1.5 - stroke * 0.75;
+      this.armL.rotation.z = 0.25;
+      this.armR.rotation.z = -0.25;
+      this.torso.position.y = 0.85;
+    } else if (this.member.state === "moving" || this.member.state === "patrol") {
       this.walk += dt * (spd * 3.5 + 0.001);
       const sw = Math.sin(this.walk) * Math.min(1, spd / 1.8) * 0.65;
       this.legL.rotation.x = sw;

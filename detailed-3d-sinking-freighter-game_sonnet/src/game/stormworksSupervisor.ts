@@ -185,6 +185,7 @@ export class StormworksSupervisor {
         blastImpulse,
         vesselRollDeg,
         deckFloorY: -5.0,
+        waterLevel: lowestCompartmentWaterY > -5 ? lowestCompartmentWaterY : undefined,
       });
       if (ev) {
         console.log(`[NORDWIND/CREW] ${member.name} (${member.role}) -> ${ev} at (${member.x.toFixed(1)}, ${member.y.toFixed(1)}, ${member.z.toFixed(1)}) [kits=${member.patchKits}, breaches=${breaches.length}]`);

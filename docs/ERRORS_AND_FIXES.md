@@ -29,6 +29,18 @@ Do not use this file for speculative risks. Put open limitations in
 - Related files / skills:
 ```
 
+### ERR-2026-11-13-03 - Grounded Crew Routing, Airborne Fall/Swim Animations, Engine Room Staircase, Laser Debris & Battleship Sticky TNT
+
+- Date (Europe/Berlin): 2026-11-13
+- Area: Crew Physics & Multi-Deck Navigation, Orbital Laser Debris, Freighter Stairs, TNT Physics
+- Status: Resolved
+- Symptom: (1) Crew climbed exterior walls into mid-air toward bridge windows instead of using doors and interior stairs, and lacked airborne fall/swim animations; (2) Engine Room only had the aft Control Room staircase; (3) Orbital Laser section destruction left crew trying to repair obliterated sections without dropping floating crates; (4) thrown TNT passed through Battleship hulls instead of sticking as physics bodies.
+- Root cause: (1) `stepCrew()` allowed `deploying_ladder` for high exterior targets (`target.y > 3.2`) and lacked interior stair waypoints, airborne fall tracking, and underwater swimming physics; (2) forward Engine Room deck slab lacked a second open stair opening; (3) `fireOrbitalDeathRay` did not clear destroyed compartment holes, detach crates, or nudge crew into the water; (4) `updateDyns()` only tested `this.ship.world` without checking Battleship OBBs.
+- Solution: Added `computeDeckWaypoint()` (routing via Main Entrance + interior Superstructure stairs `LV = [3.0, 6.2, 9.4, 12.6]` and forward Engine Room stair), restricted `deploying_ladder` to lower holds (`target.y <= 3.2 && m.y < 2.0`), added airborne `falling` flail + underwater `swimming` physics & animations (`crew.ts`, `crewVisual.ts`), added second open Engine Room U-stair (`engineHole2` in `shipBuilder.ts`), detached up to 6 floating crates & cleared destroyed breaches on Orbital Laser section destruction, and added Battleship OBB sticking (`attachedBs`, `MAX_DYNS = 24`) + `260` HP detonation damage in `game.ts`.
+- Verification: `npx tsc --noEmit` (root & sonnet), `npm test`, `npm run build`, and `npm run docs:check` executed after final edit.
+- Prevention: Never allow portable-ladder mid-air climbs above `y = 3.2`; route multi-deck crew via interior stair waypoints and test dynamic props (`dyns`) against all active vessel OBBs.
+- Related files / skills: `detailed-3d-sinking-freighter-game_sonnet/src/game/crew.ts`, `crewVisual.ts`, `stormworksSupervisor.ts`, `shipBuilder.ts`, `game.ts` / `error-fix-document`
+
 ### ERR-2026-11-13-02 - Crew Window Repair, Door/Stair Traversal, Bilge Pumping & Closed-Door Water Bleed
 
 - Date (Europe/Berlin): 2026-11-13
