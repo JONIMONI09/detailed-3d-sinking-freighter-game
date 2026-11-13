@@ -297,6 +297,10 @@ function test3DShipNavGraphStairAndCatwalkRouting() {
   assert.equal(stairWp.onStair, true, '3D graph must flag stair traversal so wall-slide does not trigger on steps');
   assert.ok(Math.abs(stairWp.x - -0.875) < 0.25, `Expected A-run stair centerline x=-0.875, got ${stairWp.x}`);
 
+  // Must NOT skip stair-entry alignment node d1_stair_dep (0.875, 6.2, -47.6) when 0.78m away in corridor
+  const stairEntryWp = shipNavGraphMod.findNextShipGraphWaypoint(0.2, 6.2, -47.2, 0.0, 9.4, -47.0);
+  assert.ok(Math.abs(stairEntryWp.x - 0.875) < 0.1 && Math.abs(stairEntryWp.z - -47.6) < 0.1, `Expected stair entry alignment (0.875, -47.6), got (${stairEntryWp.x}, ${stairEntryWp.z})`);
+
   // Narrow exterior catwalk (x = 9.45, z = -58) -> Engine Control Room routes via Side Entrance (z = -47.0)
   const catwalkWp = shipNavGraphMod.findNextShipGraphWaypoint(9.45, 3.0, -58.0, 0.0, 3.0, -56.6);
   assert.ok(Math.abs(catwalkWp.x - 9.45) < 0.25 && catwalkWp.z >= -47.5, `Expected catwalk route toward Side Entrance (-47.0), got (${catwalkWp.x}, ${catwalkWp.z})`);

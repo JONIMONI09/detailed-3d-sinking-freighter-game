@@ -457,20 +457,63 @@ export class Game {
       return m;
     };
     this.deckCrew = [
-      // Upstairs (Superstructure, Engine Control Room, Main Deck)
-      makeCrew("Bridge Officer", "boatswain", -3.5, 9.4, -46.5, [
-        { x: -4.0, y: 9.4, z: -46.5 },
-        { x: 4.0, y: 9.4, z: -46.5 },
+      // Bridge Level 3 & Officer Deck Level 2
+      makeCrew("Helmsman", "boatswain", -2.5, 12.6, -46.2, [
+        { x: -5.0, y: 12.6, z: -46.2 },
+        { x: 5.0, y: 12.6, z: -46.2 },
       ]),
+      makeCrew("Watch Officer", "electrician", 3.5, 12.6, -46.2, [
+        { x: 4.5, y: 12.6, z: -46.2 },
+        { x: 0.0, y: 9.4, z: -47.0 },
+      ]),
+      makeCrew("Bridge Officer", "boatswain", -4.5, 9.4, -47.0, [
+        { x: -5.0, y: 9.4, z: -47.0 },
+        { x: 5.0, y: 9.4, z: -47.0 },
+      ]),
+      makeCrew("Radio Tech", "electrician", 4.5, 9.4, -47.0, [
+        { x: 5.0, y: 9.4, z: -47.0 },
+        { x: 0.0, y: 9.4, z: -53.6 },
+      ]),
+      // Cabin Deck Level 1
+      makeCrew("Cabin Steward", "medic", -4.5, 6.2, -47.0, [
+        { x: -5.0, y: 6.2, z: -47.0 },
+        { x: 5.0, y: 6.2, z: -47.0 },
+      ]),
+      makeCrew("Deck Cadet", "damage-control", 0.0, 6.2, -53.6, [
+        { x: 0.0, y: 6.2, z: -53.6 },
+        { x: 0.0, y: 6.2, z: -47.0 },
+      ]),
+      // Superstructure Level 0, Catwalks & Control Room
       makeCrew("Control Room Eng.", "electrician", 3.5, 3.0, -61.5, [
         { x: 4.5, y: 3.0, z: -61.5 },
         { x: -4.5, y: 3.0, z: -61.5 },
       ]),
+      makeCrew("Corridor Patrol", "damage-control", 0.0, 3.0, -47.0, [
+        { x: 0.0, y: 3.0, z: -53.6 },
+        { x: 0.0, y: 3.0, z: -42.5 },
+      ]),
+      makeCrew("Mess Sailor", "medic", -5.0, 3.0, -53.6, [
+        { x: -5.0, y: 3.0, z: -53.6 },
+        { x: -5.0, y: 3.0, z: -47.0 },
+      ]),
+      makeCrew("Port Catwalk Guard", "boatswain", -9.45, 3.0, -47.0, [
+        { x: -9.45, y: 3.0, z: -60.0 },
+        { x: -9.45, y: 3.0, z: -42.5 },
+      ]),
+      makeCrew("Stbd Catwalk Guard", "boatswain", 9.45, 3.0, -47.0, [
+        { x: 9.45, y: 3.0, z: -42.5 },
+        { x: 9.45, y: 3.0, z: -60.0 },
+      ]),
+      // Main Deck Fore, Mid & Aft
       makeCrew("Aft Deck Eng.", "chief-engineer", 6.0, DECK_Y, -38.5, [
         { x: 6.0, y: DECK_Y, z: -38.5 },
         { x: 6.0, y: DECK_Y, z: -14.0 },
         { x: -6.0, y: DECK_Y, z: -14.0 },
         { x: -6.0, y: DECK_Y, z: -38.5 },
+      ]),
+      makeCrew("Mid Deck Rigger", "damage-control", -5.5, DECK_Y, 0.0, [
+        { x: -5.5, y: DECK_Y, z: -12.0 },
+        { x: 5.5, y: DECK_Y, z: 12.0 },
       ]),
       makeCrew("Fore Deck Crew", "damage-control", 3.5, DECK_Y, 16.0, [
         { x: 3.5, y: DECK_Y, z: 16.0 },
@@ -484,6 +527,10 @@ export class Game {
         { x: 3.8, y: -5.0, z: -42.0 },
         { x: -3.8, y: -5.0, z: -42.0 },
         { x: -3.8, y: -5.0, z: -56.0 },
+      ]),
+      makeCrew("Turbine Tech", "electrician", -4.5, -5.0, -48.0, [
+        { x: -4.5, y: -5.0, z: -62.0 },
+        { x: 4.5, y: -5.0, z: -48.0 },
       ]),
       makeCrew("Hold 3 Crew", "damage-control", 0, -5.0, -24.0, [
         { x: -3.0, y: -5.0, z: -34.0 },

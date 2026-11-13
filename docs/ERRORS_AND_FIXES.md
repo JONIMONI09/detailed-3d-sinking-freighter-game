@@ -29,6 +29,17 @@ Do not use this file for speculative risks. Put open limitations in
 - Related files / skills:
 ```
 
+### ERR-2026-11-13-09 - Stair-Entry Ping-Pong Fix, Anti-Oscillation Replanning & Expanded 22-NPC Crew Roster
+
+- Date (Europe/Berlin): 2026-11-13
+- Area: Crew AI Stair Alignment & Population (`shipNavGraph.ts`, `crew.ts`, `game.ts`)
+- Status: Resolved
+- Symptom: Bots oscillated back and forth ("hin und her") in front of Level 1/2 stairwells and cabin doors instead of climbing through, and the ship needed more crew NPCs across all decks.
+- Root cause: (1) `findNextShipGraphWaypoint()` skipped `path[1]` stair-entry nodes at `< 0.85m`, causing bots in the corridor to angle diagonally into the stairwell center divider wall, bounce back `>= 0.85m`, and ping-pong between `path[1]` and `path[2]`; (2) `monitorProgressAndUnstick()` flipped `slideSign` every `0.45s` (`stuckCount >= 1`), amplifying back-and-forth oscillation; (3) Level 1/2 lacked cabin doorway center nodes and `distXZ < 3.2` bypassed the graph near walls.
+- Fix: Tightened stair-entry alignment tolerance to `0.35m` and direct-target shortcut to `1.1m`, added Level 1/2 cabin doorway nodes, removed premature `slideSign` flipping at `stuckCount === 1`, and expanded `deckCrew` to 19 active NPCs (22 total with `supervisor.crew`) across Bridge, Officer/Cabin Decks, Catwalks, Control Room, Main Deck, Engine Room, and Cargo Holds 1-3.
+- Prevention: Never skip a stair-entry node before strict centerline alignment (`<= 0.35m`), and never flip lateral steering sign on the first replan attempt.
+- Related files / skills: `detailed-3d-sinking-freighter-game_sonnet/src/game/shipNavGraph.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/crew.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/game.ts`, `tests/crew-navigation.test.mjs`.
+
 ### ERR-2026-11-13-08 - Progress-Based Crew Replanning, Doorway Centering & Interactive Ship Bilge Pumps
 
 - Date (Europe/Berlin): 2026-11-13

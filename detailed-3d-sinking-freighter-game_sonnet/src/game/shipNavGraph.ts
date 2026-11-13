@@ -64,6 +64,8 @@ const NODES: ShipNavNode[] = [
   { id: "d1_corr_mid", x: 0, y: 6.2, z: -47.0 },
   { id: "d1_corr_aft", x: 0, y: 6.2, z: -53.6 },
   { id: "d1_stair_dep", x: 0.875, y: 6.2, z: -47.6, stair: true },
+  { id: "d1_port_door", x: -1.7, y: 6.2, z: -47.0 },
+  { id: "d1_stbd_door", x: 1.7, y: 6.2, z: -47.0 },
   { id: "d1_port_mid", x: -5.0, y: 6.2, z: -47.0 },
   { id: "d1_stbd_mid", x: 5.0, y: 6.2, z: -47.0 },
 
@@ -72,6 +74,8 @@ const NODES: ShipNavNode[] = [
   { id: "d2_corr_aft", x: 0, y: 9.4, z: -53.6 },
   { id: "d2_corr_mid", x: 0, y: 9.4, z: -47.0 },
   { id: "d2_stair_dep", x: -0.875, y: 9.4, z: -52.8, stair: true },
+  { id: "d2_port_door", x: -1.7, y: 9.4, z: -47.0 },
+  { id: "d2_stbd_door", x: 1.7, y: 9.4, z: -47.0 },
   { id: "d2_port_mid", x: -5.0, y: 9.4, z: -47.0 },
   { id: "d2_stbd_mid", x: 5.0, y: 9.4, z: -47.0 },
 
@@ -144,8 +148,10 @@ const EDGES: ShipNavEdge[] = [
   { a: "d1_stair_arr", b: "d1_corr_mid" },
   { a: "d1_corr_mid", b: "d1_stair_dep" },
   { a: "d1_corr_mid", b: "d1_corr_aft" },
-  { a: "d1_corr_mid", b: "d1_port_mid" },
-  { a: "d1_corr_mid", b: "d1_stbd_mid" },
+  { a: "d1_corr_mid", b: "d1_port_door" },
+  { a: "d1_port_door", b: "d1_port_mid" },
+  { a: "d1_corr_mid", b: "d1_stbd_door" },
+  { a: "d1_stbd_door", b: "d1_stbd_mid" },
 
   // Level 1 <-> Level 2 stair
   { a: "d1_stair_dep", b: "d2_stair_arr", stair: true },
@@ -154,8 +160,10 @@ const EDGES: ShipNavEdge[] = [
   { a: "d2_stair_arr", b: "d2_corr_aft" },
   { a: "d2_corr_aft", b: "d2_stair_dep" },
   { a: "d2_corr_aft", b: "d2_corr_mid" },
-  { a: "d2_corr_mid", b: "d2_port_mid" },
-  { a: "d2_corr_mid", b: "d2_stbd_mid" },
+  { a: "d2_corr_mid", b: "d2_port_door" },
+  { a: "d2_port_door", b: "d2_port_mid" },
+  { a: "d2_corr_mid", b: "d2_stbd_door" },
+  { a: "d2_stbd_door", b: "d2_stbd_mid" },
 
   // Level 2 <-> Level 3 stair
   { a: "d2_stair_dep", b: "d3_stair_arr", stair: true },
@@ -257,8 +265,8 @@ export function findNextShipGraphWaypoint(
   const sameFloor = Math.abs(sy - ty) < 1.6;
   const distXZ = Math.hypot(tx - sx, tz - sz);
 
-  // If on the same floor and very close, go directly to target (unless inside stairwell)
-  if (sameFloor && distXZ < 3.2 && !isInStairwellBand(sx, sy, sz)) {
+  // Only go direct on the same floor when very close (< 1.1m) and outside stairwells
+  if (sameFloor && distXZ < 1.1 && !isInStairwellBand(sx, sy, sz)) {
     return { x: tx, y: ty, z: tz, onStair: false };
   }
 
@@ -301,13 +309,14 @@ export function findNextShipGraphWaypoint(
       }
       path.reverse();
 
-      // Choose the next node we haven't already reached
+      // Choose the next node we haven't already reached; require tight alignment (0.35m) at stair entries
       let nextIdx = path.length > 1 ? path[1] : path[0];
       const n1 = NODES[nextIdx];
       const d1 = Math.hypot(n1.x - sx, n1.z - sz);
-      if (path.length > 2 && d1 < 0.85 && Math.abs(n1.y - sy) < 1.2) {
+      const reachTol = n1.stair ? 0.35 : 0.6;
+      if (path.length > 2 && d1 < reachTol && Math.abs(n1.y - sy) < 1.2) {
         nextIdx = path[2];
-      } else if (path.length === 1 && Math.hypot(NODES[path[0]].x - sx, NODES[path[0]].z - sz) < 0.85 && Math.abs(NODES[path[0]].y - sy) < 1.2) {
+      } else if (path.length === 1 && Math.hypot(NODES[path[0]].x - sx, NODES[path[0]].z - sz) < reachTol && Math.abs(NODES[path[0]].y - sy) < 1.2) {
         return { x: tx, y: ty, z: tz, onStair: isInStairwellBand(sx, sy, sz) };
       }
 

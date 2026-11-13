@@ -538,20 +538,19 @@ function monitorProgressAndUnstick(
     return false;
   }
 
-  // Net progress stalled (running in place or oscillating against peer/doorframe) -> immediate replan + flip slide
+  // Net progress stalled -> replan first without flipping direction (prevents back-and-forth oscillation)
   m.stuckCount = (m.stuckCount ?? 0) + 1;
   m.navWaypoint = null;
   m.navTimer = 0;
-  m.slideSign = -(m.slideSign || 1);
-  m.slideTimer = 0.55;
 
-  if (m.stuckCount >= 2 && m.onGround) {
-    // Self-unstick hop + tangential sidestep so player never needs to push bots free
+  if (m.stuckCount === 2 && m.onGround) {
+    // Self-unstick hop + sidestep while keeping current slide side
     const dx = wp.x - m.x;
     const dz = wp.z - m.z;
     const d = Math.hypot(dx, dz) || 1;
-    const tx = (-dz / d) * m.slideSign;
-    const tz = (dx / d) * m.slideSign;
+    const sign = m.slideSign || 1;
+    const tx = (-dz / d) * sign;
+    const tz = (dx / d) * sign;
     const hopBody: CrewBody = { x: m.x, y: m.y, z: m.z, vx: 0, vy: 3.6, vz: 0, r: 0.2, h: 1.75, onGround: false, step: 0.48 };
     world.move(hopBody, tx * 0.35 + (dx / d) * 0.15, 0.12, tz * 0.35 + (dz / d) * 0.15);
     m.x = hopBody.x;
@@ -559,8 +558,13 @@ function monitorProgressAndUnstick(
     m.z = hopBody.z;
     m.vy = 3.4;
     m.onGround = false;
+  } else if (m.stuckCount >= 3) {
+    m.slideSign = -(m.slideSign || 1);
+    m.slideTimer = 0.75;
+    m.stuckCount = 0;
+    return true;
   }
-  return m.stuckCount >= 3;
+  return false;
 }
 
 /** Advances one crew member by dt seconds; mutates the member and the breach it repairs. */
