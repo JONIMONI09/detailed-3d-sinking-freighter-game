@@ -106,7 +106,7 @@ function ShipStatus({ h }: { h: HudState }) {
         <span className={h.sinking ? "animate-pulse text-red-400" : h.F > 0.02 ? "text-amber-300" : "text-emerald-300"}>{h.sinking ? "SINKING!" : h.F > 0.02 ? "LEAK" : "INTACT"}</span>
       </div>
       <div className="relative mb-1.5 h-12 overflow-hidden rounded-md bg-slate-800/80">
-        <div className="absolute inset-x-1 bottom-1 top-3 flex gap-0.5" style={{ transform: `rotate(${Math.max(-25, Math.min(25, h.pitchDeg * -0.6))}deg)` }}>
+        <div className="absolute inset-x-1 bottom-1 top-3 flex gap-0.5" style={{ transform: `rotate(${Math.max(-25, Math.min(25, h.pitchDeg * 0.6))}deg)` }}>
           {[...h.flood].map((c, i) => (
             <div key={i} className="relative flex-1 overflow-hidden rounded-sm border border-white/20 bg-slate-600/60" title={c.name}>
               <div className="absolute inset-x-0 bottom-0 transition-all" style={{ height: `${c.fill * 100}%`, background: col(c.fill) }} />

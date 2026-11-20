@@ -81,12 +81,19 @@ const box = (x, z, heading, hull) => ({ x, z, heading, ...hull });
   const freighter45 = { x: 0, z: 0, heading: Math.PI / 4, bowZ: 1, ...FREIGHTER_HULL };
   assert.ok(pointInHull(-40, 40, freighter45), 'point along rotated Freighter +Z bow (-sin, cos) must be inside hull');
   assert.ok(!pointInHull(40, 40, freighter45), 'point perpendicular to rotated Freighter hull must be outside hull');
-  console.log('  ✔ rotated Freighter hull (bowZ = 1) OBB matches 3D (-sin, cos) heading');
+  const bsSide = { x: 14, z: 14, heading: 0, ...BATTLESHIP_HULL };
+  const sideContact = hullOverlap(freighter45, bsSide);
+  assert.ok(sideContact && sideContact.depth > 0, 'rotated Freighter vs nearby Battleship overlap must be detected');
+  const sideDmg = collisionDamage([-8, 8], [-10, -10], sideContact, FREIGHTER_MASS, BATTLESHIP_MASS);
+  assert.ok(sideDmg.dmgA > 60 && sideDmg.dmgB > 60, 'high-speed oblique hull ramming must exceed hull breach threshold');
+  console.log('  ✔ rotated Freighter hull (bowZ = 1) OBB matches 3D (-sin, cos) heading and oblique collision damage');
 }
 {
   const src = fs.readFileSync(path.join(process.cwd(), 'detailed-3d-sinking-freighter-game_sonnet/src/game/game.ts'), 'utf8');
   assert.ok(src.includes('stepVesselCollisions(dt)'), 'game loop must step vessel collisions');
   assert.ok(src.includes('pointInHull(proj.pos.x, proj.pos.z'), 'projectiles must use hull boxes');
-  console.log('  ✔ game loop steps vessel collisions and projectiles use hull boxes');
+  assert.ok(src.includes('breachFreighterHullAt(') && src.includes('freighterHitSection('), 'torpedoes, missiles & collisions must breach & hit Freighter hull sections');
+  assert.ok(src.includes('superlaserTargetBsId'), 'superlaser must stay locked to its original Battleship id');
+  console.log('  ✔ game loop steps vessel collisions, hull breaches, and locked Superlaser targets');
 }
 console.log('🎉 ALL VESSEL HULL COLLISION TESTS PASSED!');

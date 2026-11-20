@@ -29,6 +29,28 @@ Do not use this file for speculative risks. Put open limitations in
 - Related files / skills:
 ```
 
+### ERR-2026-11-20-04 - Bridge Helm Double-Tap, Tablet Input Leaks, Battleship Deck Riding, Torpedo/Collision Hull Breaches & Superlaser Target Switching
+
+- Date (Europe/Berlin): 2026-11-20
+- Area: Helm & Input (`input.ts`, `game.ts`), Naval combat/ramming/breaches (`game.ts`), Battleship deck riding (`game.ts`), Spawn/Nav Lights/HUD (`shipBuilder.ts`, `Hud.tsx`)
+- Status: Resolved
+- Symptom: Rapidly double-tapping `[W]`/`[S]` at the Bridge Helm dropped the second tap (`telegraph` stayed at `half-ahead` instead of advancing to `full-ahead`) and collapsed multiple key presses inside slow render frames; opening the `[TAB]` Command Tablet leaked `[W/A/S/D/E]` into helm mode and interaction prompts; torpedoes, Fleet Strike missiles, and heavy vessel ramming failed to breach Freighter compartments or lower Freighter integrity (`0` hull breaches, `100%` integrity); walking on a Battleship deck dragged the player along with the moving/rotating Freighter and triggered Freighter-local out-of-bounds falls; triggering a Superlaser Strike over the player's Battleship switched onto `MV NORDWIND` mid-strike as soon as the Battleship sank; evacuating a sunk Battleship could fall through after orbital evacuation; lifeboat wave pitch rolled `boat.rotation.z`; player spawned atop an explosive barrel at `(9.6, 3.0, -42)` while Port/Stbd nav lights and pump labels were inverted for `+Z` bow; and the HUD status schematic pitched backwards.
+- Root cause:
+  1. `handleHelm()` polled held `KeyW`/`KeyS` behind a fixed `0.35s` cooldown without discrete tap actions, and `Input.queue` used a `Set` that deduplicated two `KeyW`/`KeyS` taps occurring in a single frame.
+  2. `handleHelm` and `updateInteraction` did not return early when `tabletOpen` / `ended` / `orbitalLaserMode` were active.
+  3. `navalProjectiles` only tested `|localHit.x| < 11.5` and fired `explode()` where `compAt` returned `null` outside `[-69.8, 57.05] x [-10.2, 10.2]` and `ShipSim.addBreach()` rejected `y > -2.0` waterline torpedoes (`-0.15m`) or inner hull contacts; `stepVesselCollisions()` hit the same `compAt`/`addBreach` rejection on bow/side impacts; and `navalProjectiles` did not damage `ShipSection`/`BattleshipPart` HP or allow already-destroyed sections to pass projectiles cleanly.
+  4. `step()` had no Battleship-local coordinate tracking (`ridingBs`/`ridingLocal`), world-yaw offset for `Player.update()`, world ocean depth lookup, or Battleship-safe bounds guard (`b.y < -25`).
+  5. `superlaserTimer` re-resolved `this.battleships[0]` every frame, `activeVessel === "battleship"` sink fallback was not guarded before running driving logic, and `restoreFreighter()` / `dyns` did not recursively dispose child meshes in `THREE.Group`.
+  6. `shipBuilder.ts` placed a barrel on `(9.6, 3.0, -42)` at spawn and swapped Port (`+X` red) vs Stbd (`-X` green) for `+Z` bow, while `Hud.tsx` multiplied `h.pitchDeg` by `-0.6` and `updateEscape()` applied wave pitch on `boat.rotation.z`.
+- Solution:
+  1. Added counted `helmUp`/`helmDown` discrete taps (`consumeHelmSteps()`) plus touch joystick throttle/rudder in `input.ts` and `handleHelm(dt)` in `game.ts`, and isolated helm/interaction while `tabletOpen`, `dead`, `ended`, or `orbitalLaserMode`.
+  2. Implemented `freighterHitSection`, `breachFreighterHullAt`, `damageFreighterSectionAt`, `destroyFreighterSection`, and `damageBattleshipPartAt` in `game.ts`, wiring naval projectiles (with `ownerId` self-hit guards and velocity-aligned torpedo quaternions) and `stepVesselCollisions()` so underwater torpedoes, diving missiles, and heavy collisions reliably breach compartments and shatter sections while letting projectiles fly through destroyed sections.
+  3. Implemented `ridingBs` / `ridingLocal` Battleship-deck riding with world-space camera height, Freighter-heading-compensated `Player.yaw`, world ocean immersion check, and bounds-check exemption when riding a Battleship.
+  4. Locked `superlaserTargetBsId` at `triggerSuperlaserStrike()` start, fixed Battleship sink-evacuation branching, added recursive `disposeObject3D` cleanup on `holeGroup`/`dyns` and `helm.rudderCmd` resets in `switchVessel()`/`restoreFreighter()`, fixed `boat.rotation.order = "YXZ"` wave pitch in `updateEscape()`, moved the colliding barrel to `[9.6, -39.5]` and aligned Port/Stbd nav lights/pump labels in `shipBuilder.ts`, and flipped `Hud.tsx` schematic pitch sign to `+0.6`.
+- Verification: `npx tsc --noEmit`, `npx tsc -p detailed-3d-sinking-freighter-game_sonnet/tsconfig.json --noEmit`, `npm test` (including new helm double-tap/tablet-isolation and collision/breach assertions), `npm run docs:check`, both Vite builds, and live headless Chrome CDP E2E verification on `http://127.0.0.1:5173/`.
+- Prevention: Verify discrete action counters across slow render frames, test naval impacts and Battleship deck riding in headless WebGL CDP, and keep all vessel orientation conventions (`+Z` Freighter vs `-Z` Battleship) consistent across geometry, physics, UI, and input.
+- Related files / skills: `detailed-3d-sinking-freighter-game_sonnet/src/game/input.ts`, `game.ts`, `shipBuilder.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/ui/Hud.tsx`, `tests/vessel-steering-and-engine-breakdown.test.mjs`, `tests/vessel-collision.test.mjs` / `error-fix-document`.
+
 ### ERR-2026-11-20-03 - Inverted Freighter Propulsion (+Z Bow), Rudder Yaw, Battleship Steering & Gameplay Physics Bugs
 
 - Date (Europe/Berlin): 2026-11-20

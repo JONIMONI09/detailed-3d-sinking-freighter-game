@@ -5,9 +5,9 @@ import { Ocean } from "./ocean";
 import { ParticleSystem, createRain } from "./particles";
 import { Input } from "./input";
 import { Player } from "./player";
-import { buildShip, ShipModel } from "./shipBuilder";
+import { buildShip, ShipModel, ShipSection } from "./shipBuilder";
 import { ShipSim } from "./shipSim";
-import { Compartment, DECK_Y, Door, Lifeboat } from "./shipTypes";
+import { Compartment, DECK_Y, Door, hullHalfWidth, Lifeboat, WI } from "./shipTypes";
 import type { Settings } from "./settings";
 import { createTextures, setAnisotropy, TexSet } from "./textures";
 import { ViewModel, WEAPONS, WeaponId } from "./weapons";
@@ -259,8 +259,11 @@ export class Game {
   deckCrew: CrewMember[] = [];
   superlaserTimer = 0;
   superlaserTarget: "freighter" | "battleship" = "freighter";
+  superlaserTargetBsId: string | null = null;
   superlaserDmgCd = 0;
   battleships: Battleship[] = [];
+  private ridingBs: Battleship | null = null;
+  private ridingLocal = V();
   helmMode = false;
   helmThrottleCooldown = 0;
   tabletOpen = false;
@@ -292,6 +295,7 @@ export class Game {
     kind: "shell" | "torpedo" | "missile";
     life: number;
     ownerIdx?: number;
+    ownerId?: string;
     targetKind?: "freighter" | "battleship";
     targetId?: string;
     fromFleetStrike?: boolean;
@@ -924,6 +928,25 @@ export class Game {
     const t = this.time;
     const st = this.settings;
 
+    if (!this.helmMode || this.tabletOpen || this.dead || this.ended || this.escapeState) {
+      inp.pressed("helmUp");
+      inp.pressed("helmDown");
+    }
+    const ridePrevBs =
+      this.theatre === "maritime" &&
+      this.activeVessel === "freighter" &&
+      this.ridingBs &&
+      !this.ridingBs.sunk &&
+      !this.supervisor.isNoclip()
+        ? this.ridingBs
+        : null;
+    if (ridePrevBs) {
+      this.ship.group.updateMatrixWorld(true);
+      ridePrevBs.group.updateMatrixWorld(true);
+      this.ridingLocal.copy(V(this.player.body.x, this.player.body.y, this.player.body.z)).applyMatrix4(this.ship.group.matrixWorld);
+      ridePrevBs.group.worldToLocal(this.ridingLocal);
+    }
+
     // Schiff
     const crewRay = (orig: { x: number; y: number; z: number }, dir: { x: number; y: number; z: number }, maxD: number) => {
       const hit = this.ship.world.raycast(orig.x, orig.y, orig.z, dir.x, dir.y, dir.z, maxD, (c) => c.tag !== "door");
@@ -1024,7 +1047,7 @@ export class Game {
     }
     for (const cm of allCrew) {
       // Player <-> Crew character collision and shoving across all 22 crew members
-      if (this.theatre !== "orbital" && this.activeVessel === "freighter" && Math.abs(this.player.body.y - cm.y) < 1.75) {
+      if (this.theatre !== "orbital" && this.activeVessel === "freighter" && !this.ridingBs && Math.abs(this.player.body.y - cm.y) < 1.75) {
         const pdx = cm.x - this.player.body.x;
         const pdz = cm.z - this.player.body.z;
         const pd = Math.hypot(pdx, pdz);
@@ -1124,28 +1147,33 @@ export class Game {
     this.orbitalBeamAudioCd = Math.max(0, this.orbitalBeamAudioCd - dt);
     this.orbitalBeamFxCd = Math.max(0, this.orbitalBeamFxCd - dt);
 
-    // 5-second Superlaser Strike sweeping across the ship the player is currently on
+    // 5-second Superlaser Strike sweeping across the ship the player triggered it over
     if (this.superlaserTimer > 0) {
       this.superlaserTimer = Math.max(0, this.superlaserTimer - dt);
-      const bsTarget = this.superlaserTarget === "battleship" && this.battleships[0] && !this.battleships[0].sunk
-        ? this.battleships[0]
+      const bsTarget = this.superlaserTarget === "battleship"
+        ? (this.battleships.find((b) => b.id === this.superlaserTargetBsId) ?? this.battleships[0] ?? null)
         : null;
-      const basePos = bsTarget ? bsTarget.group.position : this.ship.group.position;
-      const heading = bsTarget ? bsTarget.heading : this.supervisor.helm.heading;
-      const sweepOffset = ((5.0 - this.superlaserTimer) / 5.0 - 0.5) * (bsTarget ? 46 : 110);
-      const sx = basePos.x - Math.sin(heading) * sweepOffset;
-      const sz = bsTarget ? basePos.z - Math.cos(heading) * sweepOffset : basePos.z + Math.cos(heading) * sweepOffset;
-      this.orbitalAimX = sx;
-      this.orbitalAimZ = sz;
-      const beam = this.ensureOrbitalBeam();
-      beam.visible = true;
-      const pulse = 1.0 + Math.sin(t * 24) * 0.14;
-      beam.position.set(sx, 0, sz);
-      beam.scale.set(pulse, STATION_BASE_Y + 24, pulse);
-      this.fireOrbitalDeathRay();
-      if (this.superlaserTimer <= 0 && !this.orbitalLaserMode && this.orbitalBeamGroup) {
-        this.orbitalBeamGroup.visible = false;
-        this.say("☄️ Superlaser Strike complete!", "info");
+      if (this.superlaserTarget === "battleship" && !bsTarget) {
+        this.superlaserTimer = 0;
+        if (!this.orbitalLaserMode && this.orbitalBeamGroup) this.orbitalBeamGroup.visible = false;
+      } else {
+        const basePos = bsTarget ? bsTarget.group.position : this.ship.group.position;
+        const heading = bsTarget ? bsTarget.heading : this.supervisor.helm.heading;
+        const sweepOffset = ((5.0 - this.superlaserTimer) / 5.0 - 0.5) * (bsTarget ? 46 : 110);
+        const sx = basePos.x - Math.sin(heading) * sweepOffset;
+        const sz = bsTarget ? basePos.z - Math.cos(heading) * sweepOffset : basePos.z + Math.cos(heading) * sweepOffset;
+        this.orbitalAimX = sx;
+        this.orbitalAimZ = sz;
+        const beam = this.ensureOrbitalBeam();
+        beam.visible = true;
+        const pulse = 1.0 + Math.sin(t * 24) * 0.14;
+        beam.position.set(sx, 0, sz);
+        beam.scale.set(pulse, STATION_BASE_Y + 24, pulse);
+        this.fireOrbitalDeathRay();
+        if (this.superlaserTimer <= 0 && !this.orbitalLaserMode && this.orbitalBeamGroup) {
+          this.orbitalBeamGroup.visible = false;
+          this.say("☄️ Superlaser Strike complete!", "info");
+        }
       }
     }
 
@@ -1236,6 +1264,7 @@ export class Game {
               kind: "shell",
               life: 3.5,
               ownerIdx: bi,
+              ownerId: bs.id,
               targetKind: opp ? "battleship" : "freighter",
               targetId: opp?.id,
             });
@@ -1290,9 +1319,11 @@ export class Game {
             if (flatDir.lengthSq() > 4) {
               flatDir.normalize().multiplyScalar(30);
               proj.vel.lerp(flatDir, Math.min(1, dt * 1.4));
-              proj.mesh.quaternion.setFromUnitVectors(V(0, 1, 0), flatDir.clone().normalize());
             }
           }
+        }
+        if (proj.vel.lengthSq() > 0.01) {
+          proj.mesh.quaternion.setFromUnitVectors(V(0, 1, 0), proj.vel.clone().setY(0).normalize());
         }
         proj.pos.y = this.ocean.height(proj.pos.x, proj.pos.z, t) - 0.15;
         this.pn.emit(proj.pos.x, proj.pos.y + 0.25, proj.pos.z, 0, 1.2, 0, 1.0, 0.12, 0.4, 0.9, 0.95, 1.0, 0.5, 0, 0.3);
@@ -1301,12 +1332,13 @@ export class Game {
       proj.mesh.position.copy(proj.pos);
 
       const localHit = this.ship.group.worldToLocal(proj.pos.clone());
-      const hitFreighter = !this.isFreighterDestroyed() && Math.abs(localHit.x) < 11.5 && Math.abs(localHit.z) < 66 && localHit.y > -7 && localHit.y < 10;
+      const hitFreighterSec = this.freighterHitSection(localHit);
+      const hitFreighter = !!hitFreighterSec;
       const hitBs = proj.fromFleetStrike
         ? undefined
         : this.battleships.find(
             (bs, bi) =>
-              (proj.ownerIdx !== undefined ? bi !== proj.ownerIdx : bi > 0) &&
+              (proj.ownerId ? bs.id !== proj.ownerId : proj.ownerIdx !== undefined ? bi !== proj.ownerIdx : bi > 0) &&
               !bs.sunk &&
               pointInHull(proj.pos.x, proj.pos.z, this.battleshipHull(bs), 1.5) &&
               proj.pos.y > bs.group.position.y - 4 &&
@@ -1315,13 +1347,22 @@ export class Game {
       const hitWater = proj.kind === "shell" && proj.pos.y <= this.ocean.height(proj.pos.x, proj.pos.z, t);
       if (hitFreighter || hitBs || hitWater || proj.life <= 0) {
         if (hitFreighter) {
-          this.explode(localHit, proj.kind === "torpedo" || proj.kind === "missile" ? 1.85 : 1.15, "tnt");
+          const power = proj.kind === "torpedo" || proj.kind === "missile" ? 1.85 : 1.15;
+          this.explode(localHit, power, "tnt");
+          if (proj.kind === "torpedo" || (proj.kind === "missile" && localHit.y < 1.2)) {
+            this.breachFreighterHullAt(localHit, power);
+          }
+          const secDmg = proj.kind === "torpedo" ? 130 : proj.kind === "missile" ? 115 : 45;
+          const label = proj.kind === "torpedo" ? "TORPEDO" : proj.kind === "missile" ? "MISSILE" : "SHELL";
+          this.damageFreighterSectionAt(localHit, secDmg, label);
           this.say(
             proj.kind === "torpedo" ? "TORPEDO DIRECT HIT!" : proj.kind === "missile" ? "MISSILE DIRECT HIT!" : "CANNON SHELL IMPACT!",
             "alert",
           );
         } else if (hitBs) {
-          damageBattleship(hitBs, proj.kind === "shell" ? 160 : 280);
+          const rawDmg = proj.kind === "shell" ? 160 : 280;
+          damageBattleship(hitBs, rawDmg);
+          this.damageBattleshipPartAt(hitBs, proj.pos, rawDmg * 0.65);
           this.pn.emit(proj.pos.x, proj.pos.y + 1, proj.pos.z, 0, 8, 0, 5, 0.5, 0.9, 1, 0.5, 0.1, 0.8, -2, 1.0);
           this.audio.explosion(undefined, 0.7);
         } else if (hitWater) {
@@ -1389,16 +1430,17 @@ export class Game {
 
     let ev: { step: boolean; jumped: boolean; landed: number } = { step: false, jumped: false, landed: 0 };
     if (this.orbitalLaserMode) {
+      this.ridingBs = null;
       if (!this.tabletOpen && !this.paused && !this.ended) {
         const [lx, ly] = inp.consumeLook();
+        const [tx, ty] = inp.consumeTouchLook();
         const panScale = (this.orbitalZoomFov / 60) * 0.45;
-        this.orbitalAimX += lx * panScale;
-        this.orbitalAimZ += ly * panScale;
+        this.orbitalAimX += (lx + tx * 1.6) * panScale;
+        this.orbitalAimZ += (ly + ty * 1.6) * panScale;
+        const [mx, my] = inp.getMove();
         const panSpd = (this.orbitalZoomFov / 60) * 70 * dt;
-        if (inp.keys.has("KeyA") || inp.keys.has("ArrowLeft")) this.orbitalAimX -= panSpd;
-        if (inp.keys.has("KeyD") || inp.keys.has("ArrowRight")) this.orbitalAimX += panSpd;
-        if (inp.keys.has("KeyW") || inp.keys.has("ArrowUp")) this.orbitalAimZ -= panSpd;
-        if (inp.keys.has("KeyS") || inp.keys.has("ArrowDown")) this.orbitalAimZ += panSpd;
+        this.orbitalAimX += mx * panSpd;
+        this.orbitalAimZ -= my * panSpd;
         this.orbitalAimX = Math.max(-220, Math.min(220, this.orbitalAimX));
         this.orbitalAimZ = Math.max(-220, Math.min(220, this.orbitalAimZ));
         if (inp.keys.has("Equal") || inp.keys.has("NumpadAdd") || inp.keys.has("KeyQ")) {
@@ -1431,6 +1473,7 @@ export class Game {
       b.vz = 0;
       b.onGround = true;
     } else if (this.activeVessel === "battleship" && this.battleships[0]) {
+      this.ridingBs = null;
       if (this.battleships[0].sunk) {
         if (!this.isFreighterDestroyed()) {
           this.activeVessel = "freighter";
@@ -1448,66 +1491,103 @@ export class Game {
           }
         }
       }
-      const bs = this.battleships[0];
-      if (!this.tabletOpen && !this.paused && !this.ended) {
-        const [lx, ly] = inp.consumeLook();
-        const sens = 0.0022 * st.sens;
-        p.yaw -= lx * sens;
-        p.pitch = Math.max(-0.55, Math.min(0.65, p.pitch - ly * sens * (st.invertY ? -1 : 1)));
-        // WASD Battleship driving
-        if (inp.keys.has("KeyW") || inp.keys.has("ArrowUp")) bs.targetSpeed = Math.min(16, bs.targetSpeed + 10 * dt);
-        else if (inp.keys.has("KeyS") || inp.keys.has("ArrowDown")) bs.targetSpeed = Math.max(-8, bs.targetSpeed - 10 * dt);
-        if (inp.keys.has("KeyA") || inp.keys.has("ArrowLeft")) bs.rudderDeg = Math.max(-MAX_RUDDER_DEG, bs.rudderDeg - 35 * dt);
-        else if (inp.keys.has("KeyD") || inp.keys.has("ArrowRight")) bs.rudderDeg = Math.min(MAX_RUDDER_DEG, bs.rudderDeg + 35 * dt);
-        else bs.rudderDeg += (0 - bs.rudderDeg) * Math.min(1, dt * 1.5);
-        // Auto-acquire valid Target Lock if none, and allow [X] to cycle Target Lock
-        if (!this.resolveTargetPos(this.lockedTarget)) {
-          this.lockedTarget = !this.isFreighterDestroyed()
-            ? { kind: "freighter" }
-            : (() => {
-                const enemy = this.battleships.find((b2, bi) => bi > 0 && !b2.sunk);
-                return enemy ? { kind: "battleship", id: enemy.id } : null;
-              })();
+      if (this.activeVessel === "battleship" && this.battleships[0] && !this.battleships[0].sunk) {
+        const bs = this.battleships[0];
+        if (!this.tabletOpen && !this.paused && !this.ended) {
+          const [lx, ly] = inp.consumeLook();
+          const [tx, ty] = inp.consumeTouchLook();
+          const sens = 0.0022 * st.sens;
+          const tSens = 0.0045 * st.touchSens;
+          p.yaw -= lx * sens + tx * tSens;
+          p.pitch = Math.max(-0.55, Math.min(0.65, p.pitch - (ly * sens + ty * tSens) * (st.invertY ? -1 : 1)));
+          // WASD / touch joystick Battleship driving
+          const [mx, my] = inp.getMove();
+          if (my > 0.1) bs.targetSpeed = Math.min(16, bs.targetSpeed + 10 * my * dt);
+          else if (my < -0.1) bs.targetSpeed = Math.max(-8, bs.targetSpeed + 10 * my * dt);
+          if (mx < -0.1) bs.rudderDeg = Math.max(-MAX_RUDDER_DEG, bs.rudderDeg + 35 * mx * dt);
+          else if (mx > 0.1) bs.rudderDeg = Math.min(MAX_RUDDER_DEG, bs.rudderDeg + 35 * mx * dt);
+          else bs.rudderDeg += (0 - bs.rudderDeg) * Math.min(1, dt * 1.5);
+          // Auto-acquire valid Target Lock if none, and allow [X] to cycle Target Lock
+          if (!this.resolveTargetPos(this.lockedTarget)) {
+            this.lockedTarget = !this.isFreighterDestroyed()
+              ? { kind: "freighter" }
+              : (() => {
+                  const enemy = this.battleships.find((b2, bi) => bi > 0 && !b2.sunk);
+                  return enemy ? { kind: "battleship", id: enemy.id } : null;
+                })();
+          }
+          if (inp.pressed("targetLock")) this.cycleBattleshipTargetLock();
+          // Fire main cannons (LMB), Torpedo (RMB / Q), Missile (E / F)
+          if (inp.fire) this.fireBattleshipCannon();
+          if (inp.pressed("alt") || inp.pressed("last")) this.fireBattleshipTorpedo();
+          if (inp.pressed("interact") || inp.pressed("flash")) this.fireBattleshipMissile();
         }
-        if (inp.pressed("targetLock")) this.cycleBattleshipTargetLock();
-        // Fire main cannons (LMB), Torpedo (RMB / Q), Missile (E / F)
-        if (inp.fire) this.fireBattleshipCannon();
-        if (inp.pressed("alt") || inp.pressed("last")) this.fireBattleshipTorpedo();
-        if (inp.pressed("interact") || inp.pressed("flash")) this.fireBattleshipMissile();
+        // Keep FPS body safely parked on Freighter deck (never falling into void)
+        b.x = 9.8;
+        b.y = DECK_Y;
+        b.z = -42;
+        b.vx = 0;
+        b.vy = 0;
+        b.vz = 0;
+        b.onGround = true;
       }
-      // Keep FPS body safely parked on Freighter deck (never falling into void)
-      b.x = 9.8;
-      b.y = DECK_Y;
-      b.z = -42;
-      b.vx = 0;
-      b.vy = 0;
-      b.vz = 0;
-      b.onGround = true;
     } else {
+      if (ridePrevBs) {
+        ridePrevBs.group.updateMatrixWorld(true);
+        const wPos = this.ridingLocal.clone().applyMatrix4(ridePrevBs.group.matrixWorld);
+        this.ship.group.worldToLocal(wPos);
+        b.x = wPos.x;
+        b.y = wPos.y;
+        b.z = wPos.z;
+      }
       // Spieler
+      const rideHeadingShift = ridePrevBs ? this.supervisor.helm.heading : 0;
+      if (rideHeadingShift) p.yaw += rideHeadingShift;
+      const waterFn = ridePrevBs
+        ? (lx: number, ly: number, lz: number) => {
+            const w = this.worldPos(V(lx, ly, lz), V());
+            return ly + (this.ocean.height(w.x, w.z, t) - w.y);
+          }
+        : this.waterAt;
       ev = p.update(
         dt,
         inp,
-        { world: this.ship.world, slide: this.sim.tiltDeg > 6 ? this.sim.slideVector() : [0, 0], water: this.waterAt, sens: st.sens, touchSens: st.touchSens, invertY: st.invertY, noclip: this.supervisor.isNoclip() },
+        { world: this.ship.world, slide: this.sim.tiltDeg > 6 && !ridePrevBs ? this.sim.slideVector() : [0, 0], water: waterFn, sens: st.sens, touchSens: st.touchSens, invertY: st.invertY, noclip: this.supervisor.isNoclip() },
         controls,
       );
-      // Walkable Battleship decks when walking in FPS mode
-      if (!this.supervisor.isNoclip()) {
+      if (rideHeadingShift) p.yaw -= rideHeadingShift;
+      // Walkable Battleship decks when walking in FPS mode (world-accurate deck height & ship riding)
+      this.ridingBs = null;
+      if (this.theatre === "maritime" && !this.supervisor.isNoclip()) {
         const pw = this.worldPos(V(b.x, b.y, b.z), V());
         for (const bs of this.battleships) {
           if (bs.sunk) continue;
-          if (pointInHull(pw.x, pw.z, this.battleshipHull(bs), 0.5)) {
-            const deckY = bs.group.position.y + bs.deckBounds.deckY;
-            if (b.y < deckY) {
-              b.y = deckY;
+          const deckBox: HullBox = {
+            x: bs.baseX,
+            z: bs.baseZ,
+            heading: bs.heading,
+            halfWidth: bs.deckBounds.maxX,
+            halfLength: bs.deckBounds.maxZ,
+          };
+          const deckWorldY = bs.group.position.y + bs.deckBounds.deckY;
+          if (pointInHull(pw.x, pw.z, deckBox, 0.2) && pw.y >= deckWorldY - 1.8 && pw.y <= deckWorldY + 6.0) {
+            this.ridingBs = bs;
+            const deckLocal = this.ship.group.worldToLocal(V(pw.x, deckWorldY, pw.z));
+            if (b.y < deckLocal.y) {
+              b.y = deckLocal.y;
               b.vy = 0;
               b.onGround = true;
             }
+            break;
           }
         }
       }
     }
-    if (this.helmMode) this.handleHelm(dt);
+    if (this.dead || this.ended || this.escapeState || this.activeVessel !== "freighter" || this.theatre !== "maritime") {
+      this.helmMode = false;
+    }
+    if (this.helmMode && !this.tabletOpen) this.handleHelm(dt);
+    else inp.consumeHelmSteps();
     this.lastLookDX = 0;
     if (ev.step) {
       const inB = this.indoor > 0.5;
@@ -1529,16 +1609,12 @@ export class Game {
         this.say("Returned to Space Station Airlock.", "info");
       }
     } else {
-      // Sicherheitsnetz: aus der Welt gefallen
-      if (b.y < -25 || !isFinite(b.x + b.y + b.z)) {
+      // Sicherheitsnetz: aus der Welt gefallen (skip Freighter-local Y floor while riding a Battleship)
+      if ((!this.ridingBs && b.y < -25) || !isFinite(b.x + b.y + b.z)) {
         this.damagePlayer(1000, "fell out of the world");
       }
       // Sicherheitsnetz: Schiff verlassen (außer wenn auf einem begehbaren Battleship-Deck)
-      const pwSafe = this.worldPos(V(b.x, b.y, b.z), V());
-      const onAnyBsDeck = this.battleships.some(
-        (bs) => !bs.sunk && pointInHull(pwSafe.x, pwSafe.z, this.battleshipHull(bs), 1.0),
-      );
-      if (controls && !this.supervisor.isNoclip() && !onAnyBsDeck && (Math.abs(b.x) > 13.5 || b.z < -72 || b.z > 72 || b.y > 25)) {
+      if (controls && !this.supervisor.isNoclip() && !this.ridingBs && (Math.abs(b.x) > 13.5 || b.z < -72 || b.z > 72 || b.y > 25)) {
         p.teleport(9.8, DECK_Y, -42, Math.PI);
         this.say("Placed back on deck.", "warn");
       }
@@ -1579,7 +1655,7 @@ export class Game {
     this.indoor += ((inside ? 1 : 0) - this.indoor) * Math.min(1, dt * 3);
 
     // Always allow [TAB] Tablet & [V] Ship Switch even in Battleship mode or with Tablet open
-    if (!this.dead && !this.ended) {
+    if (!this.dead && !this.ended && !this.escapeState) {
       if (inp.pressed("status")) this.toggleTablet();
       if (inp.pressed("switchShip")) this.switchVessel();
     }
@@ -1728,12 +1804,6 @@ export class Game {
       this.godModeHoldProgress = 0;
     }
 
-    if (inp.pressed("status")) {
-      this.toggleTablet();
-    }
-    if (inp.pressed("switchShip")) {
-      this.switchVessel();
-    }
     if (inp.pressed("terminal")) {
       this.terminalPinned = !this.terminalPinned;
       this.audio.click();
@@ -1881,6 +1951,8 @@ export class Game {
       }
       this.activeVessel = "freighter";
       this.helmMode = false;
+      this.ridingBs = null;
+      this.supervisor.helm.rudderCmd = 0;
       this.ship.group.visible = true;
       this.player.body.vx = 0;
       this.player.body.vy = 0;
@@ -1977,6 +2049,8 @@ export class Game {
         vel: shellDir.multiplyScalar(115),
         kind: "shell",
         life: 3.5,
+        ownerIdx: this.battleships.indexOf(bs),
+        ownerId: bs.id,
         targetKind,
         targetId,
         fromFleetStrike,
@@ -2010,6 +2084,8 @@ export class Game {
       vel: flatDir.multiplyScalar(30),
       kind: "torpedo",
       life: 10.0,
+      ownerIdx: this.battleships.indexOf(bs),
+      ownerId: bs.id,
       targetKind,
       targetId,
       fromFleetStrike,
@@ -2035,6 +2111,8 @@ export class Game {
       vel: V(0, 28, 0),
       kind: "missile",
       life: 10.0,
+      ownerIdx: this.battleships.indexOf(bs),
+      ownerId: bs.id,
       targetKind,
       targetId,
       fromFleetStrike,
@@ -2141,6 +2219,7 @@ export class Game {
         for (const [v, d] of [[a, dmg.dmgA], [b, dmg.dmgB]] as [Vessel, number][]) {
           if (v.bs) {
             const sunkNow = damageBattleship(v.bs, d);
+            this.damageBattleshipPartAt(v.bs, cp, d * 0.45);
             report += ` ${v.bs.id.toUpperCase()} −${Math.round(d * (1 - v.bs.armorAbsorption))} HP`;
             if (sunkNow) this.say(`⚓ ${v.bs.id.toUpperCase()} SUNK by collision!`, "alert");
           } else {
@@ -2148,7 +2227,14 @@ export class Game {
             if (d > 60) {
               const local = this.ship.group.worldToLocal(cp.clone());
               local.y = -2.5;
-              this.explode(local, Math.min(1.6, 0.6 + d / 400), "tnt");
+              const power = Math.min(1.6, 0.6 + d / 400);
+              const holesBefore = this.ship.compartments.reduce((s, c) => s + c.holes.length, 0);
+              this.explode(local, power, "tnt");
+              const holesAfter = this.ship.compartments.reduce((s, c) => s + c.holes.length, 0);
+              if (holesAfter === holesBefore) {
+                this.breachFreighterHullAt(local, power);
+              }
+              this.damageFreighterSectionAt(local, Math.min(120, d * 0.45), "COLLISION");
             }
           }
         }
@@ -2261,12 +2347,7 @@ export class Game {
     while (this.ship.holeGroup.children.length > 0) {
       const ch = this.ship.holeGroup.children[0];
       this.ship.holeGroup.remove(ch);
-      if (ch instanceof THREE.Mesh) {
-        ch.geometry?.dispose();
-        const mat = ch.material;
-        if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
-        else mat?.dispose();
-      }
+      this.disposeObject3D(ch);
     }
     this.supervisor.keelFractured = false;
     this.supervisor.engineDestroyed = false;
@@ -2276,6 +2357,10 @@ export class Game {
     this.supervisor.helm.telegraph = "stop";
     this.supervisor.helm.heading = 0;
     this.helmMode = false;
+    this.ridingBs = null;
+    this.superlaserTimer = 0;
+    this.superlaserTargetBsId = null;
+    if (!this.orbitalLaserMode && this.orbitalBeamGroup) this.orbitalBeamGroup.visible = false;
     this.engineExploded = false;
     this.ship.group.visible = true;
     this.ship.group.position.set(0, 0, 0);
@@ -2362,14 +2447,13 @@ export class Game {
 
   triggerSuperlaserStrike() {
     if (this.theatre === "orbital") return;
-    this.superlaserTarget = this.activeVessel === "battleship" && this.battleships[0] && !this.battleships[0].sunk
-      ? "battleship"
-      : "freighter";
+    const bs = this.battleships[0];
+    const targetBs = this.activeVessel === "battleship" && bs && !bs.sunk;
+    this.superlaserTarget = targetBs ? "battleship" : "freighter";
+    this.superlaserTargetBsId = targetBs ? bs.id : null;
     this.superlaserTimer = 5.0;
     if (this.tabletOpen) this.toggleTablet(false);
-    const label = this.superlaserTarget === "battleship" && this.battleships[0]
-      ? this.battleships[0].id.toUpperCase()
-      : "MV NORDWIND";
+    const label = targetBs ? bs.id.toUpperCase() : "MV NORDWIND";
     this.say(`☄️ SUPERLASER STRIKE (5s) ON ${label}!`, "alert");
     this.terminal.push(this.time, "alert", "ORBITAL", `5s Superlaser Strike activated over ${label}`);
   }
@@ -2477,6 +2561,234 @@ export class Game {
     }
   }
 
+  private disposeObject3D(obj: THREE.Object3D) {
+    obj.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.geometry?.dispose();
+        const mat = child.material;
+        if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+        else mat?.dispose();
+      }
+    });
+  }
+
+  private destroyFreighterSection(sec: ShipSection, sourceLabel: string) {
+    if (sec.destroyed) return;
+    sec.destroyed = true;
+    sec.group.visible = false;
+    for (const col of sec.colliders) col.enabled = false;
+    const secWorld = this.worldPos(sec.center, V());
+    this.shatterIntoPieces(secWorld, 0x475569, 22);
+    const comp = this.ship.compartments.find((c) => c.id === sec.id);
+    if (comp) {
+      comp.water = comp.volume;
+      comp.fill = 1;
+      comp.holes.length = 0;
+    }
+    let detached = 0;
+    for (const cr of this.ship.crates) {
+      if (cr.dead || detached >= 6) continue;
+      if (Math.hypot(cr.pos.x - sec.center.x, cr.pos.z - sec.center.z) <= sec.radius + 6) {
+        cr.dead = true;
+        cr.collider.enabled = false;
+        cr.mesh.visible = false;
+        detached++;
+        const cw = this.worldPos(cr.pos, V());
+        const crateMesh = new THREE.Mesh(
+          new THREE.BoxGeometry(1.1, 0.9, 1.1),
+          new THREE.MeshStandardMaterial({ color: 0xb45309, roughness: 0.75 }),
+        );
+        crateMesh.position.copy(cw);
+        this.scene.add(crateMesh);
+        let vy = 3 + Math.random() * 4;
+        const vx = (Math.random() - 0.5) * 6;
+        const vz = (Math.random() - 0.5) * 6;
+        let life = 18;
+        this.effects.push({
+          update: (dt2) => {
+            life -= dt2;
+            const oh = this.ocean.height(crateMesh.position.x, crateMesh.position.z, this.time);
+            if (crateMesh.position.y < oh) {
+              vy += (oh - crateMesh.position.y) * 18 * dt2;
+              vy *= Math.exp(-dt2 * 4);
+            } else {
+              vy -= 14 * dt2;
+            }
+            crateMesh.position.x += vx * Math.exp(-Math.max(0, 18 - life) * 0.4) * dt2;
+            crateMesh.position.z += vz * Math.exp(-Math.max(0, 18 - life) * 0.4) * dt2;
+            crateMesh.position.y += vy * dt2;
+            crateMesh.rotation.x += dt2 * 0.7;
+            crateMesh.rotation.z += dt2 * 0.5;
+            return life > 0;
+          },
+          dispose: () => {
+            this.scene.remove(crateMesh);
+            crateMesh.geometry.dispose();
+            (crateMesh.material as THREE.Material).dispose();
+          },
+        });
+      }
+    }
+    for (const m of [...this.deckCrew, ...this.supervisor.crew]) {
+      if (Math.hypot(m.x - sec.center.x, m.z - sec.center.z) <= sec.radius + 4) {
+        m.onGround = false;
+        m.vy = 2.5;
+        m.targetId = null;
+      }
+    }
+    if (sec.id === "engine") {
+      this.supervisor.engineDestroyed = true;
+      this.engineExploded = true;
+    }
+    this.sim.sinking = true;
+    this.say(`☄️ ${sourceLabel} OBLITERATED: ${sec.name.toUpperCase()}!`, "alert");
+    this.terminal.push(this.time, "alert", "DAMAGE", `Freighter section destroyed (${sourceLabel}): ${sec.name}`);
+    if (this.ship.sections.every((s) => s.destroyed)) {
+      for (const c of this.ship.compartments) {
+        c.water = c.volume;
+        c.fill = 1;
+      }
+      this.sim.sinking = true;
+      this.sim.forceSink = true;
+    }
+  }
+
+  private freighterHitSection(localPos: THREE.Vector3): ShipSection | null {
+    if (this.isFreighterDestroyed()) return null;
+    if (localPos.z < -72 || localPos.z > 72 || localPos.y < -6.5 || localPos.y > 23) return null;
+    const clampedZ = Math.max(-70, Math.min(70, localPos.z));
+    const maxHalfW = Math.max(4.5, hullHalfWidth(clampedZ) + 1.4);
+    if (Math.abs(localPos.x) > maxHalfW) return null;
+
+    const isAboveDeck = localPos.y > 4.6;
+    let bestAlive: ShipSection | null = null;
+    let bestAliveDist = Infinity;
+    let bestAny: ShipSection | null = null;
+    let bestAnyDist = Infinity;
+
+    for (const sec of this.ship.sections) {
+      if (isAboveDeck && sec.center.y <= 3.8) continue;
+      const d = Math.hypot(
+        localPos.x - sec.center.x,
+        (localPos.y - sec.center.y) * 0.55,
+        localPos.z - sec.center.z,
+      );
+      if (d < bestAnyDist) {
+        bestAnyDist = d;
+        bestAny = sec;
+      }
+      if (!sec.destroyed && d < bestAliveDist) {
+        bestAliveDist = d;
+        bestAlive = sec;
+      }
+    }
+
+    if (!bestAlive) return null;
+    if (
+      bestAny?.destroyed &&
+      bestAnyDist <= bestAny.radius * 0.9 &&
+      bestAliveDist > bestAlive.radius + 1.5
+    ) {
+      return null;
+    }
+    if (bestAliveDist <= bestAlive.radius + 7) return bestAlive;
+    return !isAboveDeck && bestAliveDist <= bestAlive.radius + 11 ? bestAlive : null;
+  }
+
+  private damageFreighterSectionAt(localPos: THREE.Vector3, dmg: number, sourceLabel: string) {
+    let sec = this.freighterHitSection(localPos);
+    if (!sec) {
+      let bestDist = Infinity;
+      for (const s of this.ship.sections) {
+        if (s.destroyed) continue;
+        const d = Math.hypot(localPos.x - s.center.x, (localPos.y - s.center.y) * 0.5, localPos.z - s.center.z);
+        if (d < bestDist && d <= s.radius + 14) {
+          bestDist = d;
+          sec = s;
+        }
+      }
+    }
+    if (!sec || sec.destroyed) return;
+    sec.hp = Math.max(0, sec.hp - dmg);
+    if (sec.hp <= 0) {
+      this.destroyFreighterSection(sec, sourceLabel);
+    }
+  }
+
+  private breachFreighterHullAt(localPos: THREE.Vector3, power: number) {
+    let comp = this.compAt(localPos.x, Math.min(localPos.y, 0.5), localPos.z);
+    if (!comp) {
+      let bestDist = Infinity;
+      for (const c of this.ship.compartments) {
+        const sec = this.ship.sections.find((s) => s.id === c.id);
+        if (sec?.destroyed) continue;
+        const cz = Math.max(c.min.z, Math.min(c.max.z, localPos.z));
+        const d = Math.abs(localPos.z - cz);
+        if (d < bestDist) {
+          bestDist = d;
+          comp = c;
+        }
+      }
+    }
+    if (!comp) return;
+    const sec = this.ship.sections.find((s) => s.id === comp.id);
+    if (sec?.destroyed) return;
+
+    const bz = Math.max(comp.min.z + 0.5, Math.min(comp.max.z - 0.5, localPos.z));
+    const isBottom = Math.abs(localPos.x) < 2.5;
+    const side = localPos.x >= 0 ? 1 : -1;
+    const bx = isBottom
+      ? localPos.x
+      : side * Math.min(WI - 0.25, Math.max(WI - 1.5, Math.abs(localPos.x)));
+    const by = isBottom
+      ? comp.min.y + 0.6
+      : Math.max(comp.min.y + 0.6, Math.min(-2.35, localPos.y));
+    const breachPos = V(bx, by, bz);
+
+    if (comp.id === "engine") {
+      this.triggerEngineExplosion("torpedo or hull impact in engine spaces");
+    }
+    const before = comp.holes.length;
+    const wp = this.worldPos(breachPos, V());
+    const seaH = this.ocean.height(wp.x, wp.z, this.time);
+    const hole = this.sim.addBreach(comp, breachPos, power, seaH);
+    if (hole) {
+      if (comp.holes.length > before) this.makeHoleVisual(hole);
+      this.say(`HULL BREACH in ${comp.name}! Water is flooding in!`, "alert");
+      this.audio.creak(1.3);
+      this.shake = Math.min(1.8, this.shake + 0.5);
+      this.terminal.push(this.time, "alert", "DAMAGE", `Hull breach in ${comp.name} (${hole.area.toFixed(1)} m2)`);
+    }
+  }
+
+  private damageBattleshipPartAt(bs: Battleship, worldPos: THREE.Vector3, rawDmg: number) {
+    bs.group.updateMatrixWorld(true);
+    const partWorld = V();
+    let bestIdx = -1;
+    let bestDist = Infinity;
+    for (const [pi, part] of bs.parts.entries()) {
+      if (part.destroyed) continue;
+      partWorld.copy(part.localCenter).applyMatrix4(bs.group.matrixWorld);
+      const d = partWorld.distanceTo(worldPos);
+      if (d <= part.radius + 7 && d < bestDist) {
+        bestDist = d;
+        bestIdx = pi;
+      }
+    }
+    if (bestIdx < 0) return;
+    const part = bs.parts[bestIdx];
+    part.hp = Math.max(0, part.hp - rawDmg);
+    if (part.hp <= 0 && !part.destroyed) {
+      part.destroyed = true;
+      part.object.visible = false;
+      if (bestIdx >= 6 && bs.turrets[bestIdx - 6]) {
+        bs.turrets[bestIdx - 6].destroyed = true;
+      }
+      partWorld.copy(part.localCenter).applyMatrix4(bs.group.matrixWorld);
+      this.shatterIntoPieces(partWorld, 0x64748b, 16);
+    }
+  }
+
   fireOrbitalDeathRay() {
     const tx = this.orbitalAimX;
     const tz = this.orbitalAimZ;
@@ -2567,96 +2879,17 @@ export class Game {
     // Multi-part Freighter section destruction
     this.ship.group.updateMatrixWorld(true);
     const secWorld = V();
-    let anyFreighterHit = false;
     for (const sec of this.ship.sections) {
       if (sec.destroyed) continue;
       secWorld.copy(sec.center).applyMatrix4(this.ship.group.matrixWorld);
       const dist = Math.hypot(tx - secWorld.x, tz - secWorld.z);
       if (dist <= sec.radius + 9) {
-        anyFreighterHit = true;
         const dmg = 95 * Math.max(0.35, 1 - dist / (sec.radius + 14));
         sec.hp = Math.max(0, sec.hp - dmg);
         if (sec.hp <= 0) {
-          sec.destroyed = true;
-          sec.group.visible = false;
-          for (const col of sec.colliders) col.enabled = false;
-          this.shatterIntoPieces(secWorld, 0x475569, 22);
-          const comp = this.ship.compartments.find((c) => c.id === sec.id);
-          if (comp) {
-            comp.water = comp.volume;
-            comp.fill = 1;
-            comp.holes.length = 0;
-          }
-          // Detach nearby crates so items/crates fall into the ocean and float
-          let detached = 0;
-          for (const cr of this.ship.crates) {
-            if (cr.dead || detached >= 6) continue;
-            if (Math.hypot(cr.pos.x - sec.center.x, cr.pos.z - sec.center.z) <= sec.radius + 6) {
-              cr.dead = true;
-              cr.collider.enabled = false;
-              cr.mesh.visible = false;
-              detached++;
-              const cw = this.worldPos(cr.pos, V());
-              const crateMesh = new THREE.Mesh(
-                new THREE.BoxGeometry(1.1, 0.9, 1.1),
-                new THREE.MeshStandardMaterial({ color: 0xb45309, roughness: 0.75 }),
-              );
-              crateMesh.position.copy(cw);
-              this.scene.add(crateMesh);
-              let vy = 3 + Math.random() * 4;
-              const vx = (Math.random() - 0.5) * 6;
-              const vz = (Math.random() - 0.5) * 6;
-              let life = 18;
-              this.effects.push({
-                update: (dt2) => {
-                  life -= dt2;
-                  const oh = this.ocean.height(crateMesh.position.x, crateMesh.position.z, this.time);
-                  if (crateMesh.position.y < oh) {
-                    vy += (oh - crateMesh.position.y) * 18 * dt2;
-                    vy *= Math.exp(-dt2 * 4);
-                  } else {
-                    vy -= 14 * dt2;
-                  }
-                  crateMesh.position.x += vx * Math.exp(-Math.max(0, 18 - life) * 0.4) * dt2;
-                  crateMesh.position.z += vz * Math.exp(-Math.max(0, 18 - life) * 0.4) * dt2;
-                  crateMesh.position.y += vy * dt2;
-                  crateMesh.rotation.x += dt2 * 0.7;
-                  crateMesh.rotation.z += dt2 * 0.5;
-                  return life > 0;
-                },
-                dispose: () => {
-                  this.scene.remove(crateMesh);
-                  crateMesh.geometry.dispose();
-                  (crateMesh.material as THREE.Material).dispose();
-                },
-              });
-            }
-          }
-          // Nudge crew on obliterated section so they fall and swim
-          for (const m of [...this.deckCrew, ...this.supervisor.crew]) {
-            if (Math.hypot(m.x - sec.center.x, m.z - sec.center.z) <= sec.radius + 4) {
-              m.onGround = false;
-              m.vy = 2.5;
-              m.targetId = null;
-            }
-          }
-          if (sec.id === "engine") {
-            this.supervisor.engineDestroyed = true;
-            this.engineExploded = true;
-          }
-          this.sim.sinking = true;
-          this.say(`☄️ ORBITAL LASER OBLITERATED: ${sec.name.toUpperCase()}!`, "alert");
-          this.terminal.push(this.time, "alert", "DAMAGE", `Freighter section destroyed: ${sec.name}`);
+          this.destroyFreighterSection(sec, "ORBITAL LASER");
         }
       }
-    }
-    if (anyFreighterHit && this.ship.sections.every((s) => s.destroyed)) {
-      for (const c of this.ship.compartments) {
-        c.water = c.volume;
-        c.fill = 1;
-      }
-      this.sim.sinking = true;
-      this.sim.forceSink = true;
     }
 
     // Multi-part Battleship destruction
@@ -2748,30 +2981,53 @@ export class Game {
     this.helmThrottleCooldown = Math.max(0, this.helmThrottleCooldown - dt);
 
     if (inp.pressed("interact")) {
+      inp.consumeHelmSteps();
       this.helmMode = false;
       this.say("Exited Helm Mode – walking freely", "info");
       this.audio.click();
       return;
     }
 
-    if (this.helmThrottleCooldown <= 0) {
-      if (inp.keys.has("KeyW") || inp.keys.has("ArrowUp")) {
+    const [upTaps, downTaps] = inp.consumeHelmSteps();
+
+    const [mx, my] = inp.getMove();
+    const holdUp = inp.keys.has("KeyW") || inp.keys.has("ArrowUp") || my > 0.45;
+    const holdDown = inp.keys.has("KeyS") || inp.keys.has("ArrowDown") || my < -0.45;
+
+    if (upTaps > 0) {
+      for (let i = 0; i < upTaps; i++) helm.telegraph = stepTelegraph(helm.telegraph, 1);
+      this.helmThrottleCooldown = 0.42;
+      this.audio.click();
+      this.say(`Engine Telegraph: ${helm.telegraph.toUpperCase()} (Target: ${TELEGRAPH_SPEED[helm.telegraph]} m/s)`, "good");
+    } else if (downTaps > 0) {
+      for (let i = 0; i < downTaps; i++) helm.telegraph = stepTelegraph(helm.telegraph, -1);
+      this.helmThrottleCooldown = 0.42;
+      this.audio.click();
+      this.say(`Engine Telegraph: ${helm.telegraph.toUpperCase()} (Target: ${TELEGRAPH_SPEED[helm.telegraph]} m/s)`, "warn");
+    } else if (this.helmThrottleCooldown <= 0) {
+      if (holdUp) {
         helm.telegraph = stepTelegraph(helm.telegraph, 1);
-        this.helmThrottleCooldown = 0.35;
+        this.helmThrottleCooldown = 0.42;
         this.audio.click();
         this.say(`Engine Telegraph: ${helm.telegraph.toUpperCase()} (Target: ${TELEGRAPH_SPEED[helm.telegraph]} m/s)`, "good");
-      } else if (inp.keys.has("KeyS") || inp.keys.has("ArrowDown")) {
+      } else if (holdDown) {
         helm.telegraph = stepTelegraph(helm.telegraph, -1);
-        this.helmThrottleCooldown = 0.35;
+        this.helmThrottleCooldown = 0.42;
         this.audio.click();
         this.say(`Engine Telegraph: ${helm.telegraph.toUpperCase()} (Target: ${TELEGRAPH_SPEED[helm.telegraph]} m/s)`, "warn");
       }
     }
 
-    if (inp.keys.has("KeyA") || inp.keys.has("ArrowLeft")) {
-      helm.rudderCmd = Math.max(-MAX_RUDDER_DEG, helm.rudderCmd - 28 * dt);
-    } else if (inp.keys.has("KeyD") || inp.keys.has("ArrowRight")) {
-      helm.rudderCmd = Math.min(MAX_RUDDER_DEG, helm.rudderCmd + 28 * dt);
+    const steerAxis =
+      inp.keys.has("KeyA") || inp.keys.has("ArrowLeft")
+        ? -1
+        : inp.keys.has("KeyD") || inp.keys.has("ArrowRight")
+          ? 1
+          : Math.abs(mx) > 0.15
+            ? mx
+            : 0;
+    if (steerAxis !== 0) {
+      helm.rudderCmd = Math.max(-MAX_RUDDER_DEG, Math.min(MAX_RUDDER_DEG, helm.rudderCmd + 28 * steerAxis * dt));
     } else {
       helm.rudderCmd += (0 - helm.rudderCmd) * Math.min(1, dt * 1.2);
     }
@@ -3052,6 +3308,7 @@ export class Game {
     if (this.dyns.length >= 24) {
       const oldest = this.dyns.shift()!;
       this.ship.group.remove(oldest.mesh);
+      this.disposeObject3D(oldest.mesh);
     }
     const { g, led } = this.makeTntMesh();
     g.position.copy(pos);
@@ -3256,6 +3513,7 @@ export class Game {
         if (b.y < -30) {
           this.dyns.splice(this.dyns.indexOf(d), 1);
           this.ship.group.remove(d.mesh);
+          this.disposeObject3D(d.mesh);
           continue;
         }
         d.mesh.position.set(b.x, b.y + 0.12, b.z);
@@ -3577,7 +3835,7 @@ export class Game {
     this.prompt = "";
     this.promptKind = "";
     this.promptTarget = null;
-    if (this.dead || this.escapeState) return;
+    if (this.dead || this.escapeState || this.ended || this.tabletOpen || this.orbitalLaserMode) return;
     if (this.activeVessel === "battleship") return;
     const eye = this.eyeLocal();
     const dir = this.lookDirLocal();
@@ -3901,6 +4159,7 @@ export class Game {
       boat.position.x = e.startPos.x + (tx - e.startPos.x) * ease;
       boat.position.z = e.startPos.z + (tz - e.startPos.z) * ease;
       boat.position.y = e.startPos.y + (sea + 0.35 - e.startPos.y) * ease;
+      boat.rotation.order = "YXZ";
       boat.rotation.y = Math.atan2(e.dir.x, e.dir.z);
       boat.rotation.x = Math.sin(e.t * 2) * 0.03;
       boat.rotation.z = Math.sin(e.t * 1.7) * 0.05;
@@ -3919,8 +4178,9 @@ export class Game {
       const h = this.ocean.height(boat.position.x, boat.position.z, this.time);
       const hf = this.ocean.height(boat.position.x + e.dir.x * 3, boat.position.z + e.dir.z * 3, this.time);
       boat.position.y += (h + 0.35 - boat.position.y) * Math.min(1, dt * 6);
-      boat.rotation.z = Math.sin(e.t * 1.6) * 0.06 + (hf - h) * 0.05;
-      boat.rotation.x = Math.sin(e.t * 1.3) * 0.04;
+      boat.rotation.order = "YXZ";
+      boat.rotation.x = Math.sin(e.t * 1.3) * 0.04 - (hf - h) * 0.08;
+      boat.rotation.z = Math.sin(e.t * 1.6) * 0.06;
       // Gischt
       if (Math.random() < dt * 40) this.pn.emit(boat.position.x - e.dir.x * 3.5, h, boat.position.z - e.dir.z * 3.5 + (Math.random() - 0.5), -e.dir.x * 2, 1.5, -e.dir.z * 2 + (Math.random() - 0.5), 1.2, 0.5, 1.4, 0.9, 0.95, 1, 0.4, 3, 0.5);
       if (!this.sim.sinking) this.sim.forceSink = true;
@@ -4163,10 +4423,19 @@ export class Game {
     const lookRight = V(Math.cos(p.yaw), 0, -Math.sin(p.yaw));
     eye.addScaledVector(lookRight, bobX + shk.x);
     const pwCam = this.worldPos(V(p.body.x, p.body.y, p.body.z), V());
-    const onBsDeck = this.battleships.some(
-      (bs) => !bs.sunk && pointInHull(pwCam.x, pwCam.z, this.battleshipHull(bs), 0.8),
-    );
-    const ew = this.theatre === "orbital" ? eye : this.worldPos(eye, V());
+    const onBsDeck =
+      !!this.ridingBs ||
+      this.battleships.some(
+        (bs) =>
+          !bs.sunk &&
+          pointInHull(pwCam.x, pwCam.z, this.battleshipHull(bs), 0.8) &&
+          pwCam.y >= bs.group.position.y + bs.deckBounds.deckY - 1.8,
+      );
+    const ew = this.theatre === "orbital"
+      ? eye
+      : onBsDeck
+        ? pwCam.clone().add(V(0, eye.y - p.body.y, 0))
+        : this.worldPos(eye, V());
     cam.position.copy(ew);
     const lean = Math.sin(p.bob) * 0.004 * (p.speed > 1 ? 1 : 0);
     this.tmpE.set(p.pitch + (Math.random() - 0.5) * 0.02 * sk, p.yaw + (Math.random() - 0.5) * 0.02 * sk, lean + fall * 1.2 + (Math.random() - 0.5) * 0.02 * sk, "YXZ");
@@ -4210,7 +4479,7 @@ export class Game {
       this.spaceStation.starPoints.visible = spaceMix > 0.1;
     }
     this.ocean.apply(env, fog.density, st.waveHeight);
-    this.ocean.update(cam.position, this.time, this.shipInv(), !this.sim.sunk, under);
+    this.ocean.update(cam.position, this.time, this.shipInv(), !this.sim.sunk && !this.isFreighterDestroyed(), under);
     this.sky.update(cam.position, this.time);
     // Lampen-Pool
     const lamps = this.ship.lamps;
@@ -4264,7 +4533,7 @@ export class Game {
 
   private cameraUnderwater(): boolean {
     if (this.theatre === "orbital") return false;
-    if (this.escapeState) {
+    if (this.escapeState || this.ridingBs) {
       const h = this.ocean.height(this.camera.position.x, this.camera.position.z, this.time);
       return this.camera.position.y < h - 0.05;
     }

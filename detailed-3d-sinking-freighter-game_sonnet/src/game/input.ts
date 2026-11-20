@@ -20,7 +20,9 @@ export type Action =
   | "noclip"
   | "floodDial"
   | "switchShip"
-  | "targetLock";
+  | "targetLock"
+  | "helmUp"
+  | "helmDown";
 
 export class Input {
   keys = new Set<string>();
@@ -37,6 +39,8 @@ export class Input {
   locked = false;
   private pad: { fire: boolean; alt: boolean; jump: boolean } = { fire: false, alt: false, jump: false };
   private padPrev: boolean[] = [];
+  private helmUpCount = 0;
+  private helmDownCount = 0;
   private target: HTMLElement | null = null;
   private handlers: [EventTarget, string, EventListener, AddEventListenerOptions?][] = [];
 
@@ -131,11 +135,21 @@ export class Input {
     if (a) this.queue.add(a);
     if (e.code === "KeyG") this.queue.add("godmode");
     if (e.code === "KeyF") this.queue.add("floodDial");
+    if (e.code === "KeyW" || e.code === "ArrowUp") {
+      this.queue.add("helmUp");
+      this.helmUpCount++;
+    }
+    if (e.code === "KeyS" || e.code === "ArrowDown") {
+      this.queue.add("helmDown");
+      this.helmDownCount++;
+    }
     if (["Space", "Tab", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) e.preventDefault();
   }
 
   press(a: Action) {
     this.queue.add(a);
+    if (a === "helmUp") this.helmUpCount++;
+    else if (a === "helmDown") this.helmDownCount++;
   }
   pressed(a: Action): boolean {
     if (this.queue.has(a)) {
@@ -144,8 +158,18 @@ export class Input {
     }
     return false;
   }
+  consumeHelmSteps(): [number, number] {
+    const r: [number, number] = [this.helmUpCount, this.helmDownCount];
+    this.helmUpCount = 0;
+    this.helmDownCount = 0;
+    this.queue.delete("helmUp");
+    this.queue.delete("helmDown");
+    return r;
+  }
   clearQueue() {
     this.queue.clear();
+    this.helmUpCount = 0;
+    this.helmDownCount = 0;
   }
   setHeld(name: string, on: boolean) {
     if (on) this.held.add(name);

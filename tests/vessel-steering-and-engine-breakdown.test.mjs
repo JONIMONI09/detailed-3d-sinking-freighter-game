@@ -261,11 +261,31 @@ function testEngineRoomExplosionAndMotorBreakdown() {
   console.log('  ok engine room explosion & flooding > 40% trigger generator breakdown and zero propulsion');
 }
 
+function testHelmQuickDoubleTapAndTabletIsolation() {
+  const { stepTelegraph, TELEGRAPH_SPEED } = load('bridge');
+  let t = 'stop';
+  t = stepTelegraph(t, 1);
+  assert.equal(t, 'half-ahead');
+  t = stepTelegraph(t, 1);
+  assert.equal(t, 'full-ahead');
+  assert.equal(TELEGRAPH_SPEED[t], 8);
+
+  const inputSrc = fs.readFileSync(baseDir + 'input.ts', 'utf8');
+  assert.ok(inputSrc.includes('"helmUp"') && inputSrc.includes('"helmDown"') && inputSrc.includes('consumeHelmSteps'), 'input.ts must count discrete helmUp/helmDown taps across slow frames');
+
+  const gameSrc = fs.readFileSync(baseDir + 'game.ts', 'utf8');
+  assert.ok(gameSrc.includes('inp.consumeHelmSteps()'), 'handleHelm must process counted discrete helmUp/helmDown taps immediately');
+  assert.ok(gameSrc.includes('if (this.helmMode && !this.tabletOpen) this.handleHelm(dt)'), 'handleHelm must stay isolated while Command Tablet modal is open');
+  assert.ok(gameSrc.includes('if (this.dead || this.escapeState || this.ended || this.tabletOpen || this.orbitalLaserMode) return;'), 'updateInteraction must ignore E/inputs while Command Tablet is open');
+  console.log('  ok bridge helm discrete double-tap telegraph & Command Tablet modal isolation verified');
+}
+
 // ============================================================================
 // Execution
 // ============================================================================
 testVesselPropulsionAndSteeringKinematics();
 testBridgeHelmModeKeyboardControls();
 testEngineRoomExplosionAndMotorBreakdown();
+testHelmQuickDoubleTapAndTabletIsolation();
 
-console.log('🎉 ALL 3 VESSEL PROPULSION, RUDDER STEERING & ENGINE BREAKDOWN TESTS PASSED!');
+console.log('🎉 ALL 4 VESSEL PROPULSION, RUDDER STEERING & ENGINE BREAKDOWN TESTS PASSED!');

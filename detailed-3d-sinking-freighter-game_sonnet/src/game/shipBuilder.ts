@@ -1111,8 +1111,9 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
       navLights.push(m);
       return m;
     };
-    mk(0xff2020, -9.2, LV[3] + 2.3, -46);
-    mk(0x20ff40, 9.2, LV[3] + 2.3, -46);
+    // Port (+X when facing +Z bow) = red, Starboard (-X) = green
+    mk(0xff2020, 9.2, LV[3] + 2.3, -46);
+    mk(0x20ff40, -9.2, LV[3] + 2.3, -46);
     mk(0xffffff, 0, ry + 4.1 + 0.9, -48);
     mk(0xffffff, 0, DECK_Y + 6, 66);
     // Warnleuchten (Alarm)
@@ -1235,7 +1236,7 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
       [-9.5, 50],
       [9.5, 27],
       [-9.6, -41],
-      [9.6, -42],
+      [9.6, -39.5],
     ] as [number, number][])
       addBarrel(x, DECK_Y, z);
     for (const [x, z, loot] of [
@@ -1600,19 +1601,19 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
     });
   };
 
-  addBilgePump("pump_engine", "Engine Room Port Bilge Pump", "engine", -7.2, FLOOR_Y, -52.0);
-  addBilgePump("pump_hold3", "Cargo Hold 3 Port Bilge Pump", "hold3", -7.8, FLOOR_Y, -24.0);
-  addBilgePump("pump_hold2", "Cargo Hold 2 Port Bilge Pump", "hold2", -7.8, FLOOR_Y, 8.0);
-  addBilgePump("pump_hold1", "Cargo Hold 1 Port Bilge Pump", "hold1", -7.8, FLOOR_Y, 40.0);
+  addBilgePump("pump_engine", "Engine Room Stbd Bilge Pump", "engine", -7.2, FLOOR_Y, -52.0);
+  addBilgePump("pump_hold3", "Cargo Hold 3 Stbd Bilge Pump", "hold3", -7.8, FLOOR_Y, -24.0);
+  addBilgePump("pump_hold2", "Cargo Hold 2 Stbd Bilge Pump", "hold2", -7.8, FLOOR_Y, 8.0);
+  addBilgePump("pump_hold1", "Cargo Hold 1 Stbd Bilge Pump", "hold1", -7.8, FLOOR_Y, 40.0);
   addBilgePump("pump_master_bridge", "Bridge Master Bilge Pumps", "master", -1.8, LV[3], -46.2, true);
   addBilgePump("pump_master_ctrl", "Control Room Master Bilge Pumps", "master", 1.8, LV[0], -56.0, true);
 
   // Additional bilge pumps (total 14 units)
-  // Lower holds (port and starboard)
-  addBilgePump("pump_engine_stbd", "Engine Room Stbd Bilge Pump", "engine", 7.2, FLOOR_Y, -56.0);
-  addBilgePump("pump_hold3_stbd", "Cargo Hold 3 Stbd Bilge Pump", "hold3", 7.8, FLOOR_Y, -16.0);
-  addBilgePump("pump_hold2_stbd", "Cargo Hold 2 Stbd Bilge Pump", "hold2", 7.8, FLOOR_Y, 16.0);
-  addBilgePump("pump_hold1_stbd", "Cargo Hold 1 Stbd Bilge Pump", "hold1", 7.8, FLOOR_Y, 32.0);
+  // Lower holds (port +X and starboard -X relative to +Z bow)
+  addBilgePump("pump_engine_stbd", "Engine Room Port Bilge Pump", "engine", 7.2, FLOOR_Y, -56.0);
+  addBilgePump("pump_hold3_stbd", "Cargo Hold 3 Port Bilge Pump", "hold3", 7.8, FLOOR_Y, -16.0);
+  addBilgePump("pump_hold2_stbd", "Cargo Hold 2 Port Bilge Pump", "hold2", 7.8, FLOOR_Y, 16.0);
+  addBilgePump("pump_hold1_stbd", "Cargo Hold 1 Port Bilge Pump", "hold1", 7.8, FLOOR_Y, 32.0);
 
   // Main Deck Emergency Manifolds
   addBilgePump("pump_deck_engine", "Deck Engine Bilge Manifold", "engine", -9.2, DECK_Y, -58.0);
