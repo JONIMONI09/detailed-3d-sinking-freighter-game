@@ -544,7 +544,7 @@ export default function Hud({ h, settings, touch, game }: { h: HudState; setting
                     : "border-amber-400/40 bg-amber-900/30 text-amber-200 hover:bg-amber-800/40"
                 }`}
               >
-                💧 Master Bilge Pumps (64 m³/s): {h.bilgePumpsActive ? "ON" : "OFF"}
+                💧 Master Bilge Pumps (384 m³/s): {h.bilgePumpsActive ? "ON" : "OFF"}
               </button>
               {(() => {
                 const allDestroyed = h.theatre === "orbital" && h.freighterDestroyed && h.battleshipSunk;

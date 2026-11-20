@@ -81,6 +81,8 @@ export interface CrewMember {
   deployedLadderId?: string | null;
   pumping?: boolean;
   swimming?: boolean;
+  jumpCooldown?: number;
+  jumpingGap?: boolean;
   falling?: boolean;
   airTime?: number;
   stuckTime?: number;
@@ -291,7 +293,7 @@ function nearestBreach(
 function computeDeckWaypoint(
   m: CrewMember,
   target: { x: number; y: number; z: number },
-): { x: number; z: number; onStair: boolean } {
+): { x: number; z: number; onStair: boolean; jump?: boolean } {
   // Exterior catwalk bypass when an interior route/doorway is blocked
   if ((m.exteriorBypass ?? 0) > 0 && m.y >= 2.7 && m.y < 5.2 && Math.abs(target.y - m.y) <= 2.4) {
     const sideX = m.x >= 0 ? 9.45 : -9.45;
@@ -307,7 +309,7 @@ function computeDeckWaypoint(
   }
 
   const wp = findNextShipGraphWaypoint(m.x, m.y, m.z, target.x, target.y, target.z);
-  return { x: wp.x, z: wp.z, onStair: wp.onStair };
+  return { x: wp.x, z: wp.z, onStair: wp.onStair, jump: Boolean(wp.jump) };
 }
 
 function walkToward(
@@ -321,6 +323,7 @@ function walkToward(
   waterLevel = -Infinity,
   swimTargetY?: number,
   onStair = false,
+  jumpGap = false,
 ) {
   const stairMode = onStair || isInStairwellBand(m.x, m.y, m.z);
   const onCatwalk = isOnNarrowCatwalk(m.x, m.y, m.z);
@@ -436,7 +439,8 @@ function walkToward(
   if ((m.slideTimer ?? 0) > 0) m.slideTimer = Math.max(0, (m.slideTimer ?? 0) - dt);
 
   // Smooth tangential barrier sliding + anti-oscillation memory (disabled on stairs and through open doorways)
-  if (!waitingForDoor && !stairMode && !doorAhead && d > 1e-6) {
+  const airborneJump = Boolean(m.jumpingGap) && !m.onGround;
+  if (!waitingForDoor && !stairMode && !doorAhead && !airborneJump && d > 1e-6) {
     const barrierHit = world?.raycast(m.x, m.y + 0.75, m.z, nx, 0, nz, 0.85, (c) => c.tag !== "door" && c.tag !== "stair");
     if (barrierHit && (barrierHit.nx !== undefined || barrierHit.nz !== undefined)) {
       const hnx = barrierHit.nx ?? 0;
@@ -490,16 +494,64 @@ function walkToward(
     }
   }
 
-  const inWater = waterLevel > m.y + 0.55;
+  const inWater = waterLevel > m.y + 0.45;
   m.swimming = inWater;
+
+  m.jumpCooldown = Math.max(0, (m.jumpCooldown ?? 0) - dt);
+  let launchedThisTick = false;
+  if (!inWater && m.onGround && (m.jumpCooldown ?? 0) <= 0 && d > 0.5) {
+    const inHoleX = (hx: number) => Math.abs(m.x - hx) <= 1.0;
+    const l1 = m.y >= 5.6 && m.y <= 7.5 && inHoleX(-0.875);
+    const l2 = m.y >= 8.8 && m.y <= 10.7 && inHoleX(0.875);
+    let gapAhead = jumpGap;
+    if (!gapAhead && (l1 || l2)) {
+      const towardAft = nz < -0.3 && m.z >= -48.9 && m.z <= -47.8 && steerZ <= -52.0;
+      const towardFwd = nz > 0.3 && m.z <= -51.5 && m.z >= -52.6 && steerZ >= -48.2;
+      gapAhead = towardAft || towardFwd;
+    }
+    if (!gapAhead && world) {
+      const isHit = (rr: any) => rr !== null && rr !== undefined && rr.hit !== false;
+      const floorFilter = (c: { tag?: string }) => c.tag !== "door";
+      const near = world.raycast(m.x + nx * 0.95, m.y + 0.35, m.z + nz * 0.95, 0, -1, 0, 1.4, floorFilter);
+      if (!isHit(near)) {
+        const far28 = world.raycast(m.x + nx * 2.8, m.y + 0.35, m.z + nz * 2.8, 0, -1, 0, 1.8, floorFilter);
+        const far38 = isHit(far28) ? far28 : world.raycast(m.x + nx * 3.8, m.y + 0.35, m.z + nz * 3.8, 0, -1, 0, 1.8, floorFilter);
+        gapAhead = isHit(far28) || isHit(far38);
+      }
+    }
+    if (gapAhead && world) {
+      m.vy = 6.6;
+      m.onGround = false;
+      m.jumpingGap = true;
+      m.jumpCooldown = 0.9;
+      launchedThisTick = true;
+    }
+  }
+  if (m.jumpingGap && !m.onGround) {
+    {
+      const mag = Math.hypot(desiredStep.x, desiredStep.z);
+      const boosted = Math.max(step * 1.85, 6.2 * dt);
+      if (mag > 1e-9) desiredStep = v3((desiredStep.x / mag) * boosted, 0, (desiredStep.z / mag) * boosted);
+      else if (d > 1e-6) desiredStep = v3(nx * boosted, 0, nz * boosted);
+    }
+    m.progressTimer = 0;
+    m.stuckTime = 0;
+    m.falling = false;
+    m.airTime = 0;
+  }
 
   if (world) {
     let vy = m.vy ?? 0;
     if (inWater) {
-      const desiredY = Math.min(waterLevel - 0.65, swimTargetY ?? (waterLevel - 0.85));
-      vy = Math.max(-2.2, Math.min(2.2, (desiredY - m.y) * 2.5));
+      const surfaceY = waterLevel - 0.55;
+      let desiredY = surfaceY;
+      if (swimTargetY !== undefined && Math.hypot(tx - m.x, tz - m.z) < 2.8 && swimTargetY < surfaceY) {
+        desiredY = Math.min(surfaceY, swimTargetY);
+      }
+      vy = Math.max(-2.6, Math.min(3.0, (desiredY - m.y) * 3.2));
       m.falling = false;
       m.airTime = 0;
+      m.jumpingGap = false;
     } else {
       vy = Math.max(-20, vy - 18 * dt);
     }
@@ -521,7 +573,11 @@ function walkToward(
     m.z = body.z;
     m.vy = body.onGround ? 0 : body.vy;
     m.onGround = body.onGround;
-    if (!inWater && !body.onGround) {
+    if (body.onGround && !launchedThisTick) m.jumpingGap = false;
+    if (!inWater && !body.onGround && m.jumpingGap) {
+      m.airTime = 0;
+      m.falling = false;
+    } else if (!inWater && !body.onGround) {
       m.airTime = (m.airTime ?? 0) + dt;
       if (m.airTime > 0.35 || m.vy < -4.5) m.falling = true;
     } else {
@@ -616,6 +672,24 @@ export function stepCrew(
   ctx?: CrewStepContext,
 ): CrewEvent {
   m.stateTime += dt;
+  const waterLevel =
+    typeof ctx?.waterLevel === "number" && Number.isFinite(ctx.waterLevel)
+      ? ctx.waterLevel
+      : typeof ctx?.waterLevelY === "number" && Number.isFinite(ctx.waterLevelY)
+        ? ctx.waterLevelY
+        : -Infinity;
+  const inWaterNow = Number.isFinite(waterLevel) && waterLevel > m.y + 0.45;
+  m.swimming = inWaterNow;
+  if (inWaterNow) {
+    m.falling = false;
+    m.airTime = 0;
+    m.jumpingGap = false;
+    if (m.state === "ragdoll" && m.stateTime >= 0.65) {
+      m.isRagdoll = false;
+      if (m.ragdoll) m.ragdoll.active = false;
+      enter(m, m.targetId ? "moving" : "patrol");
+    }
+  }
   enforceShipBoundsAndRespawn(m);
 
   if ((m.yieldTimer ?? 0) > 0) m.yieldTimer = Math.max(0, (m.yieldTimer ?? 0) - dt);
@@ -660,7 +734,15 @@ export function stepCrew(
         }
       }
     }
-    if (!m.onGround && m.state !== "moving" && !m.wallClimbing) {
+    if (inWaterNow && m.state !== "moving" && !(m.state === "patrol" && ((m as { patrol?: unknown[] }).patrol?.length || cfg.patrol?.length || 0) > 0 && (m.yieldTimer ?? 0) <= 0)) {
+      const desiredY = waterLevel - 0.55;
+      const swimVy = Math.max(-2.6, Math.min(3.0, (desiredY - m.y) * 3.2));
+      const swimBody: CrewBody = { x: m.x, y: m.y, z: m.z, vx: 0, vy: swimVy, vz: 0, r: 0.2, h: 1.75, onGround: false, step: 0.48 };
+      ctx.world.move(swimBody, 0, swimVy * dt, 0);
+      m.y = swimBody.y;
+      m.vy = 0;
+      m.onGround = false;
+    } else if (!m.onGround && m.state !== "moving" && !m.wallClimbing && !m.jumpingGap) {
       const vy = Math.max(-20, (m.vy ?? 0) - 18 * dt);
       const gravBody: CrewBody = { x: m.x, y: m.y, z: m.z, vx: 0, vy, vz: 0, r: 0.2, h: 1.75, onGround: false, step: 0.48 };
       ctx.world.move(gravBody, 0, vy * dt, 0);
@@ -794,7 +876,7 @@ export function stepCrew(
         const wp = ctx?.world ? computeDeckWaypoint(m, patrolTarget) : { x: patrolTarget.x, z: patrolTarget.z, onStair: false };
         const prevPX = m.lastX ?? m.x;
         const prevPZ = m.lastZ ?? m.z;
-        walkToward(m, wp.x, wp.z, cfg.walkSpeed * 0.65 * dt, ctx?.raycast, ctx?.world, dt, ctx?.waterLevel ?? -Infinity, undefined, wp.onStair);
+        walkToward(m, wp.x, wp.z, cfg.walkSpeed * 0.65 * dt, ctx?.raycast, ctx?.world, dt, waterLevel, undefined, wp.onStair, Boolean(wp.jump));
         const pMoved = Math.hypot(m.x - prevPX, m.z - prevPZ);
         m.lastX = m.x;
         m.lastZ = m.z;
@@ -878,7 +960,7 @@ export function stepCrew(
       const wp = ctx?.world ? computeDeckWaypoint(m, target) : { x: target.x, z: target.z, onStair: false };
       const prevX = m.lastX ?? m.x;
       const prevZ = m.lastZ ?? m.z;
-      walkToward(m, wp.x, wp.z, cfg.walkSpeed * dt, ctx?.raycast, ctx?.world, dt, ctx?.waterLevel ?? -Infinity, target.y, wp.onStair);
+      walkToward(m, wp.x, wp.z, cfg.walkSpeed * dt, ctx?.raycast, ctx?.world, dt, waterLevel, target.y, wp.onStair, Boolean(wp.jump));
       const moved = Math.hypot(m.x - prevX, m.z - prevZ);
       m.lastX = m.x;
       m.lastZ = m.z;

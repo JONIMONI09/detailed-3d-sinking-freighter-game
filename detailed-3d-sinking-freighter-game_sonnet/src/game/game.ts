@@ -469,9 +469,9 @@ export class Game {
         { x: 4.5, y: 12.6, z: -46.8 },
         { x: 0.0, y: 9.4, z: -53.6 },
       ]),
-      makeCrew("Bridge Officer", "boatswain", -4.2, 9.4, -54.0, [
-        { x: -4.2, y: 9.4, z: -54.0 },
-        { x: 4.2, y: 9.4, z: -54.0 },
+      makeCrew("Bridge Officer", "boatswain", 0.0, 9.4, -53.6, [
+        { x: 0.0, y: 9.4, z: -53.6 },
+        { x: 0.0, y: 9.4, z: -47.0 },
       ]),
       makeCrew("Radio Tech", "electrician", 4.2, 9.4, -62.0, [
         { x: 4.2, y: 9.4, z: -62.0 },
@@ -480,7 +480,7 @@ export class Game {
       // Cabin Deck Level 1 (forward cabins & stair flight to Level 2 aft landing)
       makeCrew("Cabin Steward", "medic", -4.2, 6.2, -47.0, [
         { x: -4.2, y: 6.2, z: -47.0 },
-        { x: 4.2, y: 6.2, z: -47.0 },
+        { x: 0.0, y: 6.2, z: -53.6 },
       ]),
       makeCrew("Deck Cadet", "damage-control", 0.0, 6.2, -47.0, [
         { x: 0.0, y: 6.2, z: -47.0 },
@@ -775,6 +775,31 @@ export class Game {
     this.pendingTimers.push(id);
   }
 
+  /** Re-syncs fill/level/visibility after pumping, recomputes flood fraction and re-floats the ship. */
+  syncCompartmentsAfterPumping(dt: number): void {
+    let totW = 0;
+    let totV = 0;
+    for (const comp of this.ship.compartments) {
+      if (comp.water <= 1e-3) {
+        comp.water = 0;
+        comp.fill = 0;
+        comp.waterMesh.visible = false;
+      } else {
+        comp.fill = comp.volume > 0 ? comp.water / comp.volume : 0;
+      }
+      comp.level = comp.min.y + comp.fill * (comp.max.y - comp.min.y);
+      totW += comp.water;
+      totV += comp.volume;
+    }
+    if (totV > 0) this.sim.F = totW / totV;
+    const anyActive = this.ship.bilgePumps.some((p) => p.active && p.rateM3s > 0);
+    if (anyActive && this.sim.F < 0.28 && !this.sim.forceSink) {
+      this.sim.sinking = false;
+      this.sim.sinkT = Math.max(0, this.sim.sinkT - dt * 3.0);
+      this.sim.sinkDepth = Math.max(0, this.sim.sinkDepth - dt * 3.5);
+    }
+  }
+
   worldPos(local: THREE.Vector3, out = V()): THREE.Vector3 {
     if (this.theatre === "orbital") return out.copy(local);
     return out.copy(local).applyMatrix4(this.ship.group.matrixWorld);
@@ -927,8 +952,14 @@ export class Game {
       const comp = this.ship.compartments.find((c) => c.id === bp.compId);
       if (comp && comp.water > 0) {
         comp.water = Math.max(0, comp.water - bp.rateM3s * dt);
+        if (comp.water > 0 && Math.random() < Math.min(1, dt * 18)) {
+          const sideX = bp.pos.x >= 0 ? 11.1 : -11.1;
+          const sp = this.worldPos(V(sideX, bp.pos.y, bp.pos.z), V());
+          this.pa.emit(sp.x, sp.y, sp.z, Math.sign(sideX) * (2 + Math.random() * 2), 2 + Math.random() * 2, (Math.random() - 0.5) * 1.5, 0.9, 0.12, 0.35, 0.75, 0.9, 1, 0.8, 9, 0.4);
+        }
       }
     }
+    this.syncCompartmentsAfterPumping(dt);
     const destroyedIds = new Set(this.ship.sections.filter((s) => s.destroyed).map((s) => s.id));
     const glassSectionAt = (y: number) => (y >= 12.2 ? "bridge" : y >= 9.0 ? "super_2" : y >= 5.8 ? "super_1" : "super_0");
     const deckBreaches = [
@@ -1010,15 +1041,15 @@ export class Game {
         }
       }
       const comp = this.compAt(cm.x, cm.y, cm.z);
-      if (comp && comp.fill > 0.004 && comp.level - cm.y > 0.12 && cm.state !== "ragdoll" && !cm.isRagdoll) {
+      if (comp && comp.water > 0 && cm.state !== "ragdoll" && !cm.isRagdoll) {
         cm.pumping = true;
-        comp.water = Math.max(0, comp.water - 1.8 * dt);
-        const compPump = this.ship.bilgePumps.find((p) => p.compId === comp.id);
-        if (compPump && !compPump.active) compPump.active = true;
+        comp.water = Math.max(0, comp.water - 4.5 * dt);
+        for (const p of this.ship.bilgePumps) if (p.compId === comp.id && !p.active) p.active = true;
       } else {
         cm.pumping = false;
       }
     }
+    this.syncCompartmentsAfterPumping(dt);
     // Remove and dispose 3D breach meshes once sealed by crew
     let sealedVisuals = 0;
     for (let hi = this.ship.holeGroup.children.length - 1; hi >= 0; hi--) {
@@ -2696,7 +2727,7 @@ export class Game {
     const nextState = !this.ship.bilgePumps.some((p) => p.compId !== "master" && p.active);
     for (const p of this.ship.bilgePumps) p.active = nextState;
     this.audio.click();
-    this.say(`MASTER BILGE PUMPS ${nextState ? "ENGAGED (64 m³/s total)" : "SHUT DOWN"}`, nextState ? "good" : "info");
+    this.say(`MASTER BILGE PUMPS ${nextState ? "ENGAGED (384 m³/s total)" : "SHUT DOWN"}`, nextState ? "good" : "info");
   }
 
   private handleHelm(dt: number) {
@@ -3606,11 +3637,11 @@ export class Game {
               const nextState = !this.ship.bilgePumps.some((p) => p.compId !== "master" && p.active);
               for (const p of this.ship.bilgePumps) p.active = nextState;
               this.audio.click();
-              this.say(`MASTER BILGE PUMPS ${nextState ? "ENGAGED (64 m³/s total)" : "SHUT DOWN"}`, nextState ? "good" : "info");
+              this.say(`MASTER BILGE PUMPS ${nextState ? "ENGAGED (384 m³/s total)" : "SHUT DOWN"}`, nextState ? "good" : "info");
             } else {
               bp.active = !bp.active;
               this.audio.click();
-              this.say(`${bp.name} ${bp.active ? "STARTED (16 m³/s)" : "STOPPED"}`, bp.active ? "good" : "info");
+              this.say(`${bp.name} ${bp.active ? "STARTED (${bp.rateM3s.toFixed(0)} m³/s)" : "STOPPED"}`, bp.active ? "good" : "info");
             }
           };
         }

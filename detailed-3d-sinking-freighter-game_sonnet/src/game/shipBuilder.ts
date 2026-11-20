@@ -1584,7 +1584,7 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
       compId,
       pos: v3(px, py + (isConsole ? 1.0 : 0.6), pz),
       active: false,
-      rateM3s: isConsole ? 0 : 16.0,
+      rateM3s: isConsole ? 0 : 32.0,
       rotor,
       indicatorMat,
     };
@@ -1600,12 +1600,26 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
     });
   };
 
-  addBilgePump("pump_engine", "Engine Room Bilge Pump", "engine", -7.2, FLOOR_Y, -52.0);
-  addBilgePump("pump_hold3", "Cargo Hold 3 Bilge Pump", "hold3", -7.8, FLOOR_Y, -24.0);
-  addBilgePump("pump_hold2", "Cargo Hold 2 Bilge Pump", "hold2", -7.8, FLOOR_Y, 8.0);
-  addBilgePump("pump_hold1", "Cargo Hold 1 Bilge Pump", "hold1", -7.8, FLOOR_Y, 40.0);
+  addBilgePump("pump_engine", "Engine Room Port Bilge Pump", "engine", -7.2, FLOOR_Y, -52.0);
+  addBilgePump("pump_hold3", "Cargo Hold 3 Port Bilge Pump", "hold3", -7.8, FLOOR_Y, -24.0);
+  addBilgePump("pump_hold2", "Cargo Hold 2 Port Bilge Pump", "hold2", -7.8, FLOOR_Y, 8.0);
+  addBilgePump("pump_hold1", "Cargo Hold 1 Port Bilge Pump", "hold1", -7.8, FLOOR_Y, 40.0);
   addBilgePump("pump_master_bridge", "Bridge Master Bilge Pumps", "master", -1.8, LV[3], -46.2, true);
   addBilgePump("pump_master_ctrl", "Control Room Master Bilge Pumps", "master", 1.8, LV[0], -56.0, true);
+
+  // Additional bilge pumps (total 14 units)
+  // Lower holds (port and starboard)
+  addBilgePump("pump_engine_stbd", "Engine Room Stbd Bilge Pump", "engine", 7.2, FLOOR_Y, -56.0);
+  addBilgePump("pump_hold3_stbd", "Cargo Hold 3 Stbd Bilge Pump", "hold3", 7.8, FLOOR_Y, -16.0);
+  addBilgePump("pump_hold2_stbd", "Cargo Hold 2 Stbd Bilge Pump", "hold2", 7.8, FLOOR_Y, 16.0);
+  addBilgePump("pump_hold1_stbd", "Cargo Hold 1 Stbd Bilge Pump", "hold1", 7.8, FLOOR_Y, 32.0);
+
+  // Main Deck Emergency Manifolds
+  addBilgePump("pump_deck_engine", "Deck Engine Bilge Manifold", "engine", -9.2, DECK_Y, -58.0);
+  addBilgePump("pump_deck_hold3", "Deck Hold 3 Bilge Manifold", "hold3", 9.2, DECK_Y, -24.0);
+  addBilgePump("pump_deck_hold2", "Deck Hold 2 Bilge Manifold", "hold2", 9.2, DECK_Y, 8.0);
+  addBilgePump("pump_deck_hold1", "Deck Hold 1 Bilge Manifold", "hold1", -9.2, DECK_Y, 40.0);
+
 
   const dispose = () => {
     geoms.forEach((g) => g.dispose());

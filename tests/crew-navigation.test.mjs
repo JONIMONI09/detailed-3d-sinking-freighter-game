@@ -422,8 +422,8 @@ function testCatwalkBoundsBypassAndOpenDoorCentering() {
         body.onGround = false;
       }
     },
-    raycast() {
-      return null;
+    raycast(ox, oy, oz, dx, dy, dz, maxD) {
+      return { hit: false, distance: maxD, dist: maxD, normal: { x: 0, y: 0, z: 0 }, point: { x: 0, y: 0, z: 0 } };
     },
   };
   const doorBot = crewMod.createCrewMember('DoorBot', 'damage-control', -0.9, 3.0, -47.38, 4);
@@ -439,6 +439,163 @@ function testCatwalkBoundsBypassAndOpenDoorCentering() {
   console.log('  ok catwalk bounds, stairwell/room/Control Room bypass, and open/locked door alignment verified');
 }
 
+function testGapJumpSwimmingAndCompleteDewatering() {
+  const graphSrc = readFileSync('detailed-3d-sinking-freighter-game_sonnet/src/game/shipNavGraph.ts', 'utf8');
+  const crewSrc = readFileSync('detailed-3d-sinking-freighter-game_sonnet/src/game/crew.ts', 'utf8');
+  const builderSrc = readFileSync('detailed-3d-sinking-freighter-game_sonnet/src/game/shipBuilder.ts', 'utf8');
+  const gameSrc = readFileSync('detailed-3d-sinking-freighter-game_sonnet/src/game/game.ts', 'utf8');
+
+  // (a) gap-jump routing and execution
+  assert.ok(/jump/.test(graphSrc), 'nav graph must carry jump flags');
+  for (const [a, b] of [['d1_gap_fwd', 'd1_gap_aft'], ['d2_gap_aft', 'd2_gap_fwd']]) {
+    const re = new RegExp(`a:\\s*"${a}",\\s*b:\\s*"${b}",\\s*jump:\\s*true`);
+    assert.ok(re.test(graphSrc), `gap edge ${a} <-> ${b} must have jump: true`);
+  }
+  for (const id of ['d1_corr_mid', 'd1_corr_aft', 'd2_corr_aft', 'd2_corr_mid']) {
+    assert.ok(graphSrc.includes(`"${id}"`), `${id} node must exist`);
+  }
+  assert.ok(/jumpingGap/.test(crewSrc) && /jumpCooldown/.test(crewSrc), 'crew must implement gap-jump state');
+
+  // (b) surface swimming and ragdoll recovery
+  assert.ok(/waterLevel\s*-\s*0\.55/.test(crewSrc) && /swimming/.test(crewSrc), 'crew must float at waterLevel - 0.55 while swimming');
+  assert.ok(/ragdoll/.test(crewSrc), 'crew ragdoll recovery must exist');
+
+  // Runtime behaviour: real shipNavGraph + crew modules
+  const rdMod = loadTs('detailed-3d-sinking-freighter-game_sonnet/src/game/ragdoll.ts', (id) => {
+    if (id === './navmesh3d') return navmesh;
+    throw new Error(`Unexpected require in ragdoll: ${id}`);
+  });
+  const ngMod = loadTs('detailed-3d-sinking-freighter-game_sonnet/src/game/navgrid.ts');
+  const sgMod = loadTs('detailed-3d-sinking-freighter-game_sonnet/src/game/shipNavGraph.ts');
+  const cMod = loadTs('detailed-3d-sinking-freighter-game_sonnet/src/game/crew.ts', (id) => {
+    if (id === './navmesh3d') return navmesh;
+    if (id === './ragdoll') return rdMod;
+    if (id === './navgrid') return ngMod;
+    if (id === './shipNavGraph') return sgMod;
+    throw new Error(`Unexpected require: ${id}`);
+  });
+
+  // 1. graph routes jump across Level 1 / Level 2 gaps
+  const wp1 = sgMod.findNextShipGraphWaypoint(-0.875, 6.2, -48.1, 0, 6.2, -53.6);
+  assert.ok(wp1 && wp1.jump === true && wp1.z <= -52.0, `Level 1 gap must route with jump, got ${JSON.stringify(wp1)}`);
+  const wp2 = sgMod.findNextShipGraphWaypoint(0.875, 9.4, -52.2, 0, 9.4, -47.0);
+  assert.ok(wp2 && wp2.jump === true && wp2.z >= -48.5, `Level 2 gap must route with jump, got ${JSON.stringify(wp2)}`);
+
+  // 2. physical gap leap over a real 3.6 m hole (z in (-52.0, -48.4))
+  const floors = [
+    { zmin: -60, zmax: -52.0 },
+    { zmin: -48.4, zmax: -40 },
+  ];
+  const FLOOR_TOP = 6.2;
+  const onFloor = (z) => floors.some((f) => z >= f.zmin && z <= f.zmax);
+  const gapWorld = {
+    move(body, dx, dy, dz) {
+      body.x += dx;
+      body.z += dz;
+      const nextY = body.y + dy;
+      if (onFloor(body.z) && body.y >= FLOOR_TOP - 0.3 && nextY <= FLOOR_TOP) {
+        body.y = FLOOR_TOP;
+        body.onGround = true;
+      } else {
+        body.y = nextY;
+        body.onGround = false;
+      }
+    },
+    raycast(ox, oy, oz, dx, dy, dz, maxD) {
+      const miss = { hit: false, distance: maxD, dist: maxD, normal: { x: 0, y: 0, z: 0 }, point: { x: 0, y: 0, z: 0 } };
+      if (dy < -0.5 && oy >= FLOOR_TOP - 0.05 && onFloor(oz) && oy - FLOOR_TOP <= maxD) {
+        const d = oy - FLOOR_TOP;
+        return { hit: true, distance: d, dist: d, collider: {}, nx: 0, ny: 1, nz: 0, normal: { x: 0, y: 1, z: 0 }, point: { x: ox, y: FLOOR_TOP, z: oz } };
+      }
+      return miss;
+    },
+  };
+  const bot = cMod.createCrewMember('GapBot', 'boatswain', -0.875, 6.2, -48.3, 4);
+  bot.patrol = [
+    { x: -0.875, y: 6.2, z: -47.6 },
+    { x: 0, y: 6.2, z: -53.8 },
+  ];
+  bot.patrolIndex = 1;
+  bot.onGround = true;
+  let sawJump = false;
+  let minZ = Infinity;
+  let minY = Infinity;
+  for (let i = 0; i < 45; i++) {
+    cMod.stepCrew(bot, 0.05, [], undefined, { world: gapWorld, raycast: gapWorld.raycast, deckFloorY: 6.2 });
+    minZ = Math.min(minZ, bot.z);
+    minY = Math.min(minY, bot.y);
+    if (bot.jumpingGap && bot.vy > 3.0) sawJump = true;
+    if (sawJump && bot.onGround && bot.z <= -52.2) break;
+  }
+  assert.equal(sawJump, true, 'crew must leap (jumpingGap, vy > 3) over the floor gap');
+  assert.ok(minZ <= -52.2, `crew must land on the far floor, minZ=${minZ}`);
+  assert.ok(minY >= 5.5, `crew must not fall into the gap, minY=${minY}`);
+
+  // 3. surface swimming and ragdoll recovery in flood water
+  const openWorld = {
+    move(body, dx, dy, dz) {
+      body.x += dx;
+      body.y += dy;
+      body.z += dz;
+      body.onGround = false;
+    },
+    raycast(ox, oy, oz, dx, dy, dz, maxD) {
+      return { hit: false, distance: maxD, dist: maxD, normal: { x: 0, y: 0, z: 0 }, point: { x: 0, y: 0, z: 0 } };
+    },
+  };
+  const swimmer = cMod.createCrewMember('Swimmer', 'boatswain', 0, -3.0, 0, 4);
+  for (let i = 0; i < 80; i++) {
+    cMod.stepCrew(swimmer, 0.05, [], undefined, { world: openWorld, raycast: openWorld.raycast, waterLevel: 1.5, deckFloorY: -5.0 });
+  }
+  assert.equal(swimmer.swimming, true, 'crew in flood water must be swimming');
+  assert.ok(swimmer.y > 0.7, `swimmer must rise toward waterLevel - 0.55, y=${swimmer.y}`);
+  const rag = cMod.createCrewMember('RagBot', 'boatswain', 0, 1.0, 0, 4);
+  rag.state = 'ragdoll';
+  rag.isRagdoll = true;
+  rag.stateTime = 0;
+  let recovered = false;
+  for (let i = 0; i < 20; i++) {
+    cMod.stepCrew(rag, 0.05, [], undefined, { world: openWorld, raycast: openWorld.raycast, waterLevel: 1.5, deckFloorY: -5.0 });
+    if (rag.state !== 'ragdoll' && rag.swimming === true) {
+      recovered = true;
+      break;
+    }
+  }
+  assert.equal(recovered, true, 'ragdoll bot in water must recover to swimming within 1.0 s');
+
+  // (c) 14 pump stations, 12 x 32 m3/s = 384 m3/s
+  const calls = [...builderSrc.matchAll(/addBilgePump\(\s*"([a-z0-9_]+)"/g)].map((m) => m[1]);
+  assert.equal(calls.length, 14, `expected 14 pump stations, got ${calls.length}`);
+  assert.equal(new Set(calls).size, 14, 'pump ids must be unique');
+  const consoles = calls.filter((id) => id.startsWith('pump_master_')).length;
+  assert.equal(consoles, 2, 'two master consoles');
+  assert.ok(/rateM3s:\s*isConsole\s*\?\s*0\s*:\s*32\.0/.test(builderSrc), 'pump unit rate must be 32.0 m3/s');
+  assert.equal((calls.length - consoles) * 32, 384, 'total capacity must be 384 m3/s');
+  assert.ok(!/const DECK_Y\s*=/.test(builderSrc.slice(builderSrc.indexOf('const bilgePumps'))), 'DECK_Y must not be shadowed');
+
+  // dewatering math mirrors Game.syncCompartmentsAfterPumping
+  assert.ok(/syncCompartmentsAfterPumping/.test(gameSrc), 'game must sync compartments after pumping');
+  const comp = { water: 900, volume: 1000, min: { y: -5 }, max: { y: 3 }, fill: 0.9, level: 2.2, visible: true };
+  const sim = { sinking: true, sinkT: 5, sinkDepth: 8, F: 0.9, forceSink: false };
+  const dt = 0.1;
+  for (let i = 0; i < 100 && comp.water > 0; i++) {
+    comp.water = Math.max(0, comp.water - 384 * dt);
+    if (comp.water <= 1e-3) { comp.water = 0; comp.fill = 0; comp.visible = false; }
+    else comp.fill = comp.water / comp.volume;
+    comp.level = comp.min.y + comp.fill * (comp.max.y - comp.min.y);
+    sim.F = comp.water / comp.volume;
+    if (sim.F < 0.28 && !sim.forceSink) {
+      sim.sinking = false;
+      sim.sinkT = Math.max(0, sim.sinkT - dt * 3.0);
+      sim.sinkDepth = Math.max(0, sim.sinkDepth - dt * 3.5);
+    }
+  }
+  assert.equal(comp.water, 0, 'compartment must drain to exactly 0 m3');
+  assert.equal(comp.visible, false);
+  assert.equal(sim.sinking, false);
+  console.log('  ok gap-jump, swimming, 14-pump 384 m3/s complete dewatering verified');
+}
+
 test5RaySteeringAndDeflection();
 testDoorTraversalSequence();
 testVerticalLadderClimbing();
@@ -447,5 +604,5 @@ testBelowDeckDescentAndDropJump();
 testGridAStarDoorwayAndWallBypass();
 test3DShipNavGraphStairAndCatwalkRouting();
 testCatwalkBoundsBypassAndOpenDoorCentering();
-
+testGapJumpSwimmingAndCompleteDewatering();
 console.log('Crew navigation unit tests passed.');

@@ -29,6 +29,18 @@ Do not use this file for speculative risks. Put open limitations in
 - Related files / skills:
 ```
 
+### ERR-2026-11-20-02 - Bilge Capacity, Incomplete Dewatering, Gap Jumping & Surface Swimming
+
+- Date (Europe/Berlin): 2026-11-20
+- Area: Bilge pumps (`shipBuilder.ts`, `game.ts`, `Hud.tsx`), crew navigation (`shipNavGraph.ts`, `crew.ts`)
+- Status: Resolved
+- Symptom: Flooded compartments never drained fully (residual water kept the ship sinking), only 6 pump stations at 16 m3/s existed, and crew fell into floor gaps or sank in flood water.
+- Root cause: Pumping stopped at low fill levels, compartment fill/level/mesh were not re-synced after pumping, the sinking state was never reset, and the nav graph had no jump edges or swimming buoyancy.
+- Solution: 14 pump stations (12 x 32 m3/s = 384 m3/s plus 2 master consoles); crew activate all pumps of their compartment while water remains; `syncCompartmentsAfterPumping` clamps to exactly 0 m3, hides the water mesh, recomputes `sim.F` and clears `sim.sinking` when `F < 0.28`; overboard spray particles; jump edges on Level 1/2 gaps; surface swimming at `waterLevel - 0.55` with ragdoll recovery.
+- Verification: `testGapJumpSwimmingAndCompleteDewatering` in `tests/crew-navigation.test.mjs`, `tsc --noEmit`, `npm test`.
+- Prevention: Test asserts pump count, per-unit rate, total capacity and full drainage.
+- Related files / skills: `error-fix-document`, `documentation-maintenance`
+
 ### ERR-2026-11-20-01 - Catwalk Clamping, Phantom Stair/Room Graph Edges, Disabled Open-Door Centering & Localized Sandbox Physics
 
 - Date (Europe/Berlin): 2026-11-20

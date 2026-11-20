@@ -185,8 +185,8 @@ export class StormworksSupervisor {
     // 7. Step Autonomous Damage Control Crew NPCs & Ragdoll Physics
     const vesselRollDeg = (this.sim.roll * 180) / Math.PI;
     const floodedLevels = this.compartments
-      .filter((c) => c.fill > 0.004 && c.worldLevel > -90)
-      .map((c) => c.worldLevel);
+      .filter((c) => c.fill > 0.004 && ((c as { level?: number }).level ?? c.worldLevel ?? -99) > -90)
+      .map((c) => (c as { level?: number }).level ?? c.worldLevel);
     const activeWaterY = floodedLevels.length > 0 ? Math.max(...floodedLevels) : -999;
 
     for (const member of this.crew) {
@@ -201,7 +201,7 @@ export class StormworksSupervisor {
         blastImpulse,
         vesselRollDeg,
         deckFloorY,
-        waterLevel: activeWaterY > -5 ? activeWaterY : undefined,
+        waterLevel: Number.isFinite(activeWaterY) && activeWaterY > -5 ? activeWaterY : undefined,
         peers: this.crew,
       });
       if (ev) {

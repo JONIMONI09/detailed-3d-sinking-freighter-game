@@ -12,6 +12,8 @@ export interface ShipNavEdge {
   b: string;
   /** True when traversing between a and b is a vertical/sloped stair flight. */
   stair?: boolean;
+  /** True when the edge is a gap jump across a stairwell opening. */
+  jump?: boolean;
 }
 
 export interface ShipGraphWaypoint {
@@ -19,9 +21,29 @@ export interface ShipGraphWaypoint {
   y: number;
   z: number;
   onStair: boolean;
+  jump?: boolean;
 }
 
 const NODES: ShipNavNode[] = [
+  { id: "d1_gap_fwd", x: -0.875, y: 6.2, z: -48.1, stair: true },
+  { id: "d1_gap_aft", x: -0.875, y: 6.2, z: -52.2, stair: true },
+  { id: "d1_corr_aft", x: 0, y: 6.2, z: -53.6 },
+  { id: "d1_corr_far_aft", x: 0, y: 6.2, z: -62.0 },
+  { id: "d1_port_mid_door", x: -1.7, y: 6.2, z: -54.0 },
+  { id: "d1_port_mid_room", x: -4.2, y: 6.2, z: -54.0 },
+  { id: "d1_stbd_mid_door", x: 1.7, y: 6.2, z: -54.0 },
+  { id: "d1_stbd_mid_room", x: 4.2, y: 6.2, z: -54.0 },
+  { id: "d1_port_aft_door", x: -1.7, y: 6.2, z: -62.0 },
+  { id: "d1_port_aft_room", x: -4.2, y: 6.2, z: -62.0 },
+  { id: "d1_stbd_aft_door", x: 1.7, y: 6.2, z: -62.0 },
+  { id: "d1_stbd_aft_room", x: 4.2, y: 6.2, z: -62.0 },
+  { id: "d2_gap_aft", x: 0.875, y: 9.4, z: -52.2, stair: true },
+  { id: "d2_gap_fwd", x: 0.875, y: 9.4, z: -48.1, stair: true },
+  { id: "d2_corr_mid", x: 0, y: 9.4, z: -47.0 },
+  { id: "d2_port_fwd_door", x: -1.7, y: 9.4, z: -47.0 },
+  { id: "d2_port_fwd_room", x: -4.2, y: 9.4, z: -47.0 },
+  { id: "d2_stbd_fwd_door", x: 1.7, y: 9.4, z: -47.0 },
+  { id: "d2_stbd_fwd_room", x: 4.2, y: 9.4, z: -47.0 },
   // --- Main Exterior Deck & Container-Free Side Walkways (y = 3.0) ---
   { id: "deck_fwd", x: 0, y: 3.0, z: 55.2 },
   { id: "deck_mid", x: 0, y: 3.0, z: -9.2 },
@@ -126,6 +148,25 @@ const NODES: ShipNavNode[] = [
 ];
 
 const EDGES: ShipNavEdge[] = [
+  { a: "d1_corr_mid", b: "d1_gap_fwd" },
+  { a: "d1_gap_fwd", b: "d1_gap_aft", jump: true, stair: true },
+  { a: "d1_gap_aft", b: "d1_corr_aft" },
+  { a: "d1_corr_aft", b: "d1_corr_far_aft" },
+  { a: "d1_corr_aft", b: "d1_port_mid_door" },
+  { a: "d1_port_mid_door", b: "d1_port_mid_room" },
+  { a: "d1_corr_aft", b: "d1_stbd_mid_door" },
+  { a: "d1_stbd_mid_door", b: "d1_stbd_mid_room" },
+  { a: "d1_corr_far_aft", b: "d1_port_aft_door" },
+  { a: "d1_port_aft_door", b: "d1_port_aft_room" },
+  { a: "d1_corr_far_aft", b: "d1_stbd_aft_door" },
+  { a: "d1_stbd_aft_door", b: "d1_stbd_aft_room" },
+  { a: "d2_corr_aft", b: "d2_gap_aft" },
+  { a: "d2_gap_aft", b: "d2_gap_fwd", jump: true, stair: true },
+  { a: "d2_gap_fwd", b: "d2_corr_mid" },
+  { a: "d2_corr_mid", b: "d2_port_fwd_door" },
+  { a: "d2_port_fwd_door", b: "d2_port_fwd_room" },
+  { a: "d2_corr_mid", b: "d2_stbd_fwd_door" },
+  { a: "d2_stbd_fwd_door", b: "d2_stbd_fwd_room" },
   // Exterior deck, side aisles & catwalks
   { a: "deck_fwd", b: "deck_port_bow" },
   { a: "deck_fwd", b: "deck_stbd_bow" },
@@ -238,7 +279,7 @@ const EDGES: ShipNavEdge[] = [
 ];
 
 const NODE_MAP = new Map<string, number>();
-const ADJ: Array<Array<{ to: number; cost: number; stair: boolean }>> = [];
+const ADJ: Array<Array<{ to: number; cost: number; stair: boolean; jump: boolean }>> = [];
 
 for (let i = 0; i < NODES.length; i++) {
   NODE_MAP.set(NODES[i].id, i);
@@ -253,8 +294,8 @@ for (const e of EDGES) {
   const nb = NODES[ib];
   const dist = Math.hypot(na.x - nb.x, na.y - nb.y, na.z - nb.z);
   const cost = e.stair ? dist * 1.15 : dist;
-  ADJ[ia].push({ to: ib, cost, stair: !!e.stair });
-  ADJ[ib].push({ to: ia, cost, stair: !!e.stair });
+  ADJ[ia].push({ to: ib, cost, stair: !!e.stair, jump: !!e.jump });
+  ADJ[ib].push({ to: ia, cost, stair: !!e.stair, jump: !!e.jump });
 }
 
 function nearestNode(x: number, y: number, z: number): number {
@@ -329,6 +370,7 @@ export function findNextShipGraphWaypoint(
   const fScore = new Float64Array(nCount).fill(Infinity);
   const cameFrom = new Int32Array(nCount).fill(-1);
   const cameStair = new Uint8Array(nCount);
+  const cameJump = new Uint8Array(nCount);
   const closed = new Uint8Array(nCount);
   const open: number[] = [startIdx];
 
@@ -372,6 +414,7 @@ export function findNextShipGraphWaypoint(
         y: targetNode.y,
         z: targetNode.z,
         onStair: isStairEdge || isInStairwellBand(sx, sy, sz),
+        jump: Boolean(cameJump[nextIdx]),
       };
     }
 
@@ -382,6 +425,7 @@ export function findNextShipGraphWaypoint(
       if (tentative < gScore[edge.to]) {
         cameFrom[edge.to] = cur;
         cameStair[edge.to] = edge.stair ? 1 : 0;
+        cameJump[edge.to] = edge.jump ? 1 : 0;
         gScore[edge.to] = tentative;
         const nb = NODES[edge.to];
         fScore[edge.to] = tentative + Math.hypot(nb.x - goalNode.x, nb.y - goalNode.y, nb.z - goalNode.z);
