@@ -76,6 +76,14 @@ const box = (x, z, heading, hull) => ({ x, z, heading, ...hull });
   console.log('  ✔ support radius along axes matches half width / half length');
 }
 {
+  // Rotated Freighter hull (bowZ = 1): at heading = +PI/4, forward is (-0.707, +0.707)
+  // so point (-40, 40) lies along the bow axis (inside 68 m halfLength, outside 12 m halfWidth if perpendicular!)
+  const freighter45 = { x: 0, z: 0, heading: Math.PI / 4, bowZ: 1, ...FREIGHTER_HULL };
+  assert.ok(pointInHull(-40, 40, freighter45), 'point along rotated Freighter +Z bow (-sin, cos) must be inside hull');
+  assert.ok(!pointInHull(40, 40, freighter45), 'point perpendicular to rotated Freighter hull must be outside hull');
+  console.log('  ✔ rotated Freighter hull (bowZ = 1) OBB matches 3D (-sin, cos) heading');
+}
+{
   const src = fs.readFileSync(path.join(process.cwd(), 'detailed-3d-sinking-freighter-game_sonnet/src/game/game.ts'), 'utf8');
   assert.ok(src.includes('stepVesselCollisions(dt)'), 'game loop must step vessel collisions');
   assert.ok(src.includes('pointInHull(proj.pos.x, proj.pos.z'), 'projectiles must use hull boxes');

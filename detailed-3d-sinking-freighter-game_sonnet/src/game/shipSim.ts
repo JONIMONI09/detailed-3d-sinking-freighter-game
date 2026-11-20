@@ -110,7 +110,7 @@ export class ShipSim {
       sumSide += c.water * c.sideBias;
     }
     this.totalFlow = totalFlow;
-    this.F = totW / totV;
+    this.F = totV > 0 ? totW / totV : 0;
     const zc = sumW > 1 ? sumZ / sumW : 0;
     const list = sumW > 1 ? sumSide / sumW : 0;
 
@@ -151,7 +151,8 @@ export class ShipSim {
     this.group.position.y = this.heaveBase - this.sinkDepth + this.waveHeave;
     this.q1.setFromAxisAngle(this.ax, this.pitch + pitchW);
     this.q2.setFromAxisAngle(this.az, this.roll + rollW);
-    this.qYaw.setFromAxisAngle(this.ay, this.heading);
+    // Freighter bow is +Z; positive heading turns clockwise (starboard, -X when facing +Z)
+    this.qYaw.setFromAxisAngle(this.ay, -this.heading);
     this.group.quaternion.copy(this.qYaw).multiply(this.q1).multiply(this.q2);
     this.group.updateMatrixWorld(true);
     // Neigung für Rutschen

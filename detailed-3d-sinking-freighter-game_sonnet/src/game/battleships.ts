@@ -239,7 +239,8 @@ export function stepBattleshipAI(
   let diff = desiredHeading - bs.heading;
   while (diff > Math.PI) diff -= Math.PI * 2;
   while (diff < -Math.PI) diff += Math.PI * 2;
-  const desiredRudder = Math.max(-28, Math.min(28, (diff * 180) / Math.PI * 0.8));
+  const turnSign = bs.speed < -0.1 ? 1 : -1;
+  const desiredRudder = Math.max(-28, Math.min(28, (turnSign * diff * 180) / Math.PI * 0.8));
   bs.rudderDeg += (desiredRudder - bs.rudderDeg) * Math.min(1, dt * 3.5);
   bs.targetSpeed = (7.5 + bs.level * 1.2) * speedScale;
 }
@@ -262,10 +263,10 @@ export function stepBattleship(
     return;
   }
 
-  // Propulsion & rudder steering
+  // Propulsion & rudder steering (bow is -Z; positive rudder = starboard/right = decreasing rotation.y)
   bs.speed += (bs.targetSpeed - bs.speed) * Math.min(1, dt * 0.9);
   if (Math.abs(bs.speed) > 0.05 && Math.abs(bs.rudderDeg) > 0.1) {
-    bs.heading += (bs.rudderDeg * Math.PI / 180) * (bs.speed / 12) * 0.45 * dt;
+    bs.heading -= (bs.rudderDeg * Math.PI / 180) * (bs.speed / 12) * 0.45 * dt;
   }
   const fx = -Math.sin(bs.heading);
   const fz = -Math.cos(bs.heading);

@@ -29,6 +29,24 @@ Do not use this file for speculative risks. Put open limitations in
 - Related files / skills:
 ```
 
+### ERR-2026-11-20-03 - Inverted Freighter Propulsion (+Z Bow), Rudder Yaw, Battleship Steering & Gameplay Physics Bugs
+
+- Date (Europe/Berlin): 2026-11-20
+- Area: Vessel kinematics & steering (`shipSim.ts`, `game.ts`, `battleships.ts`, `vesselCollision.ts`), Flood water/compass/torpedo/TNT sync (`game.ts`)
+- Status: Resolved
+- Symptom: Commanding `full-ahead` on `MV NORDWIND` drove the freighter backwards (stern-first toward `-Z`); starboard/port `[D]/[A]` rudder inputs rotated both the freighter (`+Z` bow) and battleship (`-Z` bow) in the opposite direction; rotated freighter OBB collision boxes, evasive autopilot, flood `waterMesh`, lifeboat launch direction, and HUD compass were misaligned; torpedoes spun around their roll axis instead of yawing toward target; attached TNT reducing a battleship to `0 HP` left `bs.sunk === false`; and `ShipSim.update()` produced `NaN` when compartment volume totaled `0`.
+- Root cause:
+  1. Freighter geometry in `shipBuilder.ts`/`shipTypes.ts` places the bow at `+Z` (`Z_BOW = 70`) and stern at `-Z` (`Z_STERN = -70`), whereas `game.ts` used `(-sin(heading), 0, -cos(heading))` (the `-Z` FPS/Battleship forward vector), `shipSim.ts` applied `+heading` to `qYaw` (turning starboard rudder to port `-X`/`+X` opposite), and `vesselCollision.ts` + Freighter autopilot/velocity/superlaser assumed `-Z` bow.
+  2. `battleships.ts` added `+rudderDeg` to `bs.heading` (`group.rotation.y`), turning its `-Z` bow left (`-X`) on starboard `[D]` input instead of right (`+X`).
+  3. `game.ts` kept compartment `waterMesh` unrotated in world space, computed HUD compass from ship-local `lookDirLocal()` with inverted `atan2(dir.x, dir.z)`, rotated torpedoes with `XYZ` Euler `rotation.x = Math.PI/2`, omitted `sunk = true` in `explodeDyn`, checked non-existent `"superstructure"` section id in `waterAt`, left `rudderCmd`/`helmMode` dirty in `restoreFreighter()`, and omitted `totV > 0` guard in `shipSim.ts`.
+- Solution:
+  1. In `shipSim.ts` & `game.ts`: Changed `qYaw` to `-this.heading` and Freighter forward/velocity/autopilot/superlaser sweep to `(-sin(heading), 0, cos(heading))` / `Math.atan2(-awayX, awayZ)`, and guarded `totV > 0 ? totW / totV : 0`.
+  2. In `vesselCollision.ts` & `game.ts`: Added optional `bowZ?: 1 | -1` to `HullBox` (`fz = (b.bowZ ?? -1) * Math.cos(b.heading)`), set `bowZ: 1` on `freighterHull()`, and updated Freighter collision velocity.
+  3. In `battleships.ts` & `game.ts`: Fixed Battleship steering sign (`bs.heading -= ...` and AI `turnSign`), set chase camera `yaw = bs.heading` on `switchVessel()`, cleared queued inputs on mode transitions, rotated `waterMesh` with `(-Math.PI/2, -heading, 0, "YXZ")`, computed world-space compass heading `atan2(-wdir.x, wdir.z)`, oriented torpedoes via `quaternion.setFromUnitVectors`, synced `bs.sunk = true` + mesh disposal in `explodeDyn`, fixed `waterAt` `super_*` check, rotated lifeboat launch vector, used `worldPos` + `pointInHull` for walkable Battleship decks, and reset `rudderCmd`/`helmMode` in `restoreFreighter()`.
+- Verification: `npx tsc --noEmit`, `npx tsc -p detailed-3d-sinking-freighter-game_sonnet/tsconfig.json --noEmit`, `npm test` (including updated `tests/vessel-steering-and-engine-breakdown.test.mjs` and `tests/vessel-collision.test.mjs`), `npm run docs:check`, both Vite builds, and live Chrome CDP verification on `http://127.0.0.1:5173/`.
+- Prevention: Always derive forward/steering/collision vectors from each vessel's actual 3D bow axis (`+Z` for Freighter, `-Z` for Battleship) and test `ShipSim` + `stepBattleship` directly against 3D world bow transforms.
+- Related files / skills: `detailed-3d-sinking-freighter-game_sonnet/src/game/shipSim.ts`, `game.ts`, `battleships.ts`, `vesselCollision.ts`, `tests/vessel-steering-and-engine-breakdown.test.mjs`, `tests/vessel-collision.test.mjs` / `error-fix-document`.
+
 ### ERR-2026-11-20-02 - Bilge Capacity, Incomplete Dewatering, Gap Jumping & Surface Swimming
 
 - Date (Europe/Berlin): 2026-11-20

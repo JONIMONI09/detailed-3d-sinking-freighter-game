@@ -1,6 +1,7 @@
 /**
  * Pure vessel hull collision helpers (oriented boxes in the XZ plane).
- * Heading convention matches the game: forward = (-sin(heading), -cos(heading)).
+ * Default heading convention (bowZ = -1): forward = (-sin(heading), -cos(heading)).
+ * Freighter convention (bowZ = 1): forward = (-sin(heading), +cos(heading)).
  */
 export interface HullBox {
   x: number;
@@ -8,6 +9,8 @@ export interface HullBox {
   heading: number;
   halfWidth: number;
   halfLength: number;
+  /** Local bow axis sign along Z (-1 = -Z bow for Battleships, +1 = +Z bow for Freighter). */
+  bowZ?: 1 | -1;
 }
 
 export interface HullContact {
@@ -28,7 +31,7 @@ export const BATTLESHIP_MASS = 3;
 
 function axes(b: HullBox): [number, number][] {
   const fx = -Math.sin(b.heading);
-  const fz = -Math.cos(b.heading);
+  const fz = (b.bowZ ?? -1) * Math.cos(b.heading);
   return [
     [fx, fz],
     [-fz, fx],
@@ -37,7 +40,7 @@ function axes(b: HullBox): [number, number][] {
 
 function projectRadius(b: HullBox, ax: number, az: number): number {
   const fx = -Math.sin(b.heading);
-  const fz = -Math.cos(b.heading);
+  const fz = (b.bowZ ?? -1) * Math.cos(b.heading);
   const rx = -fz;
   const rz = fx;
   return b.halfLength * Math.abs(fx * ax + fz * az) + b.halfWidth * Math.abs(rx * ax + rz * az);
@@ -74,7 +77,7 @@ export function pointInHull(px: number, pz: number, b: HullBox, margin = 0): boo
   const dx = px - b.x;
   const dz = pz - b.z;
   const fx = -Math.sin(b.heading);
-  const fz = -Math.cos(b.heading);
+  const fz = (b.bowZ ?? -1) * Math.cos(b.heading);
   const along = dx * fx + dz * fz;
   const across = dx * -fz + dz * fx;
   return Math.abs(along) <= b.halfLength + margin && Math.abs(across) <= b.halfWidth + margin;
