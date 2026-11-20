@@ -22,68 +22,88 @@ export interface ShipGraphWaypoint {
 }
 
 const NODES: ShipNavNode[] = [
-  // --- Main Exterior Deck & Catwalks (y = 3.0) ---
-  { id: "deck_fwd", x: 0, y: 3.0, z: 34.0 },
-  { id: "deck_mid", x: 0, y: 3.0, z: 0.0 },
-  { id: "deck_aft", x: 0, y: 3.0, z: -42.5 },
+  // --- Main Exterior Deck & Container-Free Side Walkways (y = 3.0) ---
+  { id: "deck_fwd", x: 0, y: 3.0, z: 55.2 },
+  { id: "deck_mid", x: 0, y: 3.0, z: -9.2 },
+  { id: "deck_aft", x: 0, y: 3.0, z: -38.5 },
+  { id: "deck_port_aft", x: -8.5, y: 3.0, z: -38.5 },
+  { id: "deck_port_mid", x: -8.5, y: 3.0, z: -9.2 },
+  { id: "deck_port_prehold", x: -8.5, y: 3.0, z: 17.5 },
+  { id: "deck_port_fwd", x: -5.2, y: 3.0, z: 27.6 },
+  { id: "deck_port_bow", x: -8.5, y: 3.0, z: 55.2 },
+  { id: "deck_stbd_aft", x: 8.5, y: 3.0, z: -38.5 },
+  { id: "deck_stbd_mid", x: 8.5, y: 3.0, z: -9.2 },
+  { id: "deck_stbd_fwd", x: 8.5, y: 3.0, z: 25.5 },
+  { id: "deck_stbd_bow", x: 8.5, y: 3.0, z: 55.2 },
   { id: "d0_hold_gate", x: -8.6, y: 3.0, z: 27.6 },
   { id: "d0_hold_top", x: -8.6, y: 3.0, z: 26.2, stair: true },
 
-  // Exterior catwalks around superstructure (centerline x = +-9.45)
-  { id: "d0_port_fwd_ext", x: -9.45, y: 3.0, z: -42.5 },
-  { id: "d0_port_ext", x: -9.45, y: 3.0, z: -47.0 },
-  { id: "d0_port_aft_ext", x: -9.45, y: 3.0, z: -60.0 },
-  { id: "d0_stbd_fwd_ext", x: 9.45, y: 3.0, z: -42.5 },
-  { id: "d0_stbd_ext", x: 9.45, y: 3.0, z: -47.0 },
-  { id: "d0_stbd_aft_ext", x: 9.45, y: 3.0, z: -60.0 },
+  // Exterior catwalks around superstructure (clear of walls +-9.0, railings +-10.7, and fore barrels at -41/-42)
+  { id: "d0_port_fwd_ext", x: -9.55, y: 3.0, z: -43.2 },
+  { id: "d0_port_ext", x: -9.55, y: 3.0, z: -47.0 },
+  { id: "d0_port_aft_ext", x: -9.55, y: 3.0, z: -60.0 },
+  { id: "d0_stbd_fwd_ext", x: 9.55, y: 3.0, z: -43.2 },
+  { id: "d0_stbd_ext", x: 9.55, y: 3.0, z: -47.0 },
+  { id: "d0_stbd_aft_ext", x: 9.55, y: 3.0, z: -60.0 },
   { id: "d0_stern", x: 0, y: 3.0, z: -66.8 },
 
-  // --- Superstructure Level 0 (y = 3.0) with explicit doorway center nodes ---
+  // --- Superstructure Level 0 (y = 3.0) with doorway centers, starboard stairwell bypass, and Engine Control wings ---
   { id: "d0_main_door", x: 0, y: 3.0, z: -44.15 },
   { id: "d0_main_in", x: 0, y: 3.0, z: -45.2 },
   { id: "d0_corr_mid", x: 0, y: 3.0, z: -47.0 },
+  { id: "d0_stbd_pass_fwd", x: 0.875, y: 3.0, z: -48.0 },
+  { id: "d0_stbd_pass_aft", x: 0.875, y: 3.0, z: -52.6 },
   { id: "d0_corr_aft", x: 0, y: 3.0, z: -53.6 },
   { id: "d0_ctrl_door", x: 0, y: 3.0, z: -57.2 },
   { id: "d0_eng_top", x: -0.875, y: 3.0, z: -57.8, stair: true },
   { id: "d0_stair_bot", x: -0.875, y: 3.0, z: -52.8, stair: true },
+  { id: "d0_ctrl_port", x: -3.8, y: 3.0, z: -57.6 },
+  { id: "d0_ctrl_port_aft", x: -3.8, y: 3.0, z: -61.5 },
+  { id: "d0_ctrl_stbd", x: 3.8, y: 3.0, z: -57.6 },
+  { id: "d0_ctrl_stbd_aft", x: 3.8, y: 3.0, z: -61.5 },
 
   { id: "d0_port_corr_door", x: -1.7, y: 3.0, z: -47.0 },
   { id: "d0_port_corr_aft", x: -1.7, y: 3.0, z: -53.6 },
   { id: "d0_port_side_door", x: -8.85, y: 3.0, z: -47.0 },
-  { id: "d0_port_mid", x: -5.0, y: 3.0, z: -47.0 },
-  { id: "d0_port_aft", x: -5.0, y: 3.0, z: -53.6 },
+  { id: "d0_port_mid", x: -4.2, y: 3.0, z: -47.0 },
+  { id: "d0_port_aft", x: -3.4, y: 3.0, z: -53.6 },
 
   { id: "d0_stbd_corr_door", x: 1.7, y: 3.0, z: -47.0 },
   { id: "d0_stbd_corr_aft", x: 1.7, y: 3.0, z: -53.6 },
   { id: "d0_stbd_side_door", x: 8.85, y: 3.0, z: -47.0 },
-  { id: "d0_stbd_mid", x: 5.0, y: 3.0, z: -47.0 },
-  { id: "d0_stbd_aft", x: 5.0, y: 3.0, z: -53.6 },
+  { id: "d0_stbd_mid", x: 3.6, y: 3.0, z: -47.0 },
+  { id: "d0_stbd_aft", x: 4.2, y: 3.0, z: -53.6 },
 
-  // --- Superstructure Level 1 (y = 6.2) ---
+  // --- Superstructure Level 1 (y = 6.2, forward landing & forward cabins reachable without crossing stairs) ---
   { id: "d1_stair_arr", x: -0.875, y: 6.2, z: -47.6, stair: true },
   { id: "d1_corr_mid", x: 0, y: 6.2, z: -47.0 },
-  { id: "d1_corr_aft", x: 0, y: 6.2, z: -53.6 },
   { id: "d1_stair_dep", x: 0.875, y: 6.2, z: -47.6, stair: true },
   { id: "d1_port_door", x: -1.7, y: 6.2, z: -47.0 },
   { id: "d1_stbd_door", x: 1.7, y: 6.2, z: -47.0 },
-  { id: "d1_port_mid", x: -5.0, y: 6.2, z: -47.0 },
-  { id: "d1_stbd_mid", x: 5.0, y: 6.2, z: -47.0 },
+  { id: "d1_port_mid", x: -4.2, y: 6.2, z: -47.0 },
+  { id: "d1_stbd_mid", x: 4.2, y: 6.2, z: -47.0 },
 
-  // --- Superstructure Level 2 (y = 9.4) ---
+  // --- Superstructure Level 2 (y = 9.4, aft landing, aft corridor & mid/aft cabins) ---
   { id: "d2_stair_arr", x: 0.875, y: 9.4, z: -52.8, stair: true },
   { id: "d2_corr_aft", x: 0, y: 9.4, z: -53.6 },
-  { id: "d2_corr_mid", x: 0, y: 9.4, z: -47.0 },
   { id: "d2_stair_dep", x: -0.875, y: 9.4, z: -52.8, stair: true },
-  { id: "d2_port_door", x: -1.7, y: 9.4, z: -47.0 },
-  { id: "d2_stbd_door", x: 1.7, y: 9.4, z: -47.0 },
-  { id: "d2_port_mid", x: -5.0, y: 9.4, z: -47.0 },
-  { id: "d2_stbd_mid", x: 5.0, y: 9.4, z: -47.0 },
+  { id: "d2_corr_far_aft", x: 0, y: 9.4, z: -62.0 },
+  { id: "d2_port_mid_door", x: -1.7, y: 9.4, z: -54.0 },
+  { id: "d2_port_mid_room", x: -4.2, y: 9.4, z: -54.0 },
+  { id: "d2_stbd_mid_door", x: 1.7, y: 9.4, z: -54.0 },
+  { id: "d2_stbd_mid_room", x: 4.2, y: 9.4, z: -54.0 },
+  { id: "d2_port_aft_door", x: -1.7, y: 9.4, z: -62.0 },
+  { id: "d2_port_aft_room", x: -4.2, y: 9.4, z: -62.0 },
+  { id: "d2_stbd_aft_door", x: 1.7, y: 9.4, z: -62.0 },
+  { id: "d2_stbd_aft_room", x: 4.2, y: 9.4, z: -62.0 },
 
   // --- Bridge Level 3 (y = 12.6) ---
   { id: "d3_stair_arr", x: -0.875, y: 12.6, z: -47.6, stair: true },
-  { id: "d3_bridge", x: 0, y: 12.6, z: -46.2 },
-  { id: "d3_port", x: -5.5, y: 12.6, z: -46.2 },
-  { id: "d3_stbd", x: 5.5, y: 12.6, z: -46.2 },
+  { id: "d3_bridge", x: 0, y: 12.6, z: -46.8 },
+  { id: "d3_port", x: -5.5, y: 12.6, z: -46.8 },
+  { id: "d3_stbd", x: 5.5, y: 12.6, z: -46.8 },
+  { id: "d3_bridge_door", x: 5.5, y: 12.6, z: -52.2 },
+  { id: "d3_aft_roof", x: 5.5, y: 12.6, z: -55.0 },
 
   // --- Engine U-Stair Mid & Bottom (y = -1.0 -> -5.0) ---
   { id: "eng_mid", x: 0.0, y: -1.0, z: -63.5, stair: true },
@@ -93,8 +113,10 @@ const NODES: ShipNavNode[] = [
   { id: "hold_mid", x: -7.7, y: -1.0, z: 20.0, stair: true },
   { id: "hold_bot", x: -6.8, y: -5.0, z: 26.3, stair: true },
 
-  // --- Lower Holds & Bulkheads (y = -5.0) ---
-  { id: "low_eng", x: 0, y: -5.0, z: -54.0 },
+  // --- Lower Engine Aisles & Holds (y = -5.0, routing clear of Diesel Engine [-3.2..3.2, -55..-44]) ---
+  { id: "low_eng_aft", x: 0, y: -5.0, z: -56.2 },
+  { id: "low_eng_port", x: -4.5, y: -5.0, z: -49.0 },
+  { id: "low_eng_stbd", x: 4.5, y: -5.0, z: -49.0 },
   { id: "low_bh_eng", x: 0, y: -5.0, z: -39.0 },
   { id: "low_hold1", x: 0, y: -5.0, z: -22.0 },
   { id: "low_bh_12", x: 0, y: -5.0, z: -8.0 },
@@ -104,13 +126,26 @@ const NODES: ShipNavNode[] = [
 ];
 
 const EDGES: ShipNavEdge[] = [
-  // Exterior deck & catwalks
-  { a: "deck_fwd", b: "deck_mid" },
-  { a: "deck_fwd", b: "d0_hold_gate" },
+  // Exterior deck, side aisles & catwalks
+  { a: "deck_fwd", b: "deck_port_bow" },
+  { a: "deck_fwd", b: "deck_stbd_bow" },
+  { a: "deck_port_bow", b: "deck_port_fwd" },
+  { a: "deck_port_fwd", b: "deck_port_prehold" },
+  { a: "deck_port_prehold", b: "deck_port_mid" },
+  { a: "deck_port_mid", b: "deck_port_aft" },
+  { a: "deck_port_aft", b: "deck_aft" },
+  { a: "deck_stbd_bow", b: "deck_stbd_fwd" },
+  { a: "deck_stbd_fwd", b: "deck_stbd_mid" },
+  { a: "deck_stbd_mid", b: "deck_stbd_aft" },
+  { a: "deck_stbd_aft", b: "deck_aft" },
+  { a: "deck_port_mid", b: "deck_mid" },
+  { a: "deck_stbd_mid", b: "deck_mid" },
+  { a: "deck_port_fwd", b: "d0_hold_gate" },
   { a: "d0_hold_gate", b: "d0_hold_top" },
-  { a: "deck_mid", b: "deck_aft" },
   { a: "deck_aft", b: "d0_main_door" },
   { a: "d0_main_door", b: "d0_main_in" },
+  { a: "deck_port_aft", b: "d0_port_fwd_ext" },
+  { a: "deck_stbd_aft", b: "d0_stbd_fwd_ext" },
   { a: "deck_aft", b: "d0_port_fwd_ext" },
   { a: "deck_aft", b: "d0_stbd_fwd_ext" },
   { a: "d0_port_fwd_ext", b: "d0_port_ext" },
@@ -124,30 +159,33 @@ const EDGES: ShipNavEdge[] = [
   { a: "d0_stbd_ext", b: "d0_stbd_side_door" },
   { a: "d0_stbd_side_door", b: "d0_stbd_mid" },
 
-  // Level 0 interior
+  // Level 0 interior (uses starboard bypass around center stairwell divider; no edge through z = -50 cross-wall)
   { a: "d0_main_in", b: "d0_corr_mid" },
   { a: "d0_corr_mid", b: "d0_port_corr_door" },
   { a: "d0_port_corr_door", b: "d0_port_mid" },
   { a: "d0_corr_mid", b: "d0_stbd_corr_door" },
   { a: "d0_stbd_corr_door", b: "d0_stbd_mid" },
-  { a: "d0_corr_mid", b: "d0_corr_aft" },
+  { a: "d0_corr_mid", b: "d0_stbd_pass_fwd" },
+  { a: "d0_stbd_pass_fwd", b: "d0_stbd_pass_aft" },
+  { a: "d0_stbd_pass_aft", b: "d0_corr_aft" },
   { a: "d0_corr_aft", b: "d0_port_corr_aft" },
   { a: "d0_port_corr_aft", b: "d0_port_aft" },
   { a: "d0_corr_aft", b: "d0_stbd_corr_aft" },
   { a: "d0_stbd_corr_aft", b: "d0_stbd_aft" },
-  { a: "d0_port_mid", b: "d0_port_aft" },
-  { a: "d0_stbd_mid", b: "d0_stbd_aft" },
   { a: "d0_corr_aft", b: "d0_stair_bot" },
   { a: "d0_corr_aft", b: "d0_ctrl_door" },
   { a: "d0_ctrl_door", b: "d0_eng_top" },
+  { a: "d0_ctrl_door", b: "d0_ctrl_port" },
+  { a: "d0_ctrl_port", b: "d0_ctrl_port_aft" },
+  { a: "d0_ctrl_door", b: "d0_ctrl_stbd" },
+  { a: "d0_ctrl_stbd", b: "d0_ctrl_stbd_aft" },
 
   // Level 0 <-> Level 1 stair
   { a: "d0_stair_bot", b: "d1_stair_arr", stair: true },
 
-  // Level 1 interior
+  // Level 1 interior (forward corridor & forward cabins)
   { a: "d1_stair_arr", b: "d1_corr_mid" },
   { a: "d1_corr_mid", b: "d1_stair_dep" },
-  { a: "d1_corr_mid", b: "d1_corr_aft" },
   { a: "d1_corr_mid", b: "d1_port_door" },
   { a: "d1_port_door", b: "d1_port_mid" },
   { a: "d1_corr_mid", b: "d1_stbd_door" },
@@ -156,35 +194,42 @@ const EDGES: ShipNavEdge[] = [
   // Level 1 <-> Level 2 stair
   { a: "d1_stair_dep", b: "d2_stair_arr", stair: true },
 
-  // Level 2 interior
+  // Level 2 interior (aft/mid corridor & mid/aft cabins)
   { a: "d2_stair_arr", b: "d2_corr_aft" },
   { a: "d2_corr_aft", b: "d2_stair_dep" },
-  { a: "d2_corr_aft", b: "d2_corr_mid" },
-  { a: "d2_corr_mid", b: "d2_port_door" },
-  { a: "d2_port_door", b: "d2_port_mid" },
-  { a: "d2_corr_mid", b: "d2_stbd_door" },
-  { a: "d2_stbd_door", b: "d2_stbd_mid" },
+  { a: "d2_corr_aft", b: "d2_corr_far_aft" },
+  { a: "d2_corr_aft", b: "d2_port_mid_door" },
+  { a: "d2_port_mid_door", b: "d2_port_mid_room" },
+  { a: "d2_corr_aft", b: "d2_stbd_mid_door" },
+  { a: "d2_stbd_mid_door", b: "d2_stbd_mid_room" },
+  { a: "d2_corr_far_aft", b: "d2_port_aft_door" },
+  { a: "d2_port_aft_door", b: "d2_port_aft_room" },
+  { a: "d2_corr_far_aft", b: "d2_stbd_aft_door" },
+  { a: "d2_stbd_aft_door", b: "d2_stbd_aft_room" },
 
   // Level 2 <-> Level 3 stair
   { a: "d2_stair_dep", b: "d3_stair_arr", stair: true },
 
-  // Level 3 Bridge
+  // Level 3 Bridge & Aft Roof
   { a: "d3_stair_arr", b: "d3_bridge" },
   { a: "d3_bridge", b: "d3_port" },
   { a: "d3_bridge", b: "d3_stbd" },
+  { a: "d3_stbd", b: "d3_bridge_door" },
+  { a: "d3_bridge_door", b: "d3_aft_roof" },
 
-  // Engine U-stair
+  // Engine U-stair & side walkways
   { a: "d0_eng_top", b: "eng_mid", stair: true },
   { a: "eng_mid", b: "eng_bot", stair: true },
-  { a: "eng_bot", b: "low_eng" },
+  { a: "eng_bot", b: "low_eng_aft" },
+  { a: "low_eng_aft", b: "low_eng_port" },
+  { a: "low_eng_aft", b: "low_eng_stbd" },
+  { a: "low_eng_port", b: "low_bh_eng" },
+  { a: "low_eng_stbd", b: "low_bh_eng" },
 
-  // Hold U-stair
+  // Hold U-stair & Lower holds
   { a: "d0_hold_top", b: "hold_mid", stair: true },
   { a: "hold_mid", b: "hold_bot", stair: true },
   { a: "hold_bot", b: "low_hold2" },
-
-  // Lower holds
-  { a: "low_eng", b: "low_bh_eng" },
   { a: "low_bh_eng", b: "low_hold1" },
   { a: "low_hold1", b: "low_bh_12" },
   { a: "low_bh_12", b: "low_hold2" },
@@ -233,8 +278,8 @@ function nearestNode(x: number, y: number, z: number): number {
  * the freighter's stair flights or narrow exterior catwalks.
  */
 export function isInStairwellBand(x: number, y: number, z: number): boolean {
-  // Superstructure stairwell (x in [-1.9, 1.9], z in [-53.2, -47.2], y in [2.6, 13.0])
-  if (Math.abs(x) <= 1.9 && z >= -53.2 && z <= -47.2 && y >= 2.6 && y <= 13.0) return true;
+  // Superstructure stairwell (steps span x in [-1.6, 1.6], z in [-52.0, -48.4]; leave z=-47/-53.6 doorways clear)
+  if (Math.abs(x) <= 1.65 && z >= -52.5 && z <= -47.9 && y >= 2.6 && y <= 13.0) return true;
   // Engine U-stairwell
   if (Math.abs(x) <= 1.9 && z >= -64.5 && z <= -57.0 && y <= 3.5) return true;
   // Hold U-stairwell
@@ -247,7 +292,7 @@ export function isInStairwellBand(x: number, y: number, z: number): boolean {
  * around the superstructure (|x| in [8.6, 10.2], z in [-66.5, -43.5], y in [2.5, 4.5]).
  */
 export function isOnNarrowCatwalk(x: number, y: number, z: number): boolean {
-  return Math.abs(x) >= 8.6 && Math.abs(x) <= 10.2 && z >= -66.5 && z <= -43.5 && y >= 2.5 && y <= 4.5;
+  return Math.abs(x) >= 8.6 && Math.abs(x) <= 10.4 && z >= -66.5 && z <= -43.0 && y >= 2.5 && y <= 4.5;
 }
 
 /**

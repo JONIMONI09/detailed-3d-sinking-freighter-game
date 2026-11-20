@@ -355,6 +355,90 @@ function test3DShipNavGraphStairAndCatwalkRouting() {
   console.log('  ok 3D ShipNavGraph stair routing, doorway centering & self-unstick replanning verified');
 }
 
+// 8. Catwalk Bounds, Level 0/1/2 Stairwell Bypass, Control Room Bypass, Open-Door Alignment & Locked Door Access
+function testCatwalkBoundsBypassAndOpenDoorCentering() {
+  const shipNavGraphMod = loadTs('detailed-3d-sinking-freighter-game_sonnet/src/game/shipNavGraph.ts');
+  const navgridMod = loadTs('detailed-3d-sinking-freighter-game_sonnet/src/game/navgrid.ts');
+  const ragdollMod = loadTs('detailed-3d-sinking-freighter-game_sonnet/src/game/ragdoll.ts', (id) => {
+    if (id === './navmesh3d') return navmesh;
+    throw new Error(`Unexpected require in ragdoll: ${id}`);
+  });
+  const crewMod = loadTs('detailed-3d-sinking-freighter-game_sonnet/src/game/crew.ts', (id) => {
+    if (id === './navmesh3d') return navmesh;
+    if (id === './ragdoll') return ragdollMod;
+    if (id === './navgrid') return navgridMod;
+    if (id === './shipNavGraph') return shipNavGraphMod;
+    throw new Error(`Unexpected require: ${id}`);
+  });
+
+  // A. Catwalk bounds must preserve x = +-9.55 and stern z = -66.8 instead of clamping into superstructure walls
+  const catBot = crewMod.createCrewMember('CatwalkGuard', 'boatswain', 9.55, 3.0, -66.8, 4);
+  crewMod.enforceShipBoundsAndRespawn(catBot);
+  assert.ok(Math.abs(catBot.x - 9.55) < 1e-6, `Expected catwalk X=9.55 preserved, got ${catBot.x}`);
+  assert.ok(Math.abs(catBot.z - -66.8) < 1e-6, `Expected stern Z=-66.8 preserved, got ${catBot.z}`);
+
+  // B. Level 0 center corridor routes around divider via starboard lane (x = 0.875)
+  const l0Bypass = shipNavGraphMod.findNextShipGraphWaypoint(0, 3.0, -47.0, 0, 3.0, -53.6);
+  assert.ok(Math.abs(l0Bypass.x - 0.875) < 0.1, `Expected Level 0 starboard bypass x=0.875, got ${l0Bypass.x}`);
+
+  // C. Level 0 side rooms must NOT cross solid wall at z = -50 directly
+  const roomBypass = shipNavGraphMod.findNextShipGraphWaypoint(-4.2, 3.0, -47.0, -3.4, 3.0, -53.6);
+  assert.ok(roomBypass.x > -2.5 && roomBypass.z > -48.5, `Expected exit via corridor door (-1.7, -47.0), got (${roomBypass.x}, ${roomBypass.z})`);
+
+  // D. Control Room port/stbd wings route north via d0_ctrl_door (0, -57.2) instead of straight across engineHole railing
+  const ctrlWp = shipNavGraphMod.findNextShipGraphWaypoint(3.8, 3.0, -61.5, -3.8, 3.0, -61.5);
+  assert.ok(ctrlWp.z >= -58.2, `Expected Control Room North bypass around engineHole, got (${ctrlWp.x}, ${ctrlWp.z})`);
+
+  // E. Open-door (enabled: false) world.boxes perpendicular centering & Mission-mode locked door forceOpen
+  let forcedOpen = false;
+  const openDoorOwner = {
+    axis: 'z',
+    fixed: -1.7,
+    locked: 'red',
+    target: 0,
+    open: 0,
+    forceOpen() {
+      forcedOpen = true;
+      this.target = 1;
+      this.open = 1;
+    },
+  };
+  const doorBoxes = [
+    { minX: -1.8, minY: 3.0, minZ: -46.5, maxX: -1.6, maxY: 6.0, maxZ: -44.0, enabled: true, tag: 'wall' },
+    { minX: -1.8, minY: 3.0, minZ: -50.0, maxX: -1.6, maxY: 6.0, maxZ: -47.5, enabled: true, tag: 'wall' },
+    { minX: -1.77, minY: 3.0, minZ: -47.5, maxX: -1.63, maxY: 5.2, maxZ: -46.5, enabled: false, tag: 'door', owner: openDoorOwner },
+  ];
+  const doorWorld = {
+    boxes: doorBoxes,
+    move(body, dx, dy, dz) {
+      body.x += dx;
+      body.z += dz;
+      const nextY = body.y + dy;
+      if (nextY <= 3.0) {
+        body.y = 3.0;
+        body.onGround = true;
+      } else {
+        body.y = nextY;
+        body.onGround = false;
+      }
+    },
+    raycast() {
+      return null;
+    },
+  };
+  const doorBot = crewMod.createCrewMember('DoorBot', 'damage-control', -0.9, 3.0, -47.38, 4);
+  doorBot.state = 'moving';
+  doorBot.targetId = 99;
+  doorBot.onGround = true;
+  const doorBreach = [{ id: 99, x: -4.2, y: 3.0, z: -47.0, area: 0.8 }];
+  for (let i = 0; i < 6; i++) {
+    crewMod.stepCrew(doorBot, 0.05, doorBreach, undefined, { world: doorWorld });
+  }
+  assert.equal(forcedOpen, true, 'Crew must open even keycard-locked doors cleanly when target === 0');
+  assert.ok(Math.abs(doorBot.z - -47.0) < Math.abs(-47.38 - -47.0), `Expected open-door alignment toward z=-47.0, got z=${doorBot.z}`);
+  console.log('  ok catwalk bounds, stairwell/room/Control Room bypass, and open/locked door alignment verified');
+}
+
 test5RaySteeringAndDeflection();
 testDoorTraversalSequence();
 testVerticalLadderClimbing();
@@ -362,5 +446,6 @@ testPortableLadderPlacement();
 testBelowDeckDescentAndDropJump();
 testGridAStarDoorwayAndWallBypass();
 test3DShipNavGraphStairAndCatwalkRouting();
+testCatwalkBoundsBypassAndOpenDoorCentering();
 
 console.log('Crew navigation unit tests passed.');

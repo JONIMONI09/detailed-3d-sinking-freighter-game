@@ -1,6 +1,6 @@
 # Error and Solution Ledger
 
-Last reviewed: 2026-11-13 (Europe/Berlin)
+Last reviewed: 2026-11-20 (Europe/Berlin)
 Audience: Freebuff AI agent working in this repository only
 Owner skill: `error-fix-document`
 
@@ -28,6 +28,22 @@ Do not use this file for speculative risks. Put open limitations in
 - Prevention:
 - Related files / skills:
 ```
+
+### ERR-2026-11-20-01 - Catwalk Clamping, Phantom Stair/Room Graph Edges, Disabled Open-Door Centering & Localized Sandbox Physics
+
+- Date (Europe/Berlin): 2026-11-20
+- Area: Crew & Guard AI Navigation (`shipNavGraph.ts`, `crew.ts`, `stormworksSupervisor.ts`, `enemies.ts`), Localized Blast Physics, Hole Cleanup & Bilge Control (`game.ts`, `Hud.tsx`)
+- Status: Resolved
+- Symptom: Crew bots on exterior catwalks remained pinned against the superstructure wall/aft edge; corridor/stairwell/Control Room bots collided with divider walls, `z = -50` bulkheads, `engineHole` railings, Galley/Lounge furniture, diesel engine blocks, and deck container stacks; open doorframes (`door.open >= 0.4`) lost center-alignment; `StormworksSupervisor.crew` spawned at `y = 0.1` mid-air without patrols or peer separation; distant crew ragdolled from global camera shake; sealed breach meshes remained visible; and thrown TNT ignored water drag/buoyancy.
+- Root cause: (1) `enforceShipBoundsAndRespawn` clamped `m.x` to `[-9.2, 9.2]` and `m.z` to `[-65.5, 62.0]`, pressing catwalk/stern crew into superstructure walls at `|x| = 9.0` and `z = -66.0`; (2) `shipNavGraph.ts` contained blocked phantom edges (`d0_corr_mid <-> d0_corr_aft`, `d0_port_mid <-> d0_port_aft`, `d0_stbd_mid <-> d0_stbd_aft`, `d1_corr_mid <-> d1_corr_aft`, `d2_corr_aft <-> d2_corr_mid`), orphaned nodes, and waypoints inside containers, Galley counter, diesel engine, and `holdHole` railings, while `isInStairwellBand` spanned `|x| <= 1.9, z in [-53.2, -47.2]` and blocked adjacent doorway alignment; (3) `door.collider.enabled` became `false` once `door.open >= 0.4`, hiding open doorways from `world.raycast`, and `(!door.locked || door.key)` failed because `Door` has no `.key` property; (4) `StormworksSupervisor.crew` spawned at `y = 0.1` with min-water `-99`; (5) `game.ts` fed global `this.shake * 420` to all crew and omitted Level 1/3 `deckFloorY`, hole mesh disposal, TNT hydrodynamics, and remote bilge toggle.
+- Solution:
+  1. In `shipNavGraph.ts` & `game.ts`: Rebuilt `NODES`/`EDGES` around obstacle-free deck walkways (`deck_port_aft/mid/prehold/fwd/bow`), catwalks (`x = +-9.55, z = -43.2`), Level 0 starboard stairwell bypass (`x = 0.875`), Control Room North bypass around `engineHole`, connected Level 1/2 stair landings/cabins without phantom walls, engine side aisles around the diesel engine, and updated all 22 crew spawns/patrols plus multi-deck `deckFloorY` (`12.6/9.4/6.2/3.0/-5.0`).
+  2. In `crew.ts`: Widened ship bounds clamp to `x in [-10.2, 10.2], z in [-68.5, 62.0]`; scanned `world.boxes` (including disabled open door colliders) regardless of `stairMode` for perpendicular doorway alignment; removed the broken `door.key` guard; and added idle patrol kit/ladder replenishment after `8.0s` when no breaches are targeted.
+  3. In `stormworksSupervisor.ts` & `enemies.ts`: Grounded `supervisor.crew` on `DECK_Y = 3.0` with patrol routes, peer separation, and accurate active flood level (`Math.max`); upgraded `Guard.moveTo()` to route via `navgrid.ts` A* and open swinging doors in the approach direction.
+  4. In `game.ts` & `Hud.tsx`: Attenuated blast ragdoll impulse per crew member by inverse-square distance (`lastBlast`), pushed loose `dyns` radially, added water drag/buoyancy/splash to thrown TNT in `updateDyns`, removed/disposed 3D breach meshes upon seal, translated remaining German strings to English, and added `remoteToggleBilgePumps()` + button in the `[TAB]` Command Tablet.
+- Verification: `npx tsc --noEmit`, `npx tsc -p detailed-3d-sinking-freighter-game_sonnet/tsconfig.json --noEmit`, `npm test` (all 12 Node test suites including new catwalk/bypass/open-door regression checks + 10 Python CI checks), `npm run build`, Sonnet Vite build, and `npm run docs:check` passed after final edits.
+- Prevention: Validate every navigation graph node and spawn/patrol coordinate against actual collider bounds (walls, stairs, railings, furniture, machinery, containers), keep open-door alignment active via `world.boxes`, and test multi-floor/catwalk/doorway topology in `tests/crew-navigation.test.mjs`.
+- Related files / skills: `detailed-3d-sinking-freighter-game_sonnet/src/game/shipNavGraph.ts`, `crew.ts`, `stormworksSupervisor.ts`, `enemies.ts`, `game.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/ui/Hud.tsx`, `tests/crew-navigation.test.mjs` / `error-fix-document`.
 
 ### ERR-2026-11-13-11 - Catwalk Edge Cornering, Doorway Collider Centering & Ragdoll Fall-and-Stand Recovery
 

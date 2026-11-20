@@ -125,3 +125,15 @@
   2. External Tailwind CDN script was blocked by Aux Pane Electron Webview CSP.
 - **Fix:** Converted the sidecar to native Node.js (`server.mjs`) with pure embedded CSS and dedicated `index.html`. Listening on `0.0.0.0:8769`.
 - **Access:** [Quota Sentinel](sidecar://quota-sentinel/sentinel-dashboard/) or direct URL `http://127.0.0.1:8769/`.
+
+### [RESOLVED] Crew/Guard Looping on Exterior Catwalks, Stairs, Doors & Sandbox Physics Edge Cases
+- **Issue:** Crew and Supervisor bots looped on Level 0 corridors, exterior catwalks, stairs, and open doors, while `Guards` walked into walls and global `shake * 420` ragdolled distant bots.
+- **Root Cause:**
+  1. `enforceShipBoundsAndRespawn` clamped bots to `|x| <= 9.2`, pinning catwalk bots against superstructure outer walls (`|x| = 9.0`), while several `shipNavGraph` edges/nodes crossed internal walls (`x = 0`, `z = -50`), furniture, machinery, container stacks, or `holdHole` railings.
+  2. `world.raycast` missed open doors once `door.collider.enabled` became `false` at `open >= 0.4`, and `walkToward` gated doorway alignment behind `!stairMode`.
+  3. `StormworksSupervisor.crew` spawned at `y = 0.1` mid-air without `peers` separation, and `Guard.moveTo()` lacked `navgrid.ts` A* steering.
+- **Fix & Invariants:**
+  - Keep exterior catwalk bounds (`x in [-10.2, 10.2], z in [-68.5, 62.0]`) and all `shipNavGraph` waypoints outside `shipBuilder.ts` furniture, `engineHole`, `holdHole`, and container colliders.
+  - Scan `world.boxes` (including open door colliders with `doorRef`) in `walkToward()` regardless of `stairMode` for perpendicular doorway alignment and door opening, and keep `Supervisor.crew` grounded on `DECK_Y = 3.0` with shared peer separation and A* grid steering for `Guard`.
+  - Apply inverse-square `lastBlast` shockwaves, loose `dyns` radial blast impulses, and hydrodynamic water drag/buoyancy on thrown TNT, plus `Master Bilge Pumps` command-tablet control and `holeGroup` mesh disposal on repair.
+  - Always gate patrol kit restocks so single-tick unit assertions (`patchKits === 0` or decrement checks) remain deterministic.

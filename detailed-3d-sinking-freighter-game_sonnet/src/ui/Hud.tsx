@@ -536,6 +536,16 @@ export default function Hud({ h, settings, touch, game }: { h: HudState; setting
               <button onClick={() => game.remoteCycleFlood()} className="rounded-lg border border-blue-400/30 bg-blue-900/40 py-2 hover:bg-blue-800/50">
                 🌊 Cycle Flood Rate [F]
               </button>
+              <button
+                onClick={() => game.remoteToggleBilgePumps()}
+                className={`col-span-2 rounded-lg border py-2 ${
+                  h.bilgePumpsActive
+                    ? "border-emerald-400/60 bg-emerald-700/40 text-emerald-100 hover:bg-emerald-600/50"
+                    : "border-amber-400/40 bg-amber-900/30 text-amber-200 hover:bg-amber-800/40"
+                }`}
+              >
+                💧 Master Bilge Pumps (64 m³/s): {h.bilgePumpsActive ? "ON" : "OFF"}
+              </button>
               {(() => {
                 const allDestroyed = h.theatre === "orbital" && h.freighterDestroyed && h.battleshipSunk;
                 return (

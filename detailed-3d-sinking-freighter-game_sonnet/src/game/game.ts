@@ -110,6 +110,7 @@ export interface HudState {
   statusParts: { name: string; pct: number }[];
   lockedTargetLabel: string;
   lockedTargetDist: number;
+  bilgePumpsActive: boolean;
 }
 
 export interface EndInfo {
@@ -139,6 +140,7 @@ interface Dyn {
   led: THREE.Mesh;
   placedMarker: boolean;
   remote: number;
+  inWater?: boolean;
   attachedBs?: Battleship;
   attachLocal?: THREE.Vector3;
 }
@@ -296,6 +298,7 @@ export class Game {
   }[] = [];
   lockedTarget: { kind: "freighter" } | { kind: "battleship"; id: string } | null = null;
   engineExploded = false;
+  private lastBlast = { pos: V(), power: 0, t: -99 };
   private tmpV = V();
   private tmpQ = new THREE.Quaternion();
   private tmpE = new THREE.Euler();
@@ -457,80 +460,82 @@ export class Game {
       return m;
     };
     this.deckCrew = [
-      // Bridge Level 3 & Officer Deck Level 2
-      makeCrew("Helmsman", "boatswain", -2.5, 12.6, -46.2, [
-        { x: -5.0, y: 12.6, z: -46.2 },
-        { x: 5.0, y: 12.6, z: -46.2 },
+      // Bridge Level 3 & Officer Deck Level 2 (aligned with connected aft/mid stair landings & obstacle-free rooms)
+      makeCrew("Helmsman", "boatswain", -2.5, 12.6, -46.8, [
+        { x: -5.0, y: 12.6, z: -46.8 },
+        { x: 5.0, y: 12.6, z: -46.8 },
       ]),
-      makeCrew("Watch Officer", "electrician", 3.5, 12.6, -46.2, [
-        { x: 4.5, y: 12.6, z: -46.2 },
-        { x: 0.0, y: 9.4, z: -47.0 },
-      ]),
-      makeCrew("Bridge Officer", "boatswain", -4.5, 9.4, -47.0, [
-        { x: -5.0, y: 9.4, z: -47.0 },
-        { x: 5.0, y: 9.4, z: -47.0 },
-      ]),
-      makeCrew("Radio Tech", "electrician", 4.5, 9.4, -47.0, [
-        { x: 5.0, y: 9.4, z: -47.0 },
+      makeCrew("Watch Officer", "electrician", 3.5, 12.6, -46.8, [
+        { x: 4.5, y: 12.6, z: -46.8 },
         { x: 0.0, y: 9.4, z: -53.6 },
       ]),
-      // Cabin Deck Level 1
-      makeCrew("Cabin Steward", "medic", -4.5, 6.2, -47.0, [
-        { x: -5.0, y: 6.2, z: -47.0 },
-        { x: 5.0, y: 6.2, z: -47.0 },
+      makeCrew("Bridge Officer", "boatswain", -4.2, 9.4, -54.0, [
+        { x: -4.2, y: 9.4, z: -54.0 },
+        { x: 4.2, y: 9.4, z: -54.0 },
       ]),
-      makeCrew("Deck Cadet", "damage-control", 0.0, 6.2, -53.6, [
-        { x: 0.0, y: 6.2, z: -53.6 },
+      makeCrew("Radio Tech", "electrician", 4.2, 9.4, -62.0, [
+        { x: 4.2, y: 9.4, z: -62.0 },
+        { x: -4.2, y: 9.4, z: -62.0 },
+      ]),
+      // Cabin Deck Level 1 (forward cabins & stair flight to Level 2 aft landing)
+      makeCrew("Cabin Steward", "medic", -4.2, 6.2, -47.0, [
+        { x: -4.2, y: 6.2, z: -47.0 },
+        { x: 4.2, y: 6.2, z: -47.0 },
+      ]),
+      makeCrew("Deck Cadet", "damage-control", 0.0, 6.2, -47.0, [
         { x: 0.0, y: 6.2, z: -47.0 },
+        { x: 0.0, y: 9.4, z: -53.6 },
       ]),
-      // Superstructure Level 0, Catwalks & Control Room
-      makeCrew("Control Room Eng.", "electrician", 3.5, 3.0, -61.5, [
-        { x: 4.5, y: 3.0, z: -61.5 },
-        { x: -4.5, y: 3.0, z: -61.5 },
+      // Superstructure Level 0, Exterior Catwalks & Control Room (routed north of engineHole railing)
+      makeCrew("Control Room Eng.", "electrician", 3.8, 3.0, -61.5, [
+        { x: 3.8, y: 3.0, z: -61.5 },
+        { x: 3.8, y: 3.0, z: -57.6 },
+        { x: -3.8, y: 3.0, z: -57.6 },
+        { x: -3.8, y: 3.0, z: -61.5 },
       ]),
       makeCrew("Corridor Patrol", "damage-control", 0.0, 3.0, -47.0, [
         { x: 0.0, y: 3.0, z: -53.6 },
-        { x: 0.0, y: 3.0, z: -42.5 },
+        { x: 0.0, y: 3.0, z: -38.5 },
       ]),
-      makeCrew("Mess Sailor", "medic", -5.0, 3.0, -53.6, [
-        { x: -5.0, y: 3.0, z: -53.6 },
-        { x: -5.0, y: 3.0, z: -47.0 },
+      makeCrew("Mess Sailor", "medic", -3.4, 3.0, -53.6, [
+        { x: -3.4, y: 3.0, z: -53.6 },
+        { x: -4.2, y: 3.0, z: -47.0 },
       ]),
-      makeCrew("Port Catwalk Guard", "boatswain", -9.45, 3.0, -47.0, [
-        { x: -9.45, y: 3.0, z: -60.0 },
-        { x: -9.45, y: 3.0, z: -42.5 },
+      makeCrew("Port Catwalk Guard", "boatswain", -9.55, 3.0, -47.0, [
+        { x: -9.55, y: 3.0, z: -60.0 },
+        { x: -9.55, y: 3.0, z: -43.2 },
       ]),
-      makeCrew("Stbd Catwalk Guard", "boatswain", 9.45, 3.0, -47.0, [
-        { x: 9.45, y: 3.0, z: -42.5 },
-        { x: 9.45, y: 3.0, z: -60.0 },
+      makeCrew("Stbd Catwalk Guard", "boatswain", 9.55, 3.0, -47.0, [
+        { x: 9.55, y: 3.0, z: -43.2 },
+        { x: 9.55, y: 3.0, z: -60.0 },
       ]),
-      // Main Deck Fore, Mid & Aft
+      // Main Deck Fore, Mid & Aft (container-free side lanes & cross-aisles)
       makeCrew("Aft Deck Eng.", "chief-engineer", 6.0, DECK_Y, -38.5, [
         { x: 6.0, y: DECK_Y, z: -38.5 },
-        { x: 6.0, y: DECK_Y, z: -14.0 },
-        { x: -6.0, y: DECK_Y, z: -14.0 },
+        { x: 8.5, y: DECK_Y, z: -9.2 },
+        { x: -8.5, y: DECK_Y, z: -9.2 },
         { x: -6.0, y: DECK_Y, z: -38.5 },
       ]),
-      makeCrew("Mid Deck Rigger", "damage-control", -5.5, DECK_Y, 0.0, [
-        { x: -5.5, y: DECK_Y, z: -12.0 },
-        { x: 5.5, y: DECK_Y, z: 12.0 },
+      makeCrew("Mid Deck Rigger", "damage-control", -8.5, DECK_Y, -9.2, [
+        { x: -8.5, y: DECK_Y, z: -37.5 },
+        { x: -8.5, y: DECK_Y, z: 17.5 },
       ]),
-      makeCrew("Fore Deck Crew", "damage-control", 3.5, DECK_Y, 16.0, [
-        { x: 3.5, y: DECK_Y, z: 16.0 },
-        { x: 3.5, y: DECK_Y, z: 44.0 },
-        { x: -3.5, y: DECK_Y, z: 44.0 },
-        { x: -3.5, y: DECK_Y, z: 16.0 },
+      makeCrew("Fore Deck Crew", "damage-control", 8.5, DECK_Y, 25.5, [
+        { x: 8.5, y: DECK_Y, z: -9.2 },
+        { x: 8.5, y: DECK_Y, z: 55.0 },
+        { x: -8.5, y: DECK_Y, z: 55.0 },
       ]),
-      // Downstairs (Engine Room & Cargo Holds 3, 2, 1)
-      makeCrew("Engine Room Chief", "chief-engineer", 3.8, -5.0, -56.0, [
-        { x: 3.8, y: -5.0, z: -56.0 },
-        { x: 3.8, y: -5.0, z: -42.0 },
-        { x: -3.8, y: -5.0, z: -42.0 },
-        { x: -3.8, y: -5.0, z: -56.0 },
+      // Downstairs (Engine Room aisles & Cargo Holds 3, 2, 1)
+      makeCrew("Engine Room Chief", "chief-engineer", 4.2, -5.0, -56.0, [
+        { x: 4.2, y: -5.0, z: -56.0 },
+        { x: 4.2, y: -5.0, z: -42.0 },
+        { x: -4.2, y: -5.0, z: -42.0 },
+        { x: -4.2, y: -5.0, z: -56.0 },
       ]),
-      makeCrew("Turbine Tech", "electrician", -4.5, -5.0, -48.0, [
-        { x: -4.5, y: -5.0, z: -62.0 },
-        { x: 4.5, y: -5.0, z: -48.0 },
+      makeCrew("Turbine Tech", "electrician", -4.5, -5.0, -56.0, [
+        { x: -4.5, y: -5.0, z: -56.0 },
+        { x: -4.5, y: -5.0, z: -42.0 },
+        { x: 4.5, y: -5.0, z: -42.0 },
       ]),
       makeCrew("Hold 3 Crew", "damage-control", 0, -5.0, -24.0, [
         { x: -3.0, y: -5.0, z: -34.0 },
@@ -554,7 +559,7 @@ export class Game {
       const bs = createBattleship("bs-1", 46, -15);
       this.scene.add(bs.group);
       this.battleships.push(bs);
-      console.log("[NORDWIND/SANDBOX] Spawned 5 visible crew members and 1 walkable Battleship at (46, 0, -15).");
+      console.log(`[NORDWIND/SANDBOX] Spawned ${this.supervisor.crew.length + this.deckCrew.length} visible crew members and 1 walkable Battleship at (46, 0, -15).`);
     }
 
     // Spieler
@@ -904,19 +909,19 @@ export class Game {
         point: hit ? v3(orig.x + dir.x * hit.dist, orig.y + dir.y * hit.dist, orig.z + dir.z * hit.dist) : v3(0, 0, 0),
       };
     };
-    const blastImp = this.shake > 0.35 ? this.shake * 420 : 0;
-    this.supervisor.step(dt, t, this.ocean, st.floodSpeed, crewRay, blastImp, this.ship.world);
-    for (const sm of this.supervisor.crew) {
-      const comp = this.compAt(sm.x, sm.y, sm.z);
-      if (comp && comp.fill > 0.004 && comp.level - sm.y > 0.12 && sm.state !== "ragdoll" && !sm.isRagdoll) {
-        sm.pumping = true;
-        comp.water = Math.max(0, comp.water - 1.8 * dt);
-        const compPump = this.ship.bilgePumps.find((p) => p.compId === comp.id);
-        if (compPump && !compPump.active) compPump.active = true;
-      } else {
-        sm.pumping = false;
+    const localBlastFor = (m: { x: number; y: number; z: number }) => {
+      if (t - this.lastBlast.t >= 0.15 || this.lastBlast.power <= 0) return 0;
+      const bd = Math.hypot(m.x - this.lastBlast.pos.x, m.y - this.lastBlast.pos.y, m.z - this.lastBlast.pos.z);
+      return (460 * this.lastBlast.power) / (1 + (bd / 4.2) ** 2);
+    };
+    let supBlastImp = 0;
+    if (t - this.lastBlast.t < 0.15) {
+      for (const sm of this.supervisor.crew) {
+        const sd = Math.hypot(sm.x - this.lastBlast.pos.x, sm.y - this.lastBlast.pos.y, sm.z - this.lastBlast.pos.z);
+        if (sd <= 7.5) supBlastImp = Math.max(supBlastImp, localBlastFor(sm));
       }
     }
+    this.supervisor.step(dt, t, this.ocean, st.floodSpeed, crewRay, supBlastImp, this.ship.world);
     for (const bp of this.ship.bilgePumps) {
       if (!bp.active || bp.rateM3s <= 0) continue;
       const comp = this.ship.compartments.find((c) => c.id === bp.compId);
@@ -925,6 +930,7 @@ export class Game {
       }
     }
     const destroyedIds = new Set(this.ship.sections.filter((s) => s.destroyed).map((s) => s.id));
+    const glassSectionAt = (y: number) => (y >= 12.2 ? "bridge" : y >= 9.0 ? "super_2" : y >= 5.8 ? "super_1" : "super_0");
     const deckBreaches = [
       ...this.ship.compartments.flatMap((c, ci) =>
         destroyedIds.has(c.id)
@@ -937,23 +943,25 @@ export class Game {
                 y: h.pos.y,
                 z: h.pos.z,
                 area: h.area,
-                compartmentId: c.id,
+                inflowRate: Math.max(0.2, 0.6 * h.area * Math.sqrt(2 * 9.81 * Math.max(0.5, -this.sim.worldY(h.pos.x, h.pos.y, h.pos.z)))),
+                isEngineRoom: c.id === "engine",
+                kind: "hull-breach" as const,
                 repair: (amt: number) => {
                   h.area = Math.max(0, h.area - amt);
                 },
               })),
       ),
-      ...(destroyedIds.has("bridge") || destroyedIds.has("superstructure")
-        ? []
-        : this.ship.glass
-            .filter((g) => g.broken)
-            .map((g, gi) => ({
+      ...this.ship.glass
+        .filter((g) => g.broken && !destroyedIds.has(glassSectionAt(g.pos.y)))
+        .map((g, gi) => ({
           id: 90000 + gi,
           x: g.pos.x,
           y: g.pos.y,
           z: g.pos.z,
           area: Math.max(0.05, 1.0 - ((g as unknown as { repairProgress?: number }).repairProgress ?? 0)),
-          compartmentId: g.pos.y >= 5.0 ? "bridge" : "superstructure",
+          inflowRate: Math.max(0.2, g.w * g.h * 0.7),
+          isEngineRoom: false,
+          kind: "broken-window" as const,
           repair: (amt: number) => {
             const pane = g as unknown as { repairProgress?: number };
             pane.repairProgress = (pane.repairProgress ?? 0) + amt * 1.4;
@@ -963,47 +971,78 @@ export class Game {
               g.mesh.visible = true;
               g.collider.enabled = true;
               g.collider.tag = "glass";
-              this.say("🔧 Fensterscheibe von Crew repariert!", "good");
-              this.terminal.push(this.time, "info", "DEBUG", "Broken window repaired by crew.");
+              this.say("🔧 Window pane repaired by Damage Control Crew!", "good");
+              this.terminal.push(this.time, "info", "CREW", "Broken window repaired by crew.");
             }
           },
-        }))
-      ),
+        })),
     ];
+    const allCrew = [...this.supervisor.crew, ...this.deckCrew];
     for (const dm of this.deckCrew) {
+      const deckFloorY =
+        dm.y >= 11.0 ? 12.6 : dm.y >= 7.8 ? 9.4 : dm.y >= 4.6 ? 6.2 : dm.y >= 1.0 ? DECK_Y : -5.0;
       stepCrew(dm, dt, deckBreaches, undefined, {
         raycast: crewRay,
         world: this.ship.world,
-        deckFloorY: dm.y >= 7.0 ? 9.4 : dm.y >= 2.4 ? DECK_Y : -5.0,
-        blastImpulse: blastImp,
+        deckFloorY,
+        blastImpulse: localBlastFor(dm),
         vesselRollDeg: (this.sim.roll * 180) / Math.PI,
         waterLevel: this.waterAt(dm.x, dm.y, dm.z),
-        peers: this.deckCrew,
+        peers: allCrew,
       });
-      // Player <-> Crew character collision and shoving
-      if (this.theatre !== "orbital" && this.activeVessel === "freighter" && Math.abs(this.player.body.y - dm.y) < 1.75) {
-        const pdx = dm.x - this.player.body.x;
-        const pdz = dm.z - this.player.body.z;
+    }
+    for (const cm of allCrew) {
+      // Player <-> Crew character collision and shoving across all 22 crew members
+      if (this.theatre !== "orbital" && this.activeVessel === "freighter" && Math.abs(this.player.body.y - cm.y) < 1.75) {
+        const pdx = cm.x - this.player.body.x;
+        const pdz = cm.z - this.player.body.z;
         const pd = Math.hypot(pdx, pdz);
         if (pd < 0.78) {
           const pnx = pd > 1e-3 ? pdx / pd : 1;
           const pnz = pd > 1e-3 ? pdz / pd : 0;
           const crewPush = (0.78 - pd) * 0.78 + 0.04;
-          const pBody = { x: dm.x, y: dm.y, z: dm.z, vx: 0, vy: 0, vz: 0, r: 0.2, h: 1.75, onGround: dm.onGround ?? false, step: 0.48 };
+          const pBody = { x: cm.x, y: cm.y, z: cm.z, vx: 0, vy: 0, vz: 0, r: 0.2, h: 1.75, onGround: cm.onGround ?? false, step: 0.48 };
           this.ship.world.move(pBody, pnx * crewPush, 0, pnz * crewPush);
-          dm.x = pBody.x;
-          dm.z = pBody.z;
+          cm.x = pBody.x;
+          cm.z = pBody.z;
           const playerPush = (0.78 - pd) * 0.22;
           this.ship.world.move(this.player.body, -pnx * playerPush, 0, -pnz * playerPush);
         }
       }
-      const comp = this.compAt(dm.x, dm.y, dm.z);
-      if (comp && comp.fill > 0.004 && comp.level - dm.y > 0.12 && dm.state !== "ragdoll" && !dm.isRagdoll) {
-        dm.pumping = true;
+      const comp = this.compAt(cm.x, cm.y, cm.z);
+      if (comp && comp.fill > 0.004 && comp.level - cm.y > 0.12 && cm.state !== "ragdoll" && !cm.isRagdoll) {
+        cm.pumping = true;
         comp.water = Math.max(0, comp.water - 1.8 * dt);
+        const compPump = this.ship.bilgePumps.find((p) => p.compId === comp.id);
+        if (compPump && !compPump.active) compPump.active = true;
       } else {
-        dm.pumping = false;
+        cm.pumping = false;
       }
+    }
+    // Remove and dispose 3D breach meshes once sealed by crew
+    let sealedVisuals = 0;
+    for (let hi = this.ship.holeGroup.children.length - 1; hi >= 0; hi--) {
+      const ch = this.ship.holeGroup.children[hi];
+      const holeRef = ch.userData?.hole as { area: number } | undefined;
+      if (holeRef && holeRef.area <= 0.01) {
+        this.ship.holeGroup.remove(ch);
+        ch.traverse((obj) => {
+          if (obj instanceof THREE.Mesh) {
+            obj.geometry?.dispose();
+            const mat = obj.material;
+            if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+            else mat?.dispose();
+          }
+        });
+        sealedVisuals++;
+      }
+    }
+    for (const c of this.ship.compartments) {
+      if (c.holes.length > 0) c.holes = c.holes.filter((h) => h.area > 0.01);
+    }
+    if (sealedVisuals > 0) {
+      this.say("🔧 Hull breach sealed by Damage Control Crew!", "good");
+      this.terminal.push(this.time, "ok", "CREW", `${sealedVisuals} hull breach(es) sealed by crew.`);
     }
 
     // Freighter AI evasive autopilot when player commands the Battleship (stays within 220m so it never vanishes)
@@ -1074,7 +1113,7 @@ export class Game {
       this.fireOrbitalDeathRay();
       if (this.superlaserTimer <= 0 && !this.orbitalLaserMode && this.orbitalBeamGroup) {
         this.orbitalBeamGroup.visible = false;
-        this.say("☄️ Superlaser Strike abgeschlossen!", "info");
+        this.say("☄️ Superlaser Strike complete!", "info");
       }
     }
 
@@ -1363,16 +1402,16 @@ export class Game {
         if (!this.isFreighterDestroyed()) {
           this.activeVessel = "freighter";
           this.player.teleport(9.8, DECK_Y + 0.3, -42, Math.PI);
-          this.say("⚓ Battleship gesunken – auf MV NORDWIND evakuiert!", "alert");
+          this.say("⚓ Battleship sunk — evacuated to MV NORDWIND!", "alert");
         } else {
           const aliveIdx = this.battleships.findIndex((other) => !other.sunk);
           if (aliveIdx > 0) {
             const [alive] = this.battleships.splice(aliveIdx, 1);
             this.battleships.unshift(alive);
-            this.say(`⚓ Battleship gesunken – auf ${alive.id.toUpperCase()} evakuiert!`, "alert");
+            this.say(`⚓ Battleship sunk — evacuated to ${alive.id.toUpperCase()}!`, "alert");
           } else {
             this.toggleTheatre("orbital");
-            this.say("🛰️ Alle Schiffe gesunken – Not-Evakuierung auf HYPERION-9!", "alert");
+            this.say("🛰️ All ships sunk — emergency evacuation to HYPERION-9!", "alert");
           }
         }
       }
@@ -1478,7 +1517,7 @@ export class Game {
       p.oxygen -= drain;
       if (p.oxygen <= 0) {
         p.oxygen = 0;
-        this.damagePlayer(14 * dt, "Ertrunken", true);
+        this.damagePlayer(14 * dt, "Drowned", true);
       }
       if (Math.random() < dt * 3) this.audio.gurgle();
     } else p.oxygen = Math.min(1, p.oxygen + dt * 0.7);
@@ -1560,7 +1599,7 @@ export class Game {
       if (this.deadT > 2.2 && !this.ended) {
         this.ended = true;
         this.audio.lose();
-        this.cb.onEnd({ kind: this.deathCause === "Ertrunken" ? "drown" : "dead", cause: this.deathCause, time: this.time, kills: this.kills, flood: this.sim.F, mode: this.mode });
+        this.cb.onEnd({ kind: this.deathCause === "Drowned" ? "drown" : "dead", cause: this.deathCause, time: this.time, kills: this.kills, flood: this.sim.F, mode: this.mode });
       }
     }
 
@@ -2290,7 +2329,7 @@ export class Game {
     const label = this.superlaserTarget === "battleship" && this.battleships[0]
       ? this.battleships[0].id.toUpperCase()
       : "MV NORDWIND";
-    this.say(`☄️ SUPERLASER STRIKE (5s) AUF ${label}!`, "alert");
+    this.say(`☄️ SUPERLASER STRIKE (5s) ON ${label}!`, "alert");
     this.terminal.push(this.time, "alert", "ORBITAL", `5s Superlaser Strike activated over ${label}`);
   }
 
@@ -2653,6 +2692,13 @@ export class Game {
     this.say(`FLOOD RATE: ${rate}x`, "info");
   }
 
+  remoteToggleBilgePumps() {
+    const nextState = !this.ship.bilgePumps.some((p) => p.compId !== "master" && p.active);
+    for (const p of this.ship.bilgePumps) p.active = nextState;
+    this.audio.click();
+    this.say(`MASTER BILGE PUMPS ${nextState ? "ENGAGED (64 m³/s total)" : "SHUT DOWN"}`, nextState ? "good" : "info");
+  }
+
   private handleHelm(dt: number) {
     if (!this.helmMode) return;
     const inp = this.input;
@@ -2896,7 +2942,7 @@ export class Game {
     pane.collider.enabled = false;
     pane.collider.tag = "glassbroken";
     this.audio.glass(this.posAudio(pane.pos));
-    this.say("🪟 FENSTERSCHEIBE KAPUTT – Crew rückt zur Reparatur aus!", "alert");
+    this.say("🪟 WINDOW SHATTERED – Crew dispatched for repairs!", "alert");
     this.terminal.push(this.time, "warn", "DAMAGE", `Window shattered at (${pane.pos.x.toFixed(1)}, ${pane.pos.y.toFixed(1)}, ${pane.pos.z.toFixed(1)}) — crew dispatched`);
     const w = this.worldPos(pane.pos, V());
     for (let i = 0; i < 26; i++) {
@@ -3103,7 +3149,23 @@ export class Game {
         d.mesh.position.set(b.x, b.y + 0.12, b.z);
       } else {
         d.attachedBs = undefined;
-        b.vy -= 14 * dt;
+        const wl = this.waterAt(b.x, b.y, b.z);
+        if (wl > -50 && b.y < wl) {
+          if (!d.inWater) {
+            d.inWater = true;
+            this.audio.splash(this.posAudio(d.mesh.position), false);
+            const sw = this.worldPos(V(b.x, wl, b.z), V());
+            for (let si = 0; si < 6; si++) {
+              this.pn.emit(sw.x, sw.y, sw.z, (Math.random() - 0.5) * 3, 2 + Math.random() * 3, (Math.random() - 0.5) * 3, 0.8, 0.18, 0.45, 0.85, 0.94, 1, 0.65, 9, 0.3);
+            }
+          }
+          b.vx *= Math.exp(-dt * 4.5);
+          b.vz *= Math.exp(-dt * 4.5);
+          b.vy += (-1.1 - b.vy) * Math.min(1, dt * 6);
+        } else {
+          d.inWater = false;
+          b.vy -= 14 * dt;
+        }
         const sl = this.sim.tiltDeg > 6 ? this.sim.slideVector() : [0, 0];
         if (b.onGround) {
           b.vx *= Math.exp(-dt * 7);
@@ -3182,6 +3244,7 @@ export class Game {
 
   // ------------------------------------------------------------------ Explosionen
   explode(p: THREE.Vector3, power: number, src: string) {
+    this.lastBlast = { pos: p.clone(), power, t: this.time };
     const R = (src === "tnt" ? 14 : 11) * power;
     const wp = this.worldPos(p, V());
     const pa = this.posAudio(p);
@@ -3282,10 +3345,18 @@ export class Game {
     }
     for (const c of this.ship.crates) if (!c.dead && c.pos.distanceTo(p) < R * 0.6) this.breakCrate(c);
     for (const g of this.ship.glass) if (!g.broken && g.pos.distanceTo(p) < R * 1.2) this.breakGlass(g);
-    // TNT in der Nähe zündet mit
+    // TNT in der Nähe zündet mit und wird von Druckwelle weggeschleudert
     for (const d of [...this.dyns]) {
       const dd = V(d.body.x, d.body.y, d.body.z).distanceTo(p);
       if (dd < R * 0.5 && d.remote < 0) d.remote = 0.1 + Math.random() * 0.2;
+      if (dd < R && dd > 0.05 && !d.attachedBs) {
+        const imp = (1 - dd / R) * 14 * power;
+        d.body.vx += ((d.body.x - p.x) / dd) * imp;
+        d.body.vy += 4.5 * (1 - dd / R) * power;
+        d.body.vz += ((d.body.z - p.z) / dd) * imp;
+        d.body.onGround = false;
+        d.resting = false;
+      }
     }
     // Hüllenbruch (or Space Station blast in Orbital theatre)
     if (this.theatre === "orbital") {
@@ -3334,6 +3405,7 @@ export class Game {
     }
     g.position.copy(h.pos);
     g.lookAt(h.pos.clone().add(V(h.nx, h.ny, h.nz)));
+    g.userData.hole = h;
     this.ship.holeGroup.add(g);
   }
 
@@ -3799,7 +3871,7 @@ export class Game {
       if ((this.sim.sunk || e.t > 40) && !this.ended) {
         this.ended = true;
         this.audio.win();
-        this.cb.onEnd({ kind: "win", cause: "Entkommen", time: this.time, kills: this.kills, flood: this.sim.F, mode: this.mode });
+        this.cb.onEnd({ kind: "win", cause: "Escaped", time: this.time, kills: this.kills, flood: this.sim.F, mode: this.mode });
       }
     }
   }
@@ -4310,6 +4382,7 @@ export class Game {
         if (!pos || !this.battleships[0]) return 0;
         return Math.round(this.battleships[0].group.position.distanceTo(pos));
       })(),
+      bilgePumpsActive: this.ship.bilgePumps.some((bp) => bp.active),
     };
     this.cb.onHud(hud);
   }

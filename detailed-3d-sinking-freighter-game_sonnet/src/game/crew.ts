@@ -215,7 +215,7 @@ export function enforceShipBoundsAndRespawn(m: CrewMember & { spawnX?: number; s
   const sx = m.spawnX ?? 0;
   const sy = m.spawnY ?? 3.0;
   const sz = m.spawnZ ?? -36.0;
-  if (!Number.isFinite(m.x) || !Number.isFinite(m.y) || !Number.isFinite(m.z) || m.y < -5.5 || Math.abs(m.x) > 10.5 || m.z < -68 || m.z > 65) {
+  if (!Number.isFinite(m.x) || !Number.isFinite(m.y) || !Number.isFinite(m.z) || m.y < -5.5 || Math.abs(m.x) > 11.2 || m.z < -69.5 || m.z > 65) {
     m.x = sx;
     m.y = sy;
     m.z = sz;
@@ -226,8 +226,8 @@ export function enforceShipBoundsAndRespawn(m: CrewMember & { spawnX?: number; s
     m.state = "patrol";
     return;
   }
-  m.x = Math.max(-9.2, Math.min(9.2, m.x));
-  m.z = Math.max(-65.5, Math.min(62.0, m.z));
+  m.x = Math.max(-10.2, Math.min(10.2, m.x));
+  m.z = Math.max(-68.5, Math.min(62.0, m.z));
   m.y = Math.max(-5.2, m.y);
   // If hovering above main deck outside superstructure (which only spans z = -65.85..-44.15, |x| <= 9.0), re-align onto main deck
   if (m.y > 4.2 && (m.z > -44.0 || Math.abs(m.x) > 8.9) && !m.swimming) {
@@ -340,22 +340,62 @@ function walkToward(
     m.navWaypoint = null;
   }
 
-  // Center-align through nearby open/opening doorways so shoulders never snag on doorframes
-  if (world && !stairMode) {
+  // Scan all doors (including already-open ones whose collider is disabled) to open & perpendicular-align cleanly
+  let doorAhead = false;
+  let waitingForDoor = false;
+  if (world?.boxes) {
     const preDx = steerX - m.x;
     const preDz = steerZ - m.z;
     const preLen = Math.hypot(preDx, preDz);
-    if (preLen > 1e-4) {
-      const dHit = world.raycast(m.x, m.y + 1.0, m.z, preDx / preLen, 0, preDz / preLen, 1.8, (c) => c.tag === "door");
-      if (dHit?.collider && dHit.dist < 1.8) {
-        const dc = dHit.collider as { minX?: number; maxX?: number; minZ?: number; maxZ?: number };
-        if (dc.minX !== undefined && dc.maxX !== undefined && dc.minZ !== undefined && dc.maxZ !== undefined) {
-          const cx = (dc.minX + dc.maxX) * 0.5;
-          const cz = (dc.minZ + dc.maxZ) * 0.5;
-          steerX = steerX * 0.35 + cx * 0.65;
-          steerZ = steerZ * 0.35 + cz * 0.65;
+    const pnx = preLen > 1e-4 ? preDx / preLen : 0;
+    const pnz = preLen > 1e-4 ? preDz / preLen : 0;
+    let bestDoorDist = Infinity;
+    let alignTarget: { x: number; z: number } | null = null;
+    for (const box of world.boxes) {
+      if (box.tag !== "door") continue;
+      if (m.y < box.minY - 0.6 || m.y > box.maxY + 0.4) continue;
+      const cx = (box.minX + box.maxX) * 0.5;
+      const cz = (box.minZ + box.maxZ) * 0.5;
+      const distToDoor = Math.hypot(cx - m.x, cz - m.z);
+      if (distToDoor > 2.3) continue;
+      const dot = distToDoor > 1e-4 ? ((cx - m.x) * pnx + (cz - m.z) * pnz) / distToDoor : 1;
+      if (dot < -0.15) continue;
+
+      const door = box.owner as {
+        axis?: "x" | "z";
+        target: number;
+        open?: number;
+        fixed: number;
+        forceOpen: (dir: number) => void;
+      } | undefined;
+      if (door && door.target === 0) {
+        const side = door.axis === "z" ? Math.sign(m.x - door.fixed) : Math.sign(m.z - door.fixed);
+        door.forceOpen(side || 1);
+      }
+      if (door && distToDoor < 1.35 && door.target === 1 && door.open !== undefined && door.open < 0.65) {
+        waitingForDoor = true;
+      }
+
+      if (distToDoor < 1.65 && dot >= 0.25 && distToDoor < bestDoorDist) {
+        bestDoorDist = distToDoor;
+        const isZWall = (box.maxX - box.minX) < (box.maxZ - box.minZ);
+        const alongOffset = isZWall ? Math.abs(m.z - cz) : Math.abs(m.x - cx);
+        const perpDist = isZWall ? Math.abs(m.x - cx) : Math.abs(m.z - cz);
+        if (alongOffset > 0.24 && perpDist > 0.18) {
+          alignTarget = isZWall
+            ? { x: cx - (Math.sign(cx - m.x) || 1) * 0.45, z: cz }
+            : { x: cx, z: cz - (Math.sign(cz - m.z) || 1) * 0.45 };
+        } else {
+          alignTarget = { x: steerX * 0.25 + cx * 0.75, z: steerZ * 0.25 + cz * 0.75 };
+        }
+        if (distToDoor < 1.35 && alongOffset < 0.42 && (!door || door.open === undefined || door.open >= 0.5)) {
+          doorAhead = true;
         }
       }
+    }
+    if (alignTarget) {
+      steerX = alignTarget.x;
+      steerZ = alignTarget.z;
     }
   }
 
@@ -367,51 +407,17 @@ function walkToward(
   const nx = d > 1e-6 ? dx / d : 0;
   const nz = d > 1e-6 ? dz / d : 0;
 
-  // Proactive omnidirectional door opening on the current deck
-  let doorAhead = false;
-  let waitingForDoor = false;
-  if (world?.boxes) {
-    for (const box of world.boxes) {
-      if (box.tag !== "door" || !box.owner) continue;
-      if (m.y < box.minY - 0.6 || m.y > box.maxY + 0.4) continue;
-      const cx = (box.minX + box.maxX) * 0.5;
-      const cz = (box.minZ + box.maxZ) * 0.5;
-      const distToDoor = Math.hypot(cx - m.x, cz - m.z);
-      if (distToDoor > 2.3) continue;
-      const dot = distToDoor > 1e-4 ? ((cx - m.x) * nx + (cz - m.z) * nz) / distToDoor : 1;
-      if (dot < -0.15) continue;
-      doorAhead = true;
-      const door = box.owner as {
-        axis?: "x" | "z";
-        locked?: boolean;
-        key?: string;
-        target: number;
-        open?: number;
-        fixed: number;
-        forceOpen: (dir: number) => void;
-      };
-      if (door.target === 0 && (!door.locked || door.key)) {
-        const side = door.axis === "z" ? Math.sign(m.x - door.fixed) : Math.sign(m.z - door.fixed);
-        door.forceOpen(side || 1);
-      }
-      if (distToDoor < 1.35 && door.target === 1 && door.open !== undefined && door.open < 0.65) {
-        waitingForDoor = true;
-      }
-    }
-  } else if (world && d > 1e-6) {
+  if (!world?.boxes && world && d > 1e-6) {
     const doorRay = world.raycast(m.x, m.y + 1.0, m.z, nx, 0, nz, 2.4, (c) => c.tag === "door");
     if (doorRay && doorRay.collider?.owner) {
-      doorAhead = true;
       const door = doorRay.collider.owner as {
         axis?: "x" | "z";
-        locked?: boolean;
-        key?: string;
         target: number;
         open?: number;
         fixed: number;
         forceOpen: (dir: number) => void;
       };
-      if (door.target === 0 && (!door.locked || door.key)) {
+      if (door.target === 0) {
         const side = door.axis === "z" ? Math.sign(m.x - door.fixed) : Math.sign(m.z - door.fixed);
         door.forceOpen(side || 1);
       }
@@ -420,8 +426,6 @@ function walkToward(
       }
       if (door.target === 1 && (door.open === undefined || door.open >= 0.55)) {
         doorAhead = true;
-      } else {
-        doorAhead = false;
       }
     }
   }
@@ -717,9 +721,9 @@ export function stepCrew(
     // Track position to pelvis center of mass, keeping within ship deck bounds
     const pelvis = m.ragdoll.limbs.get("pelvis");
     if (pelvis) {
-      m.x = Math.max(-10.5, Math.min(10.5, pelvis.pos.x));
+      m.x = Math.max(-10.2, Math.min(10.2, pelvis.pos.x));
       m.y = Math.max(ragFloor, pelvis.pos.y);
-      m.z = Math.max(-67, Math.min(56, pelvis.pos.z));
+      m.z = Math.max(-68, Math.min(62, pelvis.pos.z));
     }
 
     // Recover reliably so fallen crew always stand back up (1.2-2.0s for unstick fall, or max 5.0s)
@@ -774,6 +778,10 @@ export function stepCrew(
   switch (m.state) {
     case "patrol": {
       const found = m.patchKits > 0 ? nearestBreach(m, breaches, cfg.detectRadius) : null;
+      if (!found && ctx?.world && m.stateTime > 8.0 && m.patchKits < 5) {
+        m.patchKits = Math.min(5, m.patchKits + dt * 0.25);
+        m.portableLadders = Math.max(m.portableLadders ?? 0, 1);
+      }
       if (found) {
         m.targetId = found.id;
         enter(m, "alert");
