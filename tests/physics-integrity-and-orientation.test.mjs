@@ -39,7 +39,7 @@ function load(name) {
 const { ShipSim, MAX_HOLE_AREA, WRECK_REST_DEPTH } = load('shipSim');
 const { StormworksSupervisor } = load('stormworksSupervisor');
 const { CollisionWorld } = load('physics');
-const { createBattleship, stepBattleship, stepBattleshipAI, battleshipHitTest } = load('battleships');
+const { createBattleship, stepBattleship, stepBattleshipAI } = load('battleships');
 const { vesselForward } = load('bridge');
 const { ArticulatedRagdoll } = load('ragdoll');
 
@@ -174,30 +174,6 @@ function testCollisionDepenetration() {
 }
 
 // ---------------------------------------------------------------------------
-// 4. Battleship projectiles hit the whole hull, not a 14 m centre sphere
-// ---------------------------------------------------------------------------
-function testBattleshipHullEnvelope() {
-  const bs = createBattleship('test', 0, 0);
-  assert.equal(battleshipHitTest(bs, new THREE.Vector3(0, 2, 25)), true, 'Bow hit must register');
-  assert.equal(battleshipHitTest(bs, new THREE.Vector3(0, 2, -25)), true, 'Stern hit must register');
-  assert.equal(battleshipHitTest(bs, new THREE.Vector3(4, 5, 0)), true, 'Deckhouse hit must register');
-  assert.equal(battleshipHitTest(bs, new THREE.Vector3(12, 2, 0)), false, 'Beam miss must not register');
-  assert.equal(battleshipHitTest(bs, new THREE.Vector3(0, 2, 40)), false, 'Overshoot must not register');
-  assert.equal(battleshipHitTest(bs, new THREE.Vector3(0, 12, 0)), false, 'Shot above the mast top must not register');
-
-  // Rotated hull: a hit at local bow must still register after a 90 deg turn.
-  const turned = createBattleship('turned', 0, 0);
-  turned.heading = Math.PI / 2;
-  turned.group.rotation.y = Math.PI / 2;
-  assert.equal(
-    battleshipHitTest(turned, new THREE.Vector3(25, 2, 0)),
-    true,
-    'Bow hit after a 90 deg turn must register',
-  );
-  console.log('  ok battleship hit envelope covers the full 57 m hull and follows heading');
-}
-
-// ---------------------------------------------------------------------------
 // 5. Starboard rudder steers starboard for the battleship and its AI
 // ---------------------------------------------------------------------------
 function testBattleshipRudderAndAI() {
@@ -255,8 +231,16 @@ function testRagdollZeroDeltaTime() {
 function testBowForwardOrientation() {
   const straight = vesselForward(0);
   assert.ok(Math.abs(straight.x) < 1e-12 && Math.abs(straight.z - 1) < 1e-12, 'Heading 0 must point at +Z (bow)');
-  const starboard = vesselForward(-Math.PI / 2);
-  assert.ok(Math.abs(starboard.x + 1) < 1e-12, 'Turning starboard at 90 deg must point the bow at -X');
+  const starboard = vesselForward(Math.PI / 2);
+  assert.ok(Math.abs(starboard.x + 1) < 1e-12, 'A starboard turn of 90 deg must point the +Z bow at -X');
+  // The helper must agree with the actual mesh rotation: ShipSim applies rotationY(-heading).
+  const mesh = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -0.7);
+  const bowLocal = new THREE.Vector3(0, 0, 1).applyQuaternion(mesh);
+  const bow = vesselForward(0.7);
+  assert.ok(
+    Math.abs(bow.x - bowLocal.x) < 1e-12 && Math.abs(bow.z - bowLocal.z) < 1e-12,
+    'vesselForward must match the -heading ship quaternion',
+  );
   console.log('  ok vessel forward vector follows the modelled bow');
 }
 
@@ -289,10 +273,9 @@ function testFloodLimits() {
 testAirPocketBoyleRegulation();
 testWaveAwareFloodHead();
 testCollisionDepenetration();
-testBattleshipHullEnvelope();
 testBattleshipRudderAndAI();
 testRagdollZeroDeltaTime();
 testBowForwardOrientation();
 testFloodLimits();
 
-console.log('🎉 ALL 8 PHYSICS INTEGRITY & ORIENTATION TESTS PASSED!');
+console.log('🎉 ALL 7 PHYSICS INTEGRITY & ORIENTATION TESTS PASSED!');

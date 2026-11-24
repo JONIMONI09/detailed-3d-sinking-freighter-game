@@ -37,11 +37,13 @@ function load(name) {
 }
 
 const bridge = load('bridge');
+const { ShipSim } = load('shipSim');
+const battleships = load('battleships');
 const supervisorMod = load('stormworksSupervisor');
 const StormworksSupervisor = supervisorMod.StormworksSupervisor;
 
 // ============================================================================
-// 1. Vessel Propulsion & Kinematic Rudder Steering Test
+// 1. Vessel Propulsion & Kinematic Rudder Steering Test (Freighter +Z Bow & Battleship -Z Bow)
 // ============================================================================
 function testVesselPropulsionAndSteeringKinematics() {
   const helm = bridge.createHelm();
@@ -58,36 +60,71 @@ function testVesselPropulsionAndSteeringKinematics() {
   // With SPEED_RESPONSE = 0.12, speed reaches ~5.6 m/s after 10s
   assert.ok(helm.speed > 5.0, `Vessel must accelerate ahead (got ${helm.speed} m/s)`);
 
-  // Apply starboard rudder (+25 deg). A positive heading rotates the bow to
-  // port, so starboard rudder must lower the heading.
+  // Freighter bow is +Z (Z_BOW = +70), stern is -Z (Z_STERN = -70).
+  // Verify full-ahead moves Freighter toward its 3D bow (+Z), NOT backwards toward stern (-Z)!
+  const group = new THREE.Group();
+  const sim = new ShipSim(group, []);
+  const mockOcean = { height: () => 0 };
+  sim.heading = helm.heading;
+  sim.update(0.1, 0, mockOcean, 1);
+
+  const forward0 = new THREE.Vector3(-Math.sin(helm.heading), 0, Math.cos(helm.heading));
+  const bowWorld0 = new THREE.Vector3(0, 0, 70).applyMatrix4(group.matrixWorld);
+  const sternWorld0 = new THREE.Vector3(0, 0, -70).applyMatrix4(group.matrixWorld);
+  const bowDir0 = bowWorld0.clone().sub(sternWorld0).normalize();
+  assert.ok(forward0.dot(bowDir0) > 0.999, `Full-ahead forward vector must point along bow (+Z), got dot=${forward0.dot(bowDir0)}`);
+
+  // Apply starboard rudder (+25 deg)
   helm.rudderCmd = 25;
   for (let i = 0; i < 50; i++) {
     bridge.stepHelm(helm, 0.1, shipLength, true);
   }
   assert.equal(helm.rudderDeg, 25, 'Rudder must reach commanded +25 deg angle');
-  assert.ok(helm.heading < -0.02, `Heading must swing to starboard (< 0), got ${helm.heading} rad`);
+  assert.ok(helm.heading > 0.02, `Starboard rudder must raise the heading, got ${helm.heading} rad`);
 
-  // The Nordwind model carries its bow on local +Z. Ahead means +Z at heading 0
-  // and the bow (not the stern) must lead the vessel through the water.
-  const group = new THREE.Group();
-  group.position.set(0, 0, 0);
-  group.rotation.y = 0;
-  const bowAtZero = bridge.vesselForward(0);
-  const forward = new THREE.Vector3(bowAtZero.x, 0, bowAtZero.z);
-  assert.ok(Math.abs(forward.length() - 1.0) < 1e-4, 'Bow vector must be normalized');
-  assert.ok(forward.z > 0.99, `Vessel must advance toward +Z (bow) at heading 0, got ${forward.z}`);
+  // Update ShipSim with turned heading and verify bow rotates to starboard (-X when facing +Z)
+  // and Freighter's forward vector (-sin(heading), 0, cos(heading)) matches 3D bow orientation!
+  sim.heading = helm.heading;
+  sim.update(0.1, 0.1, mockOcean, 1);
+  const bowWorld1 = new THREE.Vector3(0, 0, 70).applyMatrix4(group.matrixWorld);
+  const sternWorld1 = new THREE.Vector3(0, 0, -70).applyMatrix4(group.matrixWorld);
+  const bowDir1 = bowWorld1.clone().sub(sternWorld1).normalize();
+  assert.ok(bowDir1.x < -0.01, `Starboard rudder from +Z bow must swing bow toward -X (right from bridge), got x=${bowDir1.x}`);
 
-  // Starboard turn displaces the bow toward -X (right-hand side of a +Z bow).
-  const bowNow = bridge.vesselForward(helm.heading);
-  assert.ok(bowNow.x < 0, `Starboard turn must move the bow toward -X, got ${bowNow.x}`);
+  const forward = new THREE.Vector3(
+    -Math.sin(helm.heading),
+    0,
+    Math.cos(helm.heading),
+  );
+  assert.ok(Math.abs(forward.length() - 1.0) < 1e-4, 'Forward vector must be normalized');
+  assert.ok(forward.dot(bowDir1) > 0.999, `Forward vector must stay aligned with ShipSim 3D bow after turning (dot=${forward.dot(bowDir1)})`);
 
-  // Advance vessel position bow-first
+  // Advance vessel position along forward vector -> must move toward bow, not stern
   const dt = 1.0;
   const initialPos = group.position.clone();
   group.position.addScaledVector(forward, helm.speed * dt);
-  assert.ok(group.position.z - initialPos.z > 5.0, 'Vessel must advance bow-first in 3D space');
+  const moved = group.position.clone().sub(initialPos);
+  assert.ok(moved.length() > 5.0, 'Vessel must advance in 3D space along forward vector');
+  assert.ok(moved.normalize().dot(bowDir1) > 0.999, 'Freighter must move bow-first on full-ahead');
 
-  console.log('  ok vessel propulsion and kinematic rudder steering advance ship position in 3D');
+  // Verify Battleship (-Z bow) steering: +rudderDeg (starboard/D) turns bow toward +X (right when facing -Z)
+  const bs = battleships.createBattleship('bs-steer', 0, 0, 1, 'blue');
+  bs.targetSpeed = 12;
+  bs.rudderDeg = 25;
+  for (let i = 0; i < 40; i++) {
+    battleships.stepBattleship(bs, 0.1, i * 0.1, new THREE.Vector3(0, 0, -200), () => 0, undefined, false);
+  }
+  assert.ok(bs.baseZ < -10, `Battleship ahead must advance toward -Z bow (got z=${bs.baseZ})`);
+  assert.ok(bs.heading < 0, `Battleship starboard (+25 deg) rudder must decrease rotation.y to turn bow right (+X), got heading=${bs.heading}`);
+  assert.ok(bs.baseX > 0.5, `Battleship starboard turn must curve toward +X, got x=${bs.baseX}`);
+
+  // Verify Battleship AI steers toward a target on its starboard (+X, -Z) side
+  const bsAi = battleships.createBattleship('bs-ai', 0, 0, 1, 'red');
+  bsAi.speed = 8;
+  battleships.stepBattleshipAI(bsAi, new THREE.Vector3(250, 0, -250), 0.2, []);
+  assert.ok(bsAi.rudderDeg > 0, `AI must command positive starboard rudder to turn toward (+250, -250), got rudderDeg=${bsAi.rudderDeg}`);
+
+  console.log('  ok vessel propulsion and kinematic rudder steering advance Freighter (+Z bow) and Battleship (-Z bow) accurately');
 }
 
 // ============================================================================
@@ -224,11 +261,31 @@ function testEngineRoomExplosionAndMotorBreakdown() {
   console.log('  ok engine room explosion & flooding > 40% trigger generator breakdown and zero propulsion');
 }
 
+function testHelmQuickDoubleTapAndTabletIsolation() {
+  const { stepTelegraph, TELEGRAPH_SPEED } = load('bridge');
+  let t = 'stop';
+  t = stepTelegraph(t, 1);
+  assert.equal(t, 'half-ahead');
+  t = stepTelegraph(t, 1);
+  assert.equal(t, 'full-ahead');
+  assert.equal(TELEGRAPH_SPEED[t], 8);
+
+  const inputSrc = fs.readFileSync(baseDir + 'input.ts', 'utf8');
+  assert.ok(inputSrc.includes('"helmUp"') && inputSrc.includes('"helmDown"') && inputSrc.includes('consumeHelmSteps'), 'input.ts must count discrete helmUp/helmDown taps across slow frames');
+
+  const gameSrc = fs.readFileSync(baseDir + 'game.ts', 'utf8');
+  assert.ok(gameSrc.includes('inp.consumeHelmSteps()'), 'handleHelm must process counted discrete helmUp/helmDown taps immediately');
+  assert.ok(gameSrc.includes('if (this.helmMode && !this.tabletOpen) this.handleHelm(dt)'), 'handleHelm must stay isolated while Command Tablet modal is open');
+  assert.ok(gameSrc.includes('if (this.dead || this.escapeState || this.ended || this.tabletOpen || this.orbitalLaserMode) return;'), 'updateInteraction must ignore E/inputs while Command Tablet is open');
+  console.log('  ok bridge helm discrete double-tap telegraph & Command Tablet modal isolation verified');
+}
+
 // ============================================================================
 // Execution
 // ============================================================================
 testVesselPropulsionAndSteeringKinematics();
 testBridgeHelmModeKeyboardControls();
 testEngineRoomExplosionAndMotorBreakdown();
+testHelmQuickDoubleTapAndTabletIsolation();
 
-console.log('🎉 ALL 3 VESSEL PROPULSION, RUDDER STEERING & ENGINE BREAKDOWN TESTS PASSED!');
+console.log('🎉 ALL 4 VESSEL PROPULSION, RUDDER STEERING & ENGINE BREAKDOWN TESTS PASSED!');

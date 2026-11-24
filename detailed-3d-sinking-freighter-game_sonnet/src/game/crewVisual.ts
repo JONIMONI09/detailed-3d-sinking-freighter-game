@@ -37,6 +37,7 @@ export class CrewVisual {
   armL = new THREE.Group();
   armR = new THREE.Group();
   torch = new THREE.Group();
+  pump = new THREE.Group();
   tipWorldPos = new THREE.Vector3();
 
   walk = 0;
@@ -128,6 +129,16 @@ export class CrewVisual {
     addMesh(this.torch, new THREE.SphereGeometry(0.03, 6, 6), mats.torchTip, 0, 0, -0.25);
     this.armR.add(this.torch);
 
+    // --- Portable Bilge Pump (held when standing in flooded compartment) ---
+    this.pump.position.set(-0.14, -0.52, -0.16);
+    const pumpBodyMat = new THREE.MeshStandardMaterial({ color: 0xe6a817, roughness: 0.4, metalness: 0.35 });
+    const pumpHoseMat = new THREE.MeshStandardMaterial({ color: 0x1d4ed8, roughness: 0.65 });
+    addMesh(this.pump, new THREE.BoxGeometry(0.24, 0.22, 0.28), pumpBodyMat, 0, 0, 0);
+    addMesh(this.pump, new THREE.CylinderGeometry(0.05, 0.05, 0.34, 8), mats.torchMetal, 0, 0.14, -0.04);
+    addMesh(this.pump, new THREE.CylinderGeometry(0.032, 0.032, 0.42, 6), pumpHoseMat, 0, -0.18, -0.16).rotation.x = 0.65;
+    this.pump.visible = false;
+    this.armR.add(this.pump);
+
     this.group.position.set(member.x, member.y, member.z);
   }
 
@@ -136,22 +147,84 @@ export class CrewVisual {
     const dz = this.member.z - this.lastZ;
     const spd = Math.hypot(dx, dz) / Math.max(0.001, dt);
 
+    if (this.member.state === "ragdoll" || this.member.isRagdoll) {
+      // Fallen / ragdoll pose on deck; resets upright automatically on recovery
+      this.group.rotation.x = Math.PI * 0.45;
+      this.group.rotation.z = 0.22;
+      this.legL.rotation.x = 0.25;
+      this.legR.rotation.x = -0.2;
+      this.armL.rotation.x = 0.5;
+      this.armR.rotation.x = -0.4;
+      this.torso.position.y = 0.55;
+      this.group.position.set(this.member.x, this.member.y + 0.18, this.member.z);
+      this.lastX = this.member.x;
+      this.lastY = this.member.y;
+      this.lastZ = this.member.z;
+      return;
+    }
+
+    if (this.member.falling) {
+      // Airborne fall / flailing pose until landing on deck
+      this.walk += dt * 11;
+      const flail = Math.sin(this.walk) * 0.65;
+      this.group.rotation.x = 0.22;
+      this.group.rotation.z = Math.cos(this.walk * 0.7) * 0.15;
+      this.legL.rotation.x = flail * 0.7;
+      this.legR.rotation.x = -flail * 0.7;
+      this.armL.rotation.x = 2.4 + flail * 0.4;
+      this.armR.rotation.x = 2.4 - flail * 0.4;
+      this.armL.rotation.z = 0.45;
+      this.armR.rotation.z = -0.45;
+      this.torso.position.y = 0.85;
+      this.group.position.set(this.member.x, this.member.y, this.member.z);
+      this.lastX = this.member.x;
+      this.lastY = this.member.y;
+      this.lastZ = this.member.z;
+      return;
+    }
+
+    this.group.rotation.x = 0;
+    this.group.rotation.z = 0;
+
     if (spd > 0.15) {
       // Turn to face direction of forward motion (-Z is forward)
-      this.yaw = Math.atan2(dx, -dz);
+      this.yaw = Math.atan2(-dx, -dz);
     }
     this.group.rotation.y = this.yaw;
 
-    // Walking animation
-    if (this.member.state === "moving" || this.member.state === "patrol") {
+    const isPumping = Boolean(this.member.pumping) && this.member.state !== "repairing";
+    const isSwimming = Boolean(this.member.swimming) && this.member.state !== "repairing";
+    this.pump.visible = isPumping && !isSwimming;
+    this.torch.visible = !this.pump.visible;
+
+    // Swimming animation (horizontal stroke + flutter kick)
+    if (isSwimming) {
+      this.walk += dt * 5.2;
+      const stroke = Math.sin(this.walk);
+      this.group.rotation.x = 1.15;
+      this.legL.rotation.x = stroke * 0.55;
+      this.legR.rotation.x = -stroke * 0.55;
+      this.armL.rotation.x = 1.5 + stroke * 0.75;
+      this.armR.rotation.x = 1.5 - stroke * 0.75;
+      this.armL.rotation.z = 0.25;
+      this.armR.rotation.z = -0.25;
+      this.torso.position.y = 0.85;
+    } else if (this.member.state === "moving" || this.member.state === "patrol") {
       this.walk += dt * (spd * 3.5 + 0.001);
       const sw = Math.sin(this.walk) * Math.min(1, spd / 1.8) * 0.65;
       this.legL.rotation.x = sw;
       this.legR.rotation.x = -sw;
-      this.armL.rotation.x = -sw * 0.7;
-      this.armR.rotation.x = sw * 0.7;
-      this.armL.rotation.z = 0;
-      this.armR.rotation.z = 0;
+      if (isPumping) {
+        this.armL.rotation.x = 0.88;
+        this.armR.rotation.x = 0.95;
+        this.armL.rotation.z = 0.22;
+        this.armR.rotation.z = -0.22;
+      } else {
+        this.armL.rotation.x = -sw * 0.7;
+        this.armR.rotation.x = sw * 0.7;
+        this.armL.rotation.z = 0;
+        this.armR.rotation.z = 0;
+      }
       this.torso.position.y = 0.85 + Math.abs(Math.sin(this.walk)) * 0.03 * Math.min(1, spd / 1.5);
     } else if (this.member.state === "repairing") {
       // Welding repair pose: both hands raised forward toward -Z

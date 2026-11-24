@@ -5,9 +5,9 @@ import { Ocean } from "./ocean";
 import { ParticleSystem, createRain } from "./particles";
 import { Input } from "./input";
 import { Player } from "./player";
-import { buildShip, ShipModel } from "./shipBuilder";
+import { buildShip, ShipModel, ShipSection } from "./shipBuilder";
 import { ShipSim } from "./shipSim";
-import { Compartment, DECK_Y, Door, Lifeboat, WI } from "./shipTypes";
+import { Compartment, DECK_Y, Door, hullHalfWidth, Lifeboat, WI } from "./shipTypes";
 import type { Settings } from "./settings";
 import { createTextures, setAnisotropy, TexSet } from "./textures";
 import { ViewModel, WEAPONS, WeaponId } from "./weapons";
@@ -19,9 +19,21 @@ import { StormworksSupervisor } from "./stormworksSupervisor";
 import { stepTelegraph, vesselForward, MAX_RUDDER_DEG, TELEGRAPH_SPEED } from "./bridge";
 import { shouldWindowBurst } from "./ingress";
 import { v3 } from "./navmesh3d";
+import { createCrewMember, stepCrew, type CrewMember } from "./crew";
 import { CrewVisual } from "./crewVisual";
-import { Battleship, battleshipHitTest, createBattleship, stepBattleship, stepBattleshipAI, damageBattleship, fireBattleshipSalvo } from "./battleships";
+import { Battleship, createBattleship, stepBattleship, stepBattleshipAI, damageBattleship, fireBattleshipSalvo } from "./battleships";
 import { OrbitalSpaceStationSim, STATION_BASE_Y } from "./spaceStation";
+import {
+  BATTLESHIP_HULL,
+  BATTLESHIP_MASS,
+  FREIGHTER_HULL,
+  FREIGHTER_MASS,
+  collisionDamage,
+  hullOverlap,
+  hullRadiusAlong,
+  pointInHull,
+  type HullBox,
+} from "./vesselCollision";
 
 export type Mode = "mission" | "sandbox";
 
@@ -88,6 +100,17 @@ export interface HudState {
   theatre: "maritime" | "orbital";
   orbitalLaserMode: boolean;
   orbitalZoomFov: number;
+  freighterIntegrityPct: number;
+  freighterDestroyed: boolean;
+  battleshipSunk: boolean;
+  aliveBattleshipCount: number;
+  statusKind: "freighter" | "battleship" | "station";
+  statusTitle: string;
+  statusHullPct: number;
+  statusParts: { name: string; pct: number }[];
+  lockedTargetLabel: string;
+  lockedTargetDist: number;
+  bilgePumpsActive: boolean;
 }
 
 export interface EndInfo {
@@ -117,6 +140,9 @@ interface Dyn {
   led: THREE.Mesh;
   placedMarker: boolean;
   remote: number;
+  inWater?: boolean;
+  attachedBs?: Battleship;
+  attachLocal?: THREE.Vector3;
 }
 
 interface Effect {
@@ -230,7 +256,14 @@ export class Game {
   waterOverlay = false;
   godModeHoldProgress = 0;
   crewVisuals: CrewVisual[] = [];
+  deckCrew: CrewMember[] = [];
+  superlaserTimer = 0;
+  superlaserTarget: "freighter" | "battleship" = "freighter";
+  superlaserTargetBsId: string | null = null;
+  superlaserDmgCd = 0;
   battleships: Battleship[] = [];
+  private ridingBs: Battleship | null = null;
+  private ridingLocal = V();
   helmMode = false;
   helmThrottleCooldown = 0;
   tabletOpen = false;
@@ -242,14 +275,34 @@ export class Game {
   theatre: "maritime" | "orbital" = "maritime";
   orbitalLaserMode = false;
   orbitalZoomFov = 55;
+  private planetHidShip = false;
   orbitalAimX = 0;
   orbitalAimZ = 0;
+  private orbitalBeamGroup: THREE.Group | null = null;
+  private orbitalBeamAudioCd = 0;
+  private orbitalBeamFxCd = 0;
+  private debrisGeo: THREE.BoxGeometry | null = null;
+  private debrisMats = new Map<number, THREE.MeshStandardMaterial>();
+  private pendingTimers: number[] = [];
   laserCd = 0;
   activeFires: { pos: THREE.Vector3; life: number; spreadCd: number }[] = [];
   debris: { m: THREE.Mesh; vel: THREE.Vector3; rot: THREE.Vector3; life: number }[] = [];
   spaceStation!: OrbitalSpaceStationSim;
-  navalProjectiles: { mesh: THREE.Mesh; pos: THREE.Vector3; vel: THREE.Vector3; kind: "shell" | "torpedo" | "missile"; life: number; ownerIdx?: number }[] = [];
+  navalProjectiles: {
+    mesh: THREE.Mesh;
+    pos: THREE.Vector3;
+    vel: THREE.Vector3;
+    kind: "shell" | "torpedo" | "missile";
+    life: number;
+    ownerIdx?: number;
+    ownerId?: string;
+    targetKind?: "freighter" | "battleship";
+    targetId?: string;
+    fromFleetStrike?: boolean;
+  }[] = [];
+  lockedTarget: { kind: "freighter" } | { kind: "battleship"; id: string } | null = null;
   engineExploded = false;
+  private lastBlast = { pos: V(), power: 0, t: -99 };
   private tmpV = V();
   private tmpQ = new THREE.Quaternion();
   private tmpE = new THREE.Euler();
@@ -397,17 +450,120 @@ export class Game {
       }
     }
 
-    // Friendly Damage Control Crew (sandbox mode)
+    // Friendly Damage Control Crew (visible upstairs & downstairs with active patrol routes)
+    const makeCrew = (
+      name: string,
+      role: CrewMember["role"],
+      x: number,
+      y: number,
+      z: number,
+      patrol: { x: number; y: number; z: number }[],
+    ) => {
+      const m = createCrewMember(name, role, x, y, z, 5);
+      m.patrol = patrol;
+      return m;
+    };
+    this.deckCrew = [
+      // Bridge Level 3 & Officer Deck Level 2 (aligned with connected aft/mid stair landings & obstacle-free rooms)
+      makeCrew("Helmsman", "boatswain", -2.5, 12.6, -46.8, [
+        { x: -5.0, y: 12.6, z: -46.8 },
+        { x: 5.0, y: 12.6, z: -46.8 },
+      ]),
+      makeCrew("Watch Officer", "electrician", 3.5, 12.6, -46.8, [
+        { x: 4.5, y: 12.6, z: -46.8 },
+        { x: 0.0, y: 9.4, z: -53.6 },
+      ]),
+      makeCrew("Bridge Officer", "boatswain", 0.0, 9.4, -53.6, [
+        { x: 0.0, y: 9.4, z: -53.6 },
+        { x: 0.0, y: 9.4, z: -47.0 },
+      ]),
+      makeCrew("Radio Tech", "electrician", 4.2, 9.4, -62.0, [
+        { x: 4.2, y: 9.4, z: -62.0 },
+        { x: -4.2, y: 9.4, z: -62.0 },
+      ]),
+      // Cabin Deck Level 1 (forward cabins & stair flight to Level 2 aft landing)
+      makeCrew("Cabin Steward", "medic", -4.2, 6.2, -47.0, [
+        { x: -4.2, y: 6.2, z: -47.0 },
+        { x: 0.0, y: 6.2, z: -53.6 },
+      ]),
+      makeCrew("Deck Cadet", "damage-control", 0.0, 6.2, -47.0, [
+        { x: 0.0, y: 6.2, z: -47.0 },
+        { x: 0.0, y: 9.4, z: -53.6 },
+      ]),
+      // Superstructure Level 0, Exterior Catwalks & Control Room (routed north of engineHole railing)
+      makeCrew("Control Room Eng.", "electrician", 3.8, 3.0, -61.5, [
+        { x: 3.8, y: 3.0, z: -61.5 },
+        { x: 3.8, y: 3.0, z: -57.6 },
+        { x: -3.8, y: 3.0, z: -57.6 },
+        { x: -3.8, y: 3.0, z: -61.5 },
+      ]),
+      makeCrew("Corridor Patrol", "damage-control", 0.0, 3.0, -47.0, [
+        { x: 0.0, y: 3.0, z: -53.6 },
+        { x: 0.0, y: 3.0, z: -38.5 },
+      ]),
+      makeCrew("Mess Sailor", "medic", -3.4, 3.0, -53.6, [
+        { x: -3.4, y: 3.0, z: -53.6 },
+        { x: -4.2, y: 3.0, z: -47.0 },
+      ]),
+      makeCrew("Port Catwalk Guard", "boatswain", -9.55, 3.0, -47.0, [
+        { x: -9.55, y: 3.0, z: -60.0 },
+        { x: -9.55, y: 3.0, z: -43.2 },
+      ]),
+      makeCrew("Stbd Catwalk Guard", "boatswain", 9.55, 3.0, -47.0, [
+        { x: 9.55, y: 3.0, z: -43.2 },
+        { x: 9.55, y: 3.0, z: -60.0 },
+      ]),
+      // Main Deck Fore, Mid & Aft (container-free side lanes & cross-aisles)
+      makeCrew("Aft Deck Eng.", "chief-engineer", 6.0, DECK_Y, -38.5, [
+        { x: 6.0, y: DECK_Y, z: -38.5 },
+        { x: 8.5, y: DECK_Y, z: -9.2 },
+        { x: -8.5, y: DECK_Y, z: -9.2 },
+        { x: -6.0, y: DECK_Y, z: -38.5 },
+      ]),
+      makeCrew("Mid Deck Rigger", "damage-control", -8.5, DECK_Y, -9.2, [
+        { x: -8.5, y: DECK_Y, z: -37.5 },
+        { x: -8.5, y: DECK_Y, z: 17.5 },
+      ]),
+      makeCrew("Fore Deck Crew", "damage-control", 8.5, DECK_Y, 25.5, [
+        { x: 8.5, y: DECK_Y, z: -9.2 },
+        { x: 8.5, y: DECK_Y, z: 55.0 },
+        { x: -8.5, y: DECK_Y, z: 55.0 },
+      ]),
+      // Downstairs (Engine Room aisles & Cargo Holds 3, 2, 1)
+      makeCrew("Engine Room Chief", "chief-engineer", 4.2, -5.0, -56.0, [
+        { x: 4.2, y: -5.0, z: -56.0 },
+        { x: 4.2, y: -5.0, z: -42.0 },
+        { x: -4.2, y: -5.0, z: -42.0 },
+        { x: -4.2, y: -5.0, z: -56.0 },
+      ]),
+      makeCrew("Turbine Tech", "electrician", -4.5, -5.0, -56.0, [
+        { x: -4.5, y: -5.0, z: -56.0 },
+        { x: -4.5, y: -5.0, z: -42.0 },
+        { x: 4.5, y: -5.0, z: -42.0 },
+      ]),
+      makeCrew("Hold 3 Crew", "damage-control", 0, -5.0, -24.0, [
+        { x: -3.0, y: -5.0, z: -34.0 },
+        { x: 3.0, y: -5.0, z: -12.0 },
+      ]),
+      makeCrew("Hold 2 Crew", "boatswain", 0, -5.0, 8.0, [
+        { x: -3.0, y: -5.0, z: -2.0 },
+        { x: 3.0, y: -5.0, z: 20.0 },
+      ]),
+      makeCrew("Hold 1 Crew", "medic", 0, -5.0, 40.0, [
+        { x: -3.0, y: -5.0, z: 30.0 },
+        { x: 3.0, y: -5.0, z: 50.0 },
+      ]),
+    ];
+    for (const m of [...this.supervisor.crew, ...this.deckCrew]) {
+      const cv = new CrewVisual(m);
+      this.ship.group.add(cv.group);
+      this.crewVisuals.push(cv);
+    }
     if (this.mode === "sandbox") {
-      for (const m of this.supervisor.crew) {
-        const cv = new CrewVisual(m);
-        this.ship.group.add(cv.group);
-        this.crewVisuals.push(cv);
-      }
       const bs = createBattleship("bs-1", 46, -15);
       this.scene.add(bs.group);
       this.battleships.push(bs);
-      console.log("[NORDWIND/SANDBOX] Spawned 3 visible crew members on deck and 1 walkable Battleship at (46, 0, -15).");
+      console.log(`[NORDWIND/SANDBOX] Spawned ${this.supervisor.crew.length + this.deckCrew.length} visible crew members and 1 walkable Battleship at (46, 0, -15).`);
     }
 
     // Spieler
@@ -447,7 +603,7 @@ export class Game {
 
     if (this.mode === "mission") {
       this.say("Welcome aboard the NORDWIND. Your mission: sink the freighter and escape in the lifeboat!", "info");
-      setTimeout(() => this.say("Tip: place TNT on the orange detonation points in the hull (2 charges), then detonate with G.", "info"), 5000);
+      this.scheduleTimeout(() => this.say("Tip: place TNT on the orange detonation points in the hull (2 charges), then detonate with G.", "info"), 5000);
     } else {
       this.say("Sandbox mode: all weapons, 20 TNT, all doors open. Have fun!", "info");
     }
@@ -614,7 +770,42 @@ export class Game {
     if (this.msgs.length > 6) this.msgs.shift();
   }
 
+  private scheduleTimeout(fn: () => void, ms: number) {
+    const id = window.setTimeout(() => {
+      const idx = this.pendingTimers.indexOf(id);
+      if (idx !== -1) this.pendingTimers.splice(idx, 1);
+      if (!this.disposed) fn();
+    }, ms);
+    this.pendingTimers.push(id);
+  }
+
+  /** Re-syncs fill/level/visibility after pumping, recomputes flood fraction and re-floats the ship. */
+  syncCompartmentsAfterPumping(dt: number): void {
+    let totW = 0;
+    let totV = 0;
+    for (const comp of this.ship.compartments) {
+      if (comp.water <= 1e-3) {
+        comp.water = 0;
+        comp.fill = 0;
+        comp.waterMesh.visible = false;
+      } else {
+        comp.fill = comp.volume > 0 ? comp.water / comp.volume : 0;
+      }
+      comp.level = comp.min.y + comp.fill * (comp.max.y - comp.min.y);
+      totW += comp.water;
+      totV += comp.volume;
+    }
+    if (totV > 0) this.sim.F = totW / totV;
+    const anyActive = this.ship.bilgePumps.some((p) => p.active && p.rateM3s > 0);
+    if (anyActive && this.sim.F < 0.28 && !this.sim.forceSink) {
+      this.sim.sinking = false;
+      this.sim.sinkT = Math.max(0, this.sim.sinkT - dt * 3.0);
+      this.sim.sinkDepth = Math.max(0, this.sim.sinkDepth - dt * 3.5);
+    }
+  }
+
   worldPos(local: THREE.Vector3, out = V()): THREE.Vector3 {
+    if (this.theatre === "orbital") return out.copy(local);
     return out.copy(local).applyMatrix4(this.ship.group.matrixWorld);
   }
 
@@ -646,9 +837,21 @@ export class Game {
   waterAt = (x: number, y: number, z: number): number => {
     if (this.theatre === "orbital" || y > 120) return -Infinity;
     for (const c of this.ship.compartments) {
-      if (Math.abs(x) <= WI + 0.4 && z >= c.min.z - 0.3 && z <= c.max.z + 0.3 && y >= c.min.y - 0.4 && y <= c.max.y + 0.05) {
+      if (x >= c.min.x && x <= c.max.x && z >= c.min.z && z <= c.max.z && y >= c.min.y - 0.4 && y <= c.max.y + 0.05) {
         return c.fill > 0.004 ? this.sim.localLevel(c, x, z) : -Infinity;
       }
+    }
+    if (
+      Math.abs(x) < 8.85 &&
+      z > -65.7 &&
+      z < -44.3 &&
+      y >= 2.95 &&
+      y < 15.6 &&
+      !this.sim.sunk &&
+      this.sim.sinkDepth < 14 &&
+      !this.ship.sections.some((s) => (s.id.startsWith("super_") || s.id === "bridge") && s.destroyed)
+    ) {
+      return -Infinity;
     }
     const m = this.ship.group.matrixWorld.elements;
     const wx = m[0] * x + m[4] * y + m[8] * z + m[12];
@@ -725,24 +928,176 @@ export class Game {
     const t = this.time;
     const st = this.settings;
 
+    if (!this.helmMode || this.tabletOpen || this.dead || this.ended || this.escapeState) {
+      inp.pressed("helmUp");
+      inp.pressed("helmDown");
+    }
+    const ridePrevBs =
+      this.theatre === "maritime" &&
+      this.activeVessel === "freighter" &&
+      this.ridingBs &&
+      !this.ridingBs.sunk &&
+      !this.supervisor.isNoclip()
+        ? this.ridingBs
+        : null;
+    if (ridePrevBs) {
+      this.ship.group.updateMatrixWorld(true);
+      ridePrevBs.group.updateMatrixWorld(true);
+      this.ridingLocal.copy(V(this.player.body.x, this.player.body.y, this.player.body.z)).applyMatrix4(this.ship.group.matrixWorld);
+      ridePrevBs.group.worldToLocal(this.ridingLocal);
+    }
+
     // Schiff
-    this.supervisor.step(
-      dt,
-      t,
-      this.ocean,
-      st.floodSpeed,
-      (orig, dir, maxD) => {
-        const hit = this.ship.world.raycast(orig.x, orig.y, orig.z, dir.x, dir.y, dir.z, maxD);
-        return {
-          hit: !!hit,
-          distance: hit ? hit.dist : maxD,
-          normal: hit ? v3(hit.nx, hit.ny, hit.nz) : v3(0, 0, 0),
-          point: hit ? v3(orig.x + dir.x * hit.dist, orig.y + dir.y * hit.dist, orig.z + dir.z * hit.dist) : v3(0, 0, 0),
-        };
-      },
-      this.shake * 180,
-      this.ship.world,
-    );
+    const crewRay = (orig: { x: number; y: number; z: number }, dir: { x: number; y: number; z: number }, maxD: number) => {
+      const hit = this.ship.world.raycast(orig.x, orig.y, orig.z, dir.x, dir.y, dir.z, maxD, (c) => c.tag !== "door");
+      return {
+        hit: !!hit,
+        distance: hit ? hit.dist : maxD,
+        normal: hit ? v3(hit.nx, hit.ny, hit.nz) : v3(0, 0, 0),
+        point: hit ? v3(orig.x + dir.x * hit.dist, orig.y + dir.y * hit.dist, orig.z + dir.z * hit.dist) : v3(0, 0, 0),
+      };
+    };
+    const localBlastFor = (m: { x: number; y: number; z: number }) => {
+      if (t - this.lastBlast.t >= 0.15 || this.lastBlast.power <= 0) return 0;
+      const bd = Math.hypot(m.x - this.lastBlast.pos.x, m.y - this.lastBlast.pos.y, m.z - this.lastBlast.pos.z);
+      return (460 * this.lastBlast.power) / (1 + (bd / 4.2) ** 2);
+    };
+    let supBlastImp = 0;
+    if (t - this.lastBlast.t < 0.15) {
+      for (const sm of this.supervisor.crew) {
+        const sd = Math.hypot(sm.x - this.lastBlast.pos.x, sm.y - this.lastBlast.pos.y, sm.z - this.lastBlast.pos.z);
+        if (sd <= 7.5) supBlastImp = Math.max(supBlastImp, localBlastFor(sm));
+      }
+    }
+    this.supervisor.step(dt, t, this.ocean, st.floodSpeed, crewRay, supBlastImp, this.ship.world);
+    for (const bp of this.ship.bilgePumps) {
+      if (!bp.active || bp.rateM3s <= 0) continue;
+      const comp = this.ship.compartments.find((c) => c.id === bp.compId);
+      if (comp && comp.water > 0) {
+        comp.water = Math.max(0, comp.water - bp.rateM3s * dt);
+        if (comp.water > 0 && Math.random() < Math.min(1, dt * 18)) {
+          const sideX = bp.pos.x >= 0 ? 11.1 : -11.1;
+          const sp = this.worldPos(V(sideX, bp.pos.y, bp.pos.z), V());
+          this.pa.emit(sp.x, sp.y, sp.z, Math.sign(sideX) * (2 + Math.random() * 2), 2 + Math.random() * 2, (Math.random() - 0.5) * 1.5, 0.9, 0.12, 0.35, 0.75, 0.9, 1, 0.8, 9, 0.4);
+        }
+      }
+    }
+    this.syncCompartmentsAfterPumping(dt);
+    const destroyedIds = new Set(this.ship.sections.filter((s) => s.destroyed).map((s) => s.id));
+    const glassSectionAt = (y: number) => (y >= 12.2 ? "bridge" : y >= 9.0 ? "super_2" : y >= 5.8 ? "super_1" : "super_0");
+    const deckBreaches = [
+      ...this.ship.compartments.flatMap((c, ci) =>
+        destroyedIds.has(c.id)
+          ? []
+          : c.holes
+              .filter((h) => h.area > 0.005)
+              .map((h, hi) => ({
+                id: ci * 1000 + hi,
+                x: h.pos.x,
+                y: h.pos.y,
+                z: h.pos.z,
+                area: h.area,
+                inflowRate: Math.max(0.2, 0.6 * h.area * Math.sqrt(2 * 9.81 * Math.max(0.5, -this.sim.worldY(h.pos.x, h.pos.y, h.pos.z)))),
+                isEngineRoom: c.id === "engine",
+                kind: "hull-breach" as const,
+                repair: (amt: number) => {
+                  h.area = Math.max(0, h.area - amt);
+                },
+              })),
+      ),
+      ...this.ship.glass
+        .filter((g) => g.broken && !destroyedIds.has(glassSectionAt(g.pos.y)))
+        .map((g, gi) => ({
+          id: 90000 + gi,
+          x: g.pos.x,
+          y: g.pos.y,
+          z: g.pos.z,
+          area: Math.max(0.05, 1.0 - ((g as unknown as { repairProgress?: number }).repairProgress ?? 0)),
+          inflowRate: Math.max(0.2, g.w * g.h * 0.7),
+          isEngineRoom: false,
+          kind: "broken-window" as const,
+          repair: (amt: number) => {
+            const pane = g as unknown as { repairProgress?: number };
+            pane.repairProgress = (pane.repairProgress ?? 0) + amt * 1.4;
+            if (pane.repairProgress >= 1.0 && g.broken) {
+              g.broken = false;
+              pane.repairProgress = 0;
+              g.mesh.visible = true;
+              g.collider.enabled = true;
+              g.collider.tag = "glass";
+              this.say("🔧 Window pane repaired by Damage Control Crew!", "good");
+              this.terminal.push(this.time, "info", "CREW", "Broken window repaired by crew.");
+            }
+          },
+        })),
+    ];
+    const allCrew = [...this.supervisor.crew, ...this.deckCrew];
+    for (const dm of this.deckCrew) {
+      const deckFloorY =
+        dm.y >= 11.0 ? 12.6 : dm.y >= 7.8 ? 9.4 : dm.y >= 4.6 ? 6.2 : dm.y >= 1.0 ? DECK_Y : -5.0;
+      stepCrew(dm, dt, deckBreaches, undefined, {
+        raycast: crewRay,
+        world: this.ship.world,
+        deckFloorY,
+        blastImpulse: localBlastFor(dm),
+        vesselRollDeg: (this.sim.roll * 180) / Math.PI,
+        waterLevel: this.waterAt(dm.x, dm.y, dm.z),
+        peers: allCrew,
+      });
+    }
+    for (const cm of allCrew) {
+      // Player <-> Crew character collision and shoving across all 22 crew members
+      if (this.theatre !== "orbital" && this.activeVessel === "freighter" && !this.ridingBs && Math.abs(this.player.body.y - cm.y) < 1.75) {
+        const pdx = cm.x - this.player.body.x;
+        const pdz = cm.z - this.player.body.z;
+        const pd = Math.hypot(pdx, pdz);
+        if (pd < 0.78) {
+          const pnx = pd > 1e-3 ? pdx / pd : 1;
+          const pnz = pd > 1e-3 ? pdz / pd : 0;
+          const crewPush = (0.78 - pd) * 0.78 + 0.04;
+          const pBody = { x: cm.x, y: cm.y, z: cm.z, vx: 0, vy: 0, vz: 0, r: 0.2, h: 1.75, onGround: cm.onGround ?? false, step: 0.48 };
+          this.ship.world.move(pBody, pnx * crewPush, 0, pnz * crewPush);
+          cm.x = pBody.x;
+          cm.z = pBody.z;
+          const playerPush = (0.78 - pd) * 0.22;
+          this.ship.world.move(this.player.body, -pnx * playerPush, 0, -pnz * playerPush);
+        }
+      }
+      const comp = this.compAt(cm.x, cm.y, cm.z);
+      if (comp && comp.water > 0 && cm.state !== "ragdoll" && !cm.isRagdoll) {
+        cm.pumping = true;
+        comp.water = Math.max(0, comp.water - 4.5 * dt);
+        for (const p of this.ship.bilgePumps) if (p.compId === comp.id && !p.active) p.active = true;
+      } else {
+        cm.pumping = false;
+      }
+    }
+    this.syncCompartmentsAfterPumping(dt);
+    // Remove and dispose 3D breach meshes once sealed by crew
+    let sealedVisuals = 0;
+    for (let hi = this.ship.holeGroup.children.length - 1; hi >= 0; hi--) {
+      const ch = this.ship.holeGroup.children[hi];
+      const holeRef = ch.userData?.hole as { area: number } | undefined;
+      if (holeRef && holeRef.area <= 0.01) {
+        this.ship.holeGroup.remove(ch);
+        ch.traverse((obj) => {
+          if (obj instanceof THREE.Mesh) {
+            obj.geometry?.dispose();
+            const mat = obj.material;
+            if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+            else mat?.dispose();
+          }
+        });
+        sealedVisuals++;
+      }
+    }
+    for (const c of this.ship.compartments) {
+      if (c.holes.length > 0) c.holes = c.holes.filter((h) => h.area > 0.01);
+    }
+    if (sealedVisuals > 0) {
+      this.say("🔧 Hull breach sealed by Damage Control Crew!", "good");
+      this.terminal.push(this.time, "ok", "CREW", `${sealedVisuals} hull breach(es) sealed by crew.`);
+    }
 
     // Freighter AI evasive autopilot when player commands the Battleship (stays within 220m so it never vanishes)
     if (this.activeVessel === "battleship" && this.battleships[0] && !this.sim.sunk) {
@@ -750,29 +1105,80 @@ export class Game {
       const awayX = this.ship.group.position.x - bs.baseX;
       const awayZ = this.ship.group.position.z - bs.baseZ;
       const dist = Math.hypot(awayX, awayZ);
+      // Freighter bow is +Z: forward = (-sin(h), cos(h)), so heading toward (dx, dz) is atan2(-dx, dz)
       const desiredHeading = dist > 200
-        ? Math.atan2(awayX, awayZ) + Math.PI * 0.55 // circle back into combat range
-        : Math.atan2(awayX, awayZ); // flee away
+        ? Math.atan2(-awayX, awayZ) + Math.PI * 0.55 // circle back into combat range
+        : Math.atan2(-awayX, awayZ); // flee away
       let hDiff = desiredHeading - this.supervisor.helm.heading;
       while (hDiff > Math.PI) hDiff -= Math.PI * 2;
       while (hDiff < -Math.PI) hDiff += Math.PI * 2;
       this.supervisor.helm.telegraph = "half-ahead";
-      // Starboard rudder lowers the heading, so a positive heading error needs
-      // negative (port) rudder order to cancel out.
-      this.supervisor.helm.rudderCmd = Math.max(-MAX_RUDDER_DEG, Math.min(MAX_RUDDER_DEG, -(hDiff * 180) / Math.PI));
+      // Positive rudder is starboard and raises the heading, so a positive
+      // heading error is corrected with a positive (starboard) order.
+      this.supervisor.helm.rudderCmd = Math.max(-MAX_RUDDER_DEG, Math.min(MAX_RUDDER_DEG, (hDiff * 180) / Math.PI));
     }
 
-    // Real vessel propulsion along the modelled bow (local +Z)
+    // Real vessel propulsion along the modelled bow (local +Z, mesh yaw = -heading)
     const bow = vesselForward(this.supervisor.helm.heading);
     const forward = v3(bow.x, 0, bow.z);
     this.ship.group.position.addScaledVector(forward, this.supervisor.helm.speed * dt);
     this.ship.group.updateMatrixWorld(true);
 
-    // Step Orbital Space Station (0 CPU when inactive); keep Ocean & Ships visible far below!
-    this.spaceStation.step(dt, t, false);
-    this.ocean.mesh.visible = true;
-    for (const bs of this.battleships) bs.group.visible = true;
+    // Step Orbital Space Station (0 CPU when inactive).
+    // Planet view: ONLY when fully zoomed out in Orbital Death Ray mode -> planet shown, sea & ships hidden.
+    // Any closer zoom (or leaving the console) hides the planet and shows sea & ships again.
+    this.spaceStation.step(dt, t, this.alarm);
+    const planetZoomT = Math.max(0, Math.min(1, (this.orbitalZoomFov - 8) / (72 - 8)));
+    const planetView = this.theatre === "orbital" && this.orbitalLaserMode && planetZoomT > 0.9;
+    this.spaceStation.earthMesh.visible = planetView;
+    this.spaceStation.atmosphereMesh.visible = planetView;
+    if (planetView) {
+      // Centre the planet far below the top-down camera so its limb fills the view (root.y = STATION_BASE_Y)
+      this.spaceStation.earthMesh.position.set(this.orbitalAimX, -400, this.orbitalAimZ);
+      this.spaceStation.atmosphereMesh.position.copy(this.spaceStation.earthMesh.position);
+    }
+    this.ocean.mesh.visible = !planetView;
+    for (const bs of this.battleships) bs.group.visible = !planetView;
+    if (planetView) {
+      this.ship.group.visible = false;
+      this.planetHidShip = true;
+    } else if (this.planetHidShip) {
+      this.planetHidShip = false;
+      this.ship.group.visible = !this.sim.sunk || this.mode === "sandbox";
+    }
     this.laserCd = Math.max(0, this.laserCd - dt);
+    this.orbitalBeamAudioCd = Math.max(0, this.orbitalBeamAudioCd - dt);
+    this.orbitalBeamFxCd = Math.max(0, this.orbitalBeamFxCd - dt);
+
+    // 5-second Superlaser Strike sweeping across the ship the player triggered it over
+    if (this.superlaserTimer > 0) {
+      this.superlaserTimer = Math.max(0, this.superlaserTimer - dt);
+      const bsTarget = this.superlaserTarget === "battleship"
+        ? (this.battleships.find((b) => b.id === this.superlaserTargetBsId) ?? this.battleships[0] ?? null)
+        : null;
+      if (this.superlaserTarget === "battleship" && !bsTarget) {
+        this.superlaserTimer = 0;
+        if (!this.orbitalLaserMode && this.orbitalBeamGroup) this.orbitalBeamGroup.visible = false;
+      } else {
+        const basePos = bsTarget ? bsTarget.group.position : this.ship.group.position;
+        const heading = bsTarget ? bsTarget.heading : this.supervisor.helm.heading;
+        const sweepOffset = ((5.0 - this.superlaserTimer) / 5.0 - 0.5) * (bsTarget ? 46 : 110);
+        const sx = basePos.x - Math.sin(heading) * sweepOffset;
+        const sz = bsTarget ? basePos.z - Math.cos(heading) * sweepOffset : basePos.z + Math.cos(heading) * sweepOffset;
+        this.orbitalAimX = sx;
+        this.orbitalAimZ = sz;
+        const beam = this.ensureOrbitalBeam();
+        beam.visible = true;
+        const pulse = 1.0 + Math.sin(t * 24) * 0.14;
+        beam.position.set(sx, 0, sz);
+        beam.scale.set(pulse, STATION_BASE_Y + 24, pulse);
+        this.fireOrbitalDeathRay();
+        if (this.superlaserTimer <= 0 && !this.orbitalLaserMode && this.orbitalBeamGroup) {
+          this.orbitalBeamGroup.visible = false;
+          this.say("☄️ Superlaser Strike complete!", "info");
+        }
+      }
+    }
 
     // Step spreading 3D fires (extinguished if flooded, capped at 18 for 60 FPS)
     for (let i = this.activeFires.length - 1; i >= 0; i--) {
@@ -806,7 +1212,7 @@ export class Game {
     }
     const bsPlayerControlled = this.activeVessel === "battleship" && !this.tabletOpen;
     const bsAimDir = V(-Math.sin(this.player.yaw) * Math.cos(this.player.pitch), Math.sin(this.player.pitch), -Math.cos(this.player.yaw) * Math.cos(this.player.pitch)).normalize();
-    const freighterTarget = this.ship.group.position.clone().add(V(0, 3, -10));
+    const freighterTarget = this.worldPos(V(0, 3, -10), V());
     for (let bi = 0; bi < this.battleships.length; bi++) {
       const bs = this.battleships[bi];
       const isPlayerShip = bi === 0 && bsPlayerControlled;
@@ -814,12 +1220,29 @@ export class Game {
       let targetPos = freighterTarget;
       let opp: Battleship | undefined;
       if (isPlayerShip) {
-        targetPos = bs.group.position.clone().addScaledVector(bsAimDir, 120);
+        const lockedPos = this.resolveTargetPos(this.lockedTarget);
+        targetPos = lockedPos ?? bs.group.position.clone().addScaledVector(bsAimDir, 120);
       } else if (this.fleetBattle) {
         opp = this.battleships.find((other, oi) => oi !== bi && !other.sunk && other.team !== bs.team)
           ?? this.battleships.find((other, oi) => oi !== bi && !other.sunk);
-        if (opp) targetPos = opp.group.position.clone().add(V(0, 3, 0));
-        stepBattleshipAI(bs, targetPos, dt);
+        const freighterAlive = !this.isFreighterDestroyed();
+        // Mix Fleet Battle targets: Red team or alternating ships engage the Freighter too, not just each other
+        const engageFreighter = freighterAlive && (!opp || bs.team === "red" || bi % 2 === 1);
+        if (engageFreighter) {
+          targetPos = freighterTarget;
+          opp = undefined;
+        } else if (opp) {
+          targetPos = opp.group.position.clone().add(V(0, 3, 0));
+        }
+        const obstacles: { x: number; z: number; radius: number }[] = [];
+        if (freighterAlive) {
+          obstacles.push({ x: this.ship.group.position.x, z: this.ship.group.position.z, radius: 74 });
+        }
+        for (let oi = 0; oi < this.battleships.length; oi++) {
+          if (oi === bi || this.battleships[oi].sunk) continue;
+          obstacles.push({ x: this.battleships[oi].baseX, z: this.battleships[oi].baseZ, radius: 36 });
+        }
+        stepBattleshipAI(bs, targetPos, dt, obstacles);
       }
       stepBattleship(
         bs,
@@ -830,21 +1253,31 @@ export class Game {
         (muzzle, dir) => {
           this.tracer(muzzle, muzzle.clone().addScaledVector(dir, 55), bs.team === "red" ? 0xef4444 : 0x38bdf8);
           if (this.fleetBattle) {
-            if (opp && muzzle.distanceTo(opp.group.position) < 280) {
-              const sunkNow = damageBattleship(opp, 35 + bs.level * 14);
-              this.pn.emit(opp.baseX, 4, opp.baseZ, 0, 5, 0, 3, 0.35, 0.7, 1, 0.5, 0.1, 0.7, -1, 0.8);
-              if (sunkNow) this.say(`⚓ ${opp.id.toUpperCase()} (Lv.${opp.level}) SUNK by ${bs.id.toUpperCase()}!`, "alert");
-            } else if (!opp && !this.sim.sunk && muzzle.distanceTo(freighterTarget) < 300) {
-              this.pn.emit(freighterTarget.x, 4, freighterTarget.z, 0, 6, 0, 4, 0.4, 0.9, 1, 0.5, 0.1, 0.8, -1, 0.8);
-              if (this.activeFires.length < 18 && Math.random() < 0.35) {
-                this.activeFires.push({ pos: freighterTarget.clone().add(V((Math.random() - 0.5) * 10, 0, (Math.random() - 0.5) * 30)), life: 18, spreadCd: 3.0 });
-              }
-            }
+            const shellDir = dir.clone().add(V(0, 0.05, 0)).normalize();
+            const mesh = new THREE.Mesh(
+              new THREE.SphereGeometry(0.26, 6, 6),
+              new THREE.MeshBasicMaterial({ color: bs.team === "red" ? 0xff5533 : 0x38bdf8 }),
+            );
+            mesh.position.copy(muzzle);
+            this.scene.add(mesh);
+            this.navalProjectiles.push({
+              mesh,
+              pos: muzzle.clone(),
+              vel: shellDir.multiplyScalar(115),
+              kind: "shell",
+              life: 3.5,
+              ownerIdx: bi,
+              ownerId: bs.id,
+              targetKind: opp ? "battleship" : "freighter",
+              targetId: opp?.id,
+            });
+            this.pn.emit(muzzle.x, muzzle.y, muzzle.z, dir.x * 4, 2, dir.z * 4, 1.6, 0.3, 0.6, 0.9, 0.7, 0.4, 0.7, -0.2, 0.35);
           }
         },
         !isPlayerShip && this.fleetBattle,
       );
     }
+    this.stepVesselCollisions(dt);
 
     // Step Battleship shells, torpedoes & homing missiles
     this.bsFireCd = Math.max(0, this.bsFireCd - dt);
@@ -856,12 +1289,45 @@ export class Game {
       if (proj.kind === "shell") {
         proj.vel.y -= 9.8 * dt;
       } else if (proj.kind === "missile") {
-        // Arc and home toward Freighter (or nearest enemy Battleship)
-        const target = freighterTarget.clone();
+        const specificTarget = proj.targetKind
+          ? this.resolveTargetPos(
+              proj.targetKind === "freighter"
+                ? { kind: "freighter" }
+                : { kind: "battleship", id: proj.targetId ?? "" },
+            )
+          : null;
+        const lockedPos = !proj.fromFleetStrike ? this.resolveTargetPos(this.lockedTarget) : null;
+        const aliveTargetBs = this.battleships.find((bs, bi) => bi > 0 && !bs.sunk) ?? this.battleships.find((bs) => !bs.sunk);
+        const target =
+          specificTarget ??
+          lockedPos ??
+          (this.isFreighterDestroyed() && aliveTargetBs && !proj.fromFleetStrike
+            ? aliveTargetBs.group.position.clone().add(V(0, 3, 0))
+            : freighterTarget.clone());
         const toT = target.sub(proj.pos).normalize();
-        proj.vel.lerp(toT.multiplyScalar(55), Math.min(1, dt * 3.5));
+        proj.vel.lerp(toT.multiplyScalar(58), Math.min(1, dt * 4.2));
+        if (proj.vel.lengthSq() > 0.01) {
+          proj.mesh.quaternion.setFromUnitVectors(V(0, 1, 0), proj.vel.clone().normalize());
+        }
         this.pn.emit(proj.pos.x, proj.pos.y, proj.pos.z, 0, 0.5, 0, 1.2, 0.14, 0.4, 1.0, 0.7, 0.3, 0.6, 0, 0.25);
       } else {
+        if (proj.targetKind) {
+          const torpTarget = this.resolveTargetPos(
+            proj.targetKind === "freighter"
+              ? { kind: "freighter" }
+              : { kind: "battleship", id: proj.targetId ?? "" },
+          );
+          if (torpTarget) {
+            const flatDir = V(torpTarget.x - proj.pos.x, 0, torpTarget.z - proj.pos.z);
+            if (flatDir.lengthSq() > 4) {
+              flatDir.normalize().multiplyScalar(30);
+              proj.vel.lerp(flatDir, Math.min(1, dt * 1.4));
+            }
+          }
+        }
+        if (proj.vel.lengthSq() > 0.01) {
+          proj.mesh.quaternion.setFromUnitVectors(V(0, 1, 0), proj.vel.clone().setY(0).normalize());
+        }
         proj.pos.y = this.ocean.height(proj.pos.x, proj.pos.z, t) - 0.15;
         this.pn.emit(proj.pos.x, proj.pos.y + 0.25, proj.pos.z, 0, 1.2, 0, 1.0, 0.12, 0.4, 0.9, 0.95, 1.0, 0.5, 0, 0.3);
       }
@@ -869,18 +1335,37 @@ export class Game {
       proj.mesh.position.copy(proj.pos);
 
       const localHit = this.ship.group.worldToLocal(proj.pos.clone());
-      const hitFreighter = Math.abs(localHit.x) < 11.5 && Math.abs(localHit.z) < 66 && localHit.y > -7 && localHit.y < 10;
-      const hitBs = this.battleships.find((bs, bi) => bi > 0 && !bs.sunk && battleshipHitTest(bs, proj.pos));
+      const hitFreighterSec = this.freighterHitSection(localHit);
+      const hitFreighter = !!hitFreighterSec;
+      const hitBs = proj.fromFleetStrike
+        ? undefined
+        : this.battleships.find(
+            (bs, bi) =>
+              (proj.ownerId ? bs.id !== proj.ownerId : proj.ownerIdx !== undefined ? bi !== proj.ownerIdx : bi > 0) &&
+              !bs.sunk &&
+              pointInHull(proj.pos.x, proj.pos.z, this.battleshipHull(bs), 1.5) &&
+              proj.pos.y > bs.group.position.y - 4 &&
+              proj.pos.y < bs.group.position.y + 12,
+          );
       const hitWater = proj.kind === "shell" && proj.pos.y <= this.ocean.height(proj.pos.x, proj.pos.z, t);
       if (hitFreighter || hitBs || hitWater || proj.life <= 0) {
         if (hitFreighter) {
-          this.explode(localHit, proj.kind === "torpedo" || proj.kind === "missile" ? 1.85 : 1.15, "tnt");
+          const power = proj.kind === "torpedo" || proj.kind === "missile" ? 1.85 : 1.15;
+          this.explode(localHit, power, "tnt");
+          if (proj.kind === "torpedo" || (proj.kind === "missile" && localHit.y < 1.2)) {
+            this.breachFreighterHullAt(localHit, power);
+          }
+          const secDmg = proj.kind === "torpedo" ? 130 : proj.kind === "missile" ? 115 : 45;
+          const label = proj.kind === "torpedo" ? "TORPEDO" : proj.kind === "missile" ? "MISSILE" : "SHELL";
+          this.damageFreighterSectionAt(localHit, secDmg, label);
           this.say(
             proj.kind === "torpedo" ? "TORPEDO DIRECT HIT!" : proj.kind === "missile" ? "MISSILE DIRECT HIT!" : "CANNON SHELL IMPACT!",
             "alert",
           );
         } else if (hitBs) {
-          damageBattleship(hitBs, proj.kind === "shell" ? 160 : 280);
+          const rawDmg = proj.kind === "shell" ? 160 : 280;
+          damageBattleship(hitBs, rawDmg);
+          this.damageBattleshipPartAt(hitBs, proj.pos, rawDmg * 0.65);
           this.pn.emit(proj.pos.x, proj.pos.y + 1, proj.pos.z, 0, 8, 0, 5, 0.5, 0.9, 1, 0.5, 0.1, 0.8, -2, 1.0);
           this.audio.explosion(undefined, 0.7);
         } else if (hitWater) {
@@ -888,6 +1373,7 @@ export class Game {
         }
         this.scene.remove(proj.mesh);
         proj.mesh.geometry.dispose();
+        (proj.mesh.material as THREE.Material).dispose();
         this.navalProjectiles.splice(i, 1);
       }
     }
@@ -926,7 +1412,6 @@ export class Game {
               nz: 0,
             };
             comp.holes.push(hole);
-            this.makeHoleVisual(hole);
             this.sim.firstBreach = true;
           }
         }
@@ -948,16 +1433,19 @@ export class Game {
 
     let ev: { step: boolean; jumped: boolean; landed: number } = { step: false, jumped: false, landed: 0 };
     if (this.orbitalLaserMode) {
+      this.ridingBs = null;
       if (!this.tabletOpen && !this.paused && !this.ended) {
         const [lx, ly] = inp.consumeLook();
+        const [tx, ty] = inp.consumeTouchLook();
         const panScale = (this.orbitalZoomFov / 60) * 0.45;
-        this.orbitalAimX = Math.max(-220, Math.min(220, this.orbitalAimX + lx * panScale));
-        this.orbitalAimZ = Math.max(-220, Math.min(220, this.orbitalAimZ + ly * panScale));
+        this.orbitalAimX += (lx + tx * 1.6) * panScale;
+        this.orbitalAimZ += (ly + ty * 1.6) * panScale;
+        const [mx, my] = inp.getMove();
         const panSpd = (this.orbitalZoomFov / 60) * 70 * dt;
-        if (inp.keys.has("KeyA") || inp.keys.has("ArrowLeft")) this.orbitalAimX -= panSpd;
-        if (inp.keys.has("KeyD") || inp.keys.has("ArrowRight")) this.orbitalAimX += panSpd;
-        if (inp.keys.has("KeyW") || inp.keys.has("ArrowUp")) this.orbitalAimZ -= panSpd;
-        if (inp.keys.has("KeyS") || inp.keys.has("ArrowDown")) this.orbitalAimZ += panSpd;
+        this.orbitalAimX += mx * panSpd;
+        this.orbitalAimZ -= my * panSpd;
+        this.orbitalAimX = Math.max(-220, Math.min(220, this.orbitalAimX));
+        this.orbitalAimZ = Math.max(-220, Math.min(220, this.orbitalAimZ));
         if (inp.keys.has("Equal") || inp.keys.has("NumpadAdd") || inp.keys.has("KeyQ")) {
           this.orbitalZoomFov = Math.max(8, this.orbitalZoomFov - 42 * dt);
         }
@@ -966,64 +1454,143 @@ export class Game {
         }
         if (inp.pressed("prev")) this.orbitalZoomFov = Math.max(8, this.orbitalZoomFov - 7);
         if (inp.pressed("next")) this.orbitalZoomFov = Math.min(72, this.orbitalZoomFov + 7);
-        if (inp.held.has("fire") || inp.fire) this.fireOrbitalDeathRay();
+        if (inp.held.has("fire") || inp.fire) {
+          const beam = this.ensureOrbitalBeam();
+          beam.position.set(this.orbitalAimX, 0, this.orbitalAimZ);
+          const pulse = 1 + Math.sin(t * 28) * 0.08;
+          beam.scale.set(pulse, STATION_BASE_Y + 24, pulse);
+          beam.visible = true;
+          this.fireOrbitalDeathRay();
+        } else {
+          if (this.orbitalBeamGroup) this.orbitalBeamGroup.visible = false;
+          this.laserCd = 0;
+          this.orbitalBeamAudioCd = 0;
+          this.orbitalBeamFxCd = 0;
+        }
         if (inp.pressed("interact")) this.toggleOrbitalLaser(false);
+      } else if (this.orbitalBeamGroup) {
+        this.orbitalBeamGroup.visible = false;
       }
       b.vx = 0;
       b.vy = 0;
       b.vz = 0;
       b.onGround = true;
     } else if (this.activeVessel === "battleship" && this.battleships[0]) {
-      const bs = this.battleships[0];
-      if (!this.tabletOpen && !this.paused && !this.ended) {
-        const [lx, ly] = inp.consumeLook();
-        const sens = 0.0022 * st.sens;
-        p.yaw -= lx * sens;
-        p.pitch = Math.max(-0.55, Math.min(0.65, p.pitch - ly * sens * (st.invertY ? -1 : 1)));
-        // WASD Battleship driving
-        if (inp.keys.has("KeyW") || inp.keys.has("ArrowUp")) bs.targetSpeed = Math.min(16, bs.targetSpeed + 10 * dt);
-        else if (inp.keys.has("KeyS") || inp.keys.has("ArrowDown")) bs.targetSpeed = Math.max(-8, bs.targetSpeed - 10 * dt);
-        if (inp.keys.has("KeyA") || inp.keys.has("ArrowLeft")) bs.rudderDeg = Math.max(-MAX_RUDDER_DEG, bs.rudderDeg - 35 * dt);
-        else if (inp.keys.has("KeyD") || inp.keys.has("ArrowRight")) bs.rudderDeg = Math.min(MAX_RUDDER_DEG, bs.rudderDeg + 35 * dt);
-        else bs.rudderDeg += (0 - bs.rudderDeg) * Math.min(1, dt * 1.5);
-        // Fire main cannons (LMB), Torpedo (RMB / Q), Missile (E / F)
-        if (inp.fire) this.fireBattleshipCannon();
-        if (inp.pressed("alt") || inp.pressed("last")) this.fireBattleshipTorpedo();
-        if (inp.pressed("interact") || inp.pressed("flash")) this.fireBattleshipMissile();
+      this.ridingBs = null;
+      if (this.battleships[0].sunk) {
+        if (!this.isFreighterDestroyed()) {
+          this.activeVessel = "freighter";
+          this.player.teleport(9.8, DECK_Y + 0.3, -42, Math.PI);
+          this.say("⚓ Battleship sunk — evacuated to MV NORDWIND!", "alert");
+        } else {
+          const aliveIdx = this.battleships.findIndex((other) => !other.sunk);
+          if (aliveIdx > 0) {
+            const [alive] = this.battleships.splice(aliveIdx, 1);
+            this.battleships.unshift(alive);
+            this.say(`⚓ Battleship sunk — evacuated to ${alive.id.toUpperCase()}!`, "alert");
+          } else {
+            this.toggleTheatre("orbital");
+            this.say("🛰️ All ships sunk — emergency evacuation to HYPERION-9!", "alert");
+          }
+        }
       }
-      // Keep FPS body safely parked on Freighter deck (never falling into void)
-      b.x = 9.8;
-      b.y = DECK_Y;
-      b.z = -42;
-      b.vx = 0;
-      b.vy = 0;
-      b.vz = 0;
-      b.onGround = true;
+      if (this.activeVessel === "battleship" && this.battleships[0] && !this.battleships[0].sunk) {
+        const bs = this.battleships[0];
+        if (!this.tabletOpen && !this.paused && !this.ended) {
+          const [lx, ly] = inp.consumeLook();
+          const [tx, ty] = inp.consumeTouchLook();
+          const sens = 0.0022 * st.sens;
+          const tSens = 0.0045 * st.touchSens;
+          p.yaw -= lx * sens + tx * tSens;
+          p.pitch = Math.max(-0.55, Math.min(0.65, p.pitch - (ly * sens + ty * tSens) * (st.invertY ? -1 : 1)));
+          // WASD / touch joystick Battleship driving
+          const [mx, my] = inp.getMove();
+          if (my > 0.1) bs.targetSpeed = Math.min(16, bs.targetSpeed + 10 * my * dt);
+          else if (my < -0.1) bs.targetSpeed = Math.max(-8, bs.targetSpeed + 10 * my * dt);
+          if (mx < -0.1) bs.rudderDeg = Math.max(-MAX_RUDDER_DEG, bs.rudderDeg + 35 * mx * dt);
+          else if (mx > 0.1) bs.rudderDeg = Math.min(MAX_RUDDER_DEG, bs.rudderDeg + 35 * mx * dt);
+          else bs.rudderDeg += (0 - bs.rudderDeg) * Math.min(1, dt * 1.5);
+          // Auto-acquire valid Target Lock if none, and allow [X] to cycle Target Lock
+          if (!this.resolveTargetPos(this.lockedTarget)) {
+            this.lockedTarget = !this.isFreighterDestroyed()
+              ? { kind: "freighter" }
+              : (() => {
+                  const enemy = this.battleships.find((b2, bi) => bi > 0 && !b2.sunk);
+                  return enemy ? { kind: "battleship", id: enemy.id } : null;
+                })();
+          }
+          if (inp.pressed("targetLock")) this.cycleBattleshipTargetLock();
+          // Fire main cannons (LMB), Torpedo (RMB / Q), Missile (E / F)
+          if (inp.fire) this.fireBattleshipCannon();
+          if (inp.pressed("alt") || inp.pressed("last")) this.fireBattleshipTorpedo();
+          if (inp.pressed("interact") || inp.pressed("flash")) this.fireBattleshipMissile();
+        }
+        // Keep FPS body safely parked on Freighter deck (never falling into void)
+        b.x = 9.8;
+        b.y = DECK_Y;
+        b.z = -42;
+        b.vx = 0;
+        b.vy = 0;
+        b.vz = 0;
+        b.onGround = true;
+      }
     } else {
+      if (ridePrevBs) {
+        ridePrevBs.group.updateMatrixWorld(true);
+        const wPos = this.ridingLocal.clone().applyMatrix4(ridePrevBs.group.matrixWorld);
+        this.ship.group.worldToLocal(wPos);
+        b.x = wPos.x;
+        b.y = wPos.y;
+        b.z = wPos.z;
+      }
       // Spieler
+      const rideHeadingShift = ridePrevBs ? this.supervisor.helm.heading : 0;
+      if (rideHeadingShift) p.yaw += rideHeadingShift;
+      const waterFn = ridePrevBs
+        ? (lx: number, ly: number, lz: number) => {
+            const w = this.worldPos(V(lx, ly, lz), V());
+            return ly + (this.ocean.height(w.x, w.z, t) - w.y);
+          }
+        : this.waterAt;
       ev = p.update(
         dt,
         inp,
-        { world: this.ship.world, slide: this.sim.tiltDeg > 6 ? this.sim.slideVector() : [0, 0], water: this.waterAt, sens: st.sens, touchSens: st.touchSens, invertY: st.invertY, noclip: this.supervisor.isNoclip() },
+        { world: this.ship.world, slide: this.sim.tiltDeg > 6 && !ridePrevBs ? this.sim.slideVector() : [0, 0], water: waterFn, sens: st.sens, touchSens: st.touchSens, invertY: st.invertY, noclip: this.supervisor.isNoclip() },
         controls,
       );
-      // Walkable Battleship decks when walking in FPS mode
-      if (!this.supervisor.isNoclip()) {
-        const wx = b.x + this.ship.group.position.x;
-        const wz = b.z + this.ship.group.position.z;
+      if (rideHeadingShift) p.yaw -= rideHeadingShift;
+      // Walkable Battleship decks when walking in FPS mode (world-accurate deck height & ship riding)
+      this.ridingBs = null;
+      if (this.theatre === "maritime" && !this.supervisor.isNoclip()) {
+        const pw = this.worldPos(V(b.x, b.y, b.z), V());
         for (const bs of this.battleships) {
-          if (Math.abs(wx - bs.baseX) <= bs.deckBounds.maxX + 0.5 && Math.abs(wz - bs.baseZ) <= bs.deckBounds.maxZ + 0.5) {
-            const deckY = bs.group.position.y + bs.deckBounds.deckY;
-            if (b.y < deckY) {
-              b.y = deckY;
+          if (bs.sunk) continue;
+          const deckBox: HullBox = {
+            x: bs.baseX,
+            z: bs.baseZ,
+            heading: bs.heading,
+            halfWidth: bs.deckBounds.maxX,
+            halfLength: bs.deckBounds.maxZ,
+          };
+          const deckWorldY = bs.group.position.y + bs.deckBounds.deckY;
+          if (pointInHull(pw.x, pw.z, deckBox, 0.2) && pw.y >= deckWorldY - 1.8 && pw.y <= deckWorldY + 6.0) {
+            this.ridingBs = bs;
+            const deckLocal = this.ship.group.worldToLocal(V(pw.x, deckWorldY, pw.z));
+            if (b.y < deckLocal.y) {
+              b.y = deckLocal.y;
               b.vy = 0;
               b.onGround = true;
             }
+            break;
           }
         }
       }
     }
-    if (this.helmMode) this.handleHelm(dt);
+    if (this.dead || this.ended || this.escapeState || this.activeVessel !== "freighter" || this.theatre !== "maritime") {
+      this.helmMode = false;
+    }
+    if (this.helmMode && !this.tabletOpen) this.handleHelm(dt);
+    else inp.consumeHelmSteps();
     this.lastLookDX = 0;
     if (ev.step) {
       const inB = this.indoor > 0.5;
@@ -1045,17 +1612,12 @@ export class Game {
         this.say("Returned to Space Station Airlock.", "info");
       }
     } else {
-      // Sicherheitsnetz: aus der Welt gefallen
-      if (b.y < -25 || !isFinite(b.x + b.y + b.z)) {
+      // Sicherheitsnetz: aus der Welt gefallen (skip Freighter-local Y floor while riding a Battleship)
+      if ((!this.ridingBs && b.y < -25) || !isFinite(b.x + b.y + b.z)) {
         this.damagePlayer(1000, "fell out of the world");
       }
       // Sicherheitsnetz: Schiff verlassen (außer wenn auf einem begehbaren Battleship-Deck)
-      const onAnyBsDeck = this.battleships.some((bs) => {
-        const wx = b.x + this.ship.group.position.x;
-        const wz = b.z + this.ship.group.position.z;
-        return Math.abs(wx - bs.baseX) <= bs.deckBounds.maxX + 1 && Math.abs(wz - bs.baseZ) <= bs.deckBounds.maxZ + 1;
-      });
-      if (controls && !this.supervisor.isNoclip() && !onAnyBsDeck && (Math.abs(b.x) > 13.5 || b.z < -72 || b.z > 72 || b.y > 25)) {
+      if (controls && !this.supervisor.isNoclip() && !this.ridingBs && (Math.abs(b.x) > 13.5 || b.z < -72 || b.z > 72 || b.y > 25)) {
         p.teleport(9.8, DECK_Y, -42, Math.PI);
         this.say("Placed back on deck.", "warn");
       }
@@ -1066,7 +1628,7 @@ export class Game {
       p.oxygen -= drain;
       if (p.oxygen <= 0) {
         p.oxygen = 0;
-        this.damagePlayer(14 * dt, "Ertrunken", true);
+        this.damagePlayer(14 * dt, "Drowned", true);
       }
       if (Math.random() < dt * 3) this.audio.gurgle();
     } else p.oxygen = Math.min(1, p.oxygen + dt * 0.7);
@@ -1083,17 +1645,23 @@ export class Game {
     // Innenraum-Faktor
     const el = this.eyeLocal();
     let inside = false;
-    for (const z of this.ship.zones) {
-      if (z.containsPoint(el)) {
-        inside = true;
-        break;
+    if (this.theatre === "orbital") {
+      inside = this.spaceStation.isPointInside(el);
+    } else {
+      for (const z of this.ship.zones) {
+        if (z.containsPoint(el)) {
+          inside = true;
+          break;
+        }
       }
     }
     this.indoor += ((inside ? 1 : 0) - this.indoor) * Math.min(1, dt * 3);
 
     // Always allow [TAB] Tablet & [V] Ship Switch even in Battleship mode or with Tablet open
-    if (inp.pressed("status")) this.toggleTablet();
-    if (inp.pressed("switchShip")) this.switchVessel();
+    if (!this.dead && !this.ended && !this.escapeState) {
+      if (inp.pressed("status")) this.toggleTablet();
+      if (inp.pressed("switchShip")) this.switchVessel();
+    }
 
     if (controls) this.handleInput(dt);
     this.updateInteraction(dt);
@@ -1144,7 +1712,7 @@ export class Game {
       if (this.deadT > 2.2 && !this.ended) {
         this.ended = true;
         this.audio.lose();
-        this.cb.onEnd({ kind: this.deathCause === "Ertrunken" ? "drown" : "dead", cause: this.deathCause, time: this.time, kills: this.kills, flood: this.sim.F, mode: this.mode });
+        this.cb.onEnd({ kind: this.deathCause === "Drowned" ? "drown" : "dead", cause: this.deathCause, time: this.time, kills: this.kills, flood: this.sim.F, mode: this.mode });
       }
     }
 
@@ -1239,12 +1807,6 @@ export class Game {
       this.godModeHoldProgress = 0;
     }
 
-    if (inp.pressed("status")) {
-      this.toggleTablet();
-    }
-    if (inp.pressed("switchShip")) {
-      this.switchVessel();
-    }
     if (inp.pressed("terminal")) {
       this.terminalPinned = !this.terminalPinned;
       this.audio.click();
@@ -1312,10 +1874,35 @@ export class Game {
     }
   }
 
+  getFreighterIntegrityPct(): number {
+    if (this.sim.sunk) return 0;
+    const secs = this.ship?.sections;
+    if (!secs || !secs.length) return 100;
+    let hp = 0;
+    let maxHp = 0;
+    for (const s of secs) {
+      hp += s.destroyed ? 0 : Math.max(0, s.hp);
+      maxHp += s.maxHp;
+    }
+    return maxHp > 0 ? Math.round((hp / maxHp) * 100) : 100;
+  }
+
+  isFreighterDestroyed(): boolean {
+    return this.sim.sunk || this.getFreighterIntegrityPct() <= 0;
+  }
+
+  isBattleshipSunk(): boolean {
+    return this.battleships.length > 0 && this.battleships.every((b) => b.sunk);
+  }
+
   toggleTablet(force?: boolean) {
     this.tabletOpen = force ?? !this.tabletOpen;
+    this.input.clearQueue();
     this.audio.click();
     if (this.tabletOpen) {
+      this.input.held.clear();
+      this.input.mouseDown = false;
+      if (this.orbitalBeamGroup) this.orbitalBeamGroup.visible = false;
       if (document.pointerLockElement) {
         try {
           document.exitPointerLock();
@@ -1330,19 +1917,45 @@ export class Game {
 
   switchVessel() {
     if (this.theatre === "orbital") {
-      this.say("Return to Ocean first to command ships.", "warn");
+      if (this.isFreighterDestroyed()) {
+        const aliveBs = this.battleships.find((b) => !b.sunk);
+        if (!aliveBs) {
+          this.say("All vessels are 100% destroyed! Use Restart Freighter in [TAB] Tablet.", "warn");
+          return;
+        }
+        this.toggleTheatre("maritime");
+        return;
+      }
+      this.toggleTheatre("maritime");
       return;
     }
     if (!this.battleships.length) {
       this.spawnExtraBattleship();
     }
     if (this.activeVessel === "freighter") {
+      const aliveIdx = this.battleships.findIndex((b) => !b.sunk);
+      if (aliveIdx === -1) {
+        this.say("All Battleships are 100% destroyed! Spawn a new Battleship in [TAB] Tablet.", "warn");
+        return;
+      }
+      if (aliveIdx > 0) {
+        const [alive] = this.battleships.splice(aliveIdx, 1);
+        this.battleships.unshift(alive);
+      }
       this.activeVessel = "battleship";
       this.helmMode = false;
+      this.player.yaw = this.battleships[0].heading;
+      this.player.pitch = -0.18;
       this.say("Switched command to BATTLESHIP!", "good");
     } else {
+      if (this.isFreighterDestroyed()) {
+        this.say("Freighter is 100% destroyed! Click Restart Freighter in [TAB] Tablet.", "warn");
+        return;
+      }
       this.activeVessel = "freighter";
       this.helmMode = false;
+      this.ridingBs = null;
+      this.supervisor.helm.rudderCmd = 0;
       this.ship.group.visible = true;
       this.player.body.vx = 0;
       this.player.body.vy = 0;
@@ -1351,6 +1964,7 @@ export class Game {
       this.player.teleport(9.8, DECK_Y + 0.5, -42, Math.PI);
       this.say("Switched command to FREIGHTER NORDWIND!", "good");
     }
+    this.input.clearQueue();
     this.audio.click();
     if (this.tabletOpen) {
       this.toggleTablet(false);
@@ -1383,14 +1997,47 @@ export class Game {
     this.audio.click();
   }
 
-  fireBattleshipCannon() {
-    const bs = this.battleships[0];
-    if (!bs || bs.sunk) return;
-    const noCooldown = this.supervisor.isGodMode() || this.mode === "sandbox";
-    if (!noCooldown && this.bsFireCd > 0) return;
-    this.bsFireCd = noCooldown ? 0 : 1.25;
-    const aimDir = V(-Math.sin(this.player.yaw) * Math.cos(this.player.pitch), Math.sin(this.player.pitch), -Math.cos(this.player.yaw) * Math.cos(this.player.pitch)).normalize();
-    const target = bs.group.position.clone().addScaledVector(aimDir, 120);
+  resolveTargetPos(ref: { kind: "freighter" } | { kind: "battleship"; id: string } | null): THREE.Vector3 | null {
+    if (!ref) return null;
+    if (ref.kind === "freighter") {
+      if (this.isFreighterDestroyed()) return null;
+      return this.ship.group.position.clone().add(V(0, 2.5, 0));
+    }
+    const bs = this.battleships.find((b) => b.id === ref.id && !b.sunk);
+    return bs ? bs.group.position.clone().add(V(0, 3.0, 0)) : null;
+  }
+
+  cycleBattleshipTargetLock() {
+    const candidates: ({ kind: "freighter" } | { kind: "battleship"; id: string })[] = [];
+    if (!this.isFreighterDestroyed()) candidates.push({ kind: "freighter" });
+    for (let i = 1; i < this.battleships.length; i++) {
+      const b = this.battleships[i];
+      if (!b.sunk) candidates.push({ kind: "battleship", id: b.id });
+    }
+    if (candidates.length === 0) {
+      this.lockedTarget = null;
+      this.say("No alive targets available to lock.", "warn");
+      return;
+    }
+    const curIdx = candidates.findIndex((c) =>
+      this.lockedTarget &&
+      c.kind === this.lockedTarget.kind &&
+      (c.kind === "freighter" || (this.lockedTarget.kind === "battleship" && c.id === this.lockedTarget.id)),
+    );
+    const next = candidates[(curIdx + 1) % candidates.length];
+    this.lockedTarget = next;
+    this.audio.click();
+    const label = next.kind === "freighter" ? "MV NORDWIND (FREIGHTER)" : next.id.toUpperCase();
+    this.say(`🎯 TARGET LOCKED: ${label}`, "good");
+  }
+
+  private spawnSalvoFromBattleship(
+    bs: Battleship,
+    target: THREE.Vector3,
+    targetKind?: "freighter" | "battleship",
+    targetId?: string,
+    fromFleetStrike = false,
+  ) {
     fireBattleshipSalvo(bs, target, (muzzle, dir) => {
       const shellDir = dir.clone().add(V(0, 0.06, 0)).normalize();
       const mesh = new THREE.Mesh(
@@ -1399,41 +2046,61 @@ export class Game {
       );
       mesh.position.copy(muzzle);
       this.scene.add(mesh);
-      this.navalProjectiles.push({ mesh, pos: muzzle.clone(), vel: shellDir.multiplyScalar(115), kind: "shell", life: 3.5 });
+      this.navalProjectiles.push({
+        mesh,
+        pos: muzzle.clone(),
+        vel: shellDir.multiplyScalar(115),
+        kind: "shell",
+        life: 3.5,
+        ownerIdx: this.battleships.indexOf(bs),
+        ownerId: bs.id,
+        targetKind,
+        targetId,
+        fromFleetStrike,
+      });
       this.tracer(muzzle, muzzle.clone().addScaledVector(dir, 55), 0xff8833);
       this.pn.emit(muzzle.x, muzzle.y, muzzle.z, dir.x * 4, 2, dir.z * 4, 2.0, 0.35, 0.8, 0.8, 0.7, 0.5, 0.8, -0.2, 0.4);
       this.audio.explosion(undefined, 0.45);
     });
   }
 
-  fireBattleshipTorpedo() {
-    const bs = this.battleships[0];
-    if (!bs || bs.sunk) return;
-    const noCooldown = this.supervisor.isGodMode() || this.mode === "sandbox";
-    if (!noCooldown && this.bsTorpCd > 0) return;
-    this.bsTorpCd = noCooldown ? 0 : 3.5;
-    const dir = V(-Math.sin(this.player.yaw), 0, -Math.cos(this.player.yaw)).normalize();
-    const start = bs.group.position.clone().addScaledVector(dir, 14);
+  private spawnTorpedoFromBattleship(
+    bs: Battleship,
+    dir: THREE.Vector3,
+    targetKind?: "freighter" | "battleship",
+    targetId?: string,
+    fromFleetStrike = false,
+  ) {
+    const flatDir = V(dir.x, 0, dir.z).normalize();
+    const start = bs.group.position.clone().addScaledVector(flatDir, 14);
     start.y = this.ocean.height(start.x, start.z, this.time) - 0.15;
     const mesh = new THREE.Mesh(
       new THREE.CylinderGeometry(0.25, 0.25, 3.2, 8),
       new THREE.MeshStandardMaterial({ color: 0x1e293b, emissive: 0xff3300, emissiveIntensity: 0.6 }),
     );
-    mesh.rotation.x = Math.PI / 2;
-    mesh.rotation.z = -this.player.yaw;
+    mesh.quaternion.setFromUnitVectors(V(0, 1, 0), flatDir);
     mesh.position.copy(start);
     this.scene.add(mesh);
-    this.navalProjectiles.push({ mesh, pos: start, vel: dir.multiplyScalar(28), kind: "torpedo", life: 8.0 });
-    this.audio.shot("shotgun");
-    this.say("TORPEDO LAUNCHED!", "info");
+    this.navalProjectiles.push({
+      mesh,
+      pos: start,
+      vel: flatDir.multiplyScalar(30),
+      kind: "torpedo",
+      life: 10.0,
+      ownerIdx: this.battleships.indexOf(bs),
+      ownerId: bs.id,
+      targetKind,
+      targetId,
+      fromFleetStrike,
+    });
   }
 
-  fireBattleshipMissile() {
-    const bs = this.battleships[0];
-    if (!bs || bs.sunk) return;
-    const noCooldown = this.supervisor.isGodMode() || this.mode === "sandbox";
-    if (!noCooldown && this.bsMissileCd > 0) return;
-    this.bsMissileCd = noCooldown ? 0 : 2.5;
+  private spawnMissileFromBattleship(
+    bs: Battleship,
+    targetKind?: "freighter" | "battleship",
+    targetId?: string,
+    fromFleetStrike = false,
+  ) {
     const start = bs.group.position.clone().add(V(0, 6.5, 0));
     const mesh = new THREE.Mesh(
       new THREE.CylinderGeometry(0.2, 0.25, 2.4, 8),
@@ -1441,9 +2108,221 @@ export class Game {
     );
     mesh.position.copy(start);
     this.scene.add(mesh);
-    this.navalProjectiles.push({ mesh, pos: start, vel: V(0, 26, 0), kind: "missile", life: 8.0 });
+    this.navalProjectiles.push({
+      mesh,
+      pos: start,
+      vel: V(0, 28, 0),
+      kind: "missile",
+      life: 10.0,
+      ownerIdx: this.battleships.indexOf(bs),
+      ownerId: bs.id,
+      targetKind,
+      targetId,
+      fromFleetStrike,
+    });
+  }
+
+  private collisionCd = new Map<string, number>();
+
+  private battleshipHull(bs: Battleship): HullBox {
+    return { x: bs.baseX, z: bs.baseZ, heading: bs.heading, ...BATTLESHIP_HULL };
+  }
+
+  private freighterHull(): HullBox {
+    return {
+      x: this.ship.group.position.x,
+      z: this.ship.group.position.z,
+      heading: this.supervisor.helm.heading,
+      bowZ: 1,
+      ...FREIGHTER_HULL,
+    };
+  }
+
+  /** Hull-vs-hull collisions (Freighter and all Battleships): separation, speed loss and impact damage. */
+  private stepVesselCollisions(dt: number) {
+    for (const [k, v] of this.collisionCd) {
+      if (v - dt <= 0) this.collisionCd.delete(k);
+      else this.collisionCd.set(k, v - dt);
+    }
+    type Vessel = {
+      key: string;
+      box: HullBox;
+      mass: number;
+      vel: [number, number];
+      bs?: Battleship;
+    };
+    const vessels: Vessel[] = [];
+    if (this.theatre !== "orbital" || !this.orbitalLaserMode) {
+      if (!this.isFreighterDestroyed()) {
+        const h = this.supervisor.helm;
+        vessels.push({
+          key: "freighter",
+          box: this.freighterHull(),
+          mass: FREIGHTER_MASS,
+          vel: [-Math.sin(h.heading) * h.speed, Math.cos(h.heading) * h.speed],
+        });
+      }
+      for (const bs of this.battleships) {
+        if (bs.sunk) continue;
+        vessels.push({
+          key: bs.id,
+          box: this.battleshipHull(bs),
+          mass: BATTLESHIP_MASS,
+          vel: [-Math.sin(bs.heading) * bs.speed, -Math.cos(bs.heading) * bs.speed],
+          bs,
+        });
+      }
+    }
+    for (let i = 0; i < vessels.length; i++) {
+      for (let j = i + 1; j < vessels.length; j++) {
+        const a = vessels[i];
+        const b = vessels[j];
+        const contact = hullOverlap(a.box, b.box);
+        if (!contact) continue;
+        const total = a.mass + b.mass;
+        const dmg = collisionDamage(a.vel, b.vel, contact, a.mass, b.mass);
+        // Separate the hulls (lighter vessel is pushed further)
+        const shareA = b.mass / total;
+        const shareB = a.mass / total;
+        const push = contact.depth + 0.05;
+        const moveVessel = (v: Vessel, sx: number, sz: number) => {
+          v.box.x += sx;
+          v.box.z += sz;
+          if (v.bs) {
+            v.bs.baseX += sx;
+            v.bs.baseZ += sz;
+            v.bs.group.position.x = v.bs.baseX;
+            v.bs.group.position.z = v.bs.baseZ;
+          } else {
+            this.ship.group.position.x += sx;
+            this.ship.group.position.z += sz;
+            this.ship.group.updateMatrixWorld(true);
+          }
+        };
+        moveVessel(a, -contact.nx * push * shareA, -contact.nz * push * shareA);
+        moveVessel(b, contact.nx * push * shareB, contact.nz * push * shareB);
+        if (dmg.closing <= 0.8) continue;
+        // Speed loss on impact
+        for (const v of [a, b]) {
+          if (v.bs) {
+            v.bs.speed *= 0.4;
+            v.bs.targetSpeed *= 0.5;
+          } else {
+            this.supervisor.helm.speed *= 0.7;
+          }
+        }
+        const cdKey = `${a.key}|${b.key}`;
+        if (this.collisionCd.has(cdKey)) continue;
+        this.collisionCd.set(cdKey, 1.2);
+        const ra = hullRadiusAlong(a.box, contact.nx, contact.nz);
+        const cp = V(a.box.x + contact.nx * ra, 1.5, a.box.z + contact.nz * ra);
+        this.pn.emit(cp.x, cp.y + 1, cp.z, 0, 6, 0, 4.5, 0.5, 0.9, 1, 0.6, 0.15, 0.8, -2, 1.1);
+        this.audio.explosion(undefined, Math.min(1, 0.35 + dmg.closing * 0.06));
+        let report = "";
+        for (const [v, d] of [[a, dmg.dmgA], [b, dmg.dmgB]] as [Vessel, number][]) {
+          if (v.bs) {
+            const sunkNow = damageBattleship(v.bs, d);
+            this.damageBattleshipPartAt(v.bs, cp, d * 0.45);
+            report += ` ${v.bs.id.toUpperCase()} −${Math.round(d * (1 - v.bs.armorAbsorption))} HP`;
+            if (sunkNow) this.say(`⚓ ${v.bs.id.toUpperCase()} SUNK by collision!`, "alert");
+          } else {
+            report += ` FREIGHTER −${Math.round(d)}`;
+            if (d > 60) {
+              const local = this.ship.group.worldToLocal(cp.clone());
+              local.y = -2.5;
+              const power = Math.min(1.6, 0.6 + d / 400);
+              const holesBefore = this.ship.compartments.reduce((s, c) => s + c.holes.length, 0);
+              this.explode(local, power, "tnt");
+              const holesAfter = this.ship.compartments.reduce((s, c) => s + c.holes.length, 0);
+              if (holesAfter === holesBefore) {
+                this.breachFreighterHullAt(local, power);
+              }
+              this.damageFreighterSectionAt(local, Math.min(120, d * 0.45), "COLLISION");
+            }
+          }
+        }
+        this.say(`💥 COLLISION ${a.key.toUpperCase()} ↔ ${b.key.toUpperCase()} at ${dmg.closing.toFixed(1)} m/s:${report}`, "alert");
+      }
+    }
+  }
+
+  fireBattleshipCannon() {
+    const bs = this.battleships[0];
+    if (!bs || bs.sunk) return;
+    const noCooldown = this.supervisor.isGodMode() || this.mode === "sandbox";
+    if (this.bsFireCd > 0) return;
+    this.bsFireCd = noCooldown ? 0.25 : 1.25;
+    const lockedPos = this.activeVessel === "battleship" ? this.resolveTargetPos(this.lockedTarget) : null;
+    const aimDir = V(-Math.sin(this.player.yaw) * Math.cos(this.player.pitch), Math.sin(this.player.pitch), -Math.cos(this.player.yaw) * Math.cos(this.player.pitch)).normalize();
+    const target = lockedPos ?? bs.group.position.clone().addScaledVector(aimDir, 120);
+    this.spawnSalvoFromBattleship(
+      bs,
+      target,
+      this.lockedTarget?.kind,
+      this.lockedTarget?.kind === "battleship" ? this.lockedTarget.id : undefined,
+    );
+  }
+
+  fireBattleshipTorpedo() {
+    const bs = this.battleships[0];
+    if (!bs || bs.sunk) return;
+    const noCooldown = this.supervisor.isGodMode() || this.mode === "sandbox";
+    if (this.bsTorpCd > 0) return;
+    this.bsTorpCd = noCooldown ? 0.6 : 3.5;
+    const lockedPos = this.activeVessel === "battleship" ? this.resolveTargetPos(this.lockedTarget) : null;
+    const dir = lockedPos
+      ? lockedPos.clone().sub(bs.group.position).setY(0).normalize()
+      : V(-Math.sin(this.player.yaw), 0, -Math.cos(this.player.yaw)).normalize();
+    this.spawnTorpedoFromBattleship(
+      bs,
+      dir,
+      this.lockedTarget?.kind,
+      this.lockedTarget?.kind === "battleship" ? this.lockedTarget.id : undefined,
+    );
+    this.audio.shot("shotgun");
+    this.say(lockedPos ? "GUIDED TORPEDO LAUNCHED!" : "TORPEDO LAUNCHED!", "info");
+  }
+
+  fireBattleshipMissile() {
+    const bs = this.battleships[0];
+    if (!bs || bs.sunk) return;
+    const noCooldown = this.supervisor.isGodMode() || this.mode === "sandbox";
+    if (this.bsMissileCd > 0) return;
+    this.bsMissileCd = noCooldown ? 0.5 : 2.5;
+    this.spawnMissileFromBattleship(
+      bs,
+      this.lockedTarget?.kind,
+      this.lockedTarget?.kind === "battleship" ? this.lockedTarget.id : undefined,
+    );
     this.audio.explosion(undefined, 0.35);
-    this.say("CRUISE MISSILE LAUNCHED!", "alert");
+    this.say(this.lockedTarget ? "SEEKING MISSILE LOCKED & LAUNCHED!" : "CRUISE MISSILE LAUNCHED!", "alert");
+  }
+
+  fleetStrikeFreighter(weapon: "salvo" | "torpedo" | "missile") {
+    if (this.isFreighterDestroyed()) {
+      this.say("Freighter is already 100% DESTROYED!", "warn");
+      return;
+    }
+    const alive = this.battleships.filter((bs) => !bs.sunk);
+    if (alive.length === 0) {
+      this.say("No active Battleships available for Fleet Strike!", "warn");
+      return;
+    }
+    const target = this.ship.group.position.clone().add(V(0, 2.0, 0));
+    for (const bs of alive) {
+      if (weapon === "salvo") {
+        this.spawnSalvoFromBattleship(bs, target, "freighter", undefined, true);
+      } else if (weapon === "torpedo") {
+        const dir = target.clone().sub(bs.group.position).setY(0).normalize();
+        this.spawnTorpedoFromBattleship(bs, dir, "freighter", undefined, true);
+      } else {
+        this.spawnMissileFromBattleship(bs, "freighter", undefined, true);
+      }
+    }
+    if (weapon === "torpedo") this.audio.shot("shotgun");
+    else if (weapon === "missile") this.audio.explosion(undefined, 0.55);
+    const label = weapon === "salvo" ? "SALVOS" : weapon === "torpedo" ? "TORPEDOES" : "SEEKING MISSILES";
+    this.say(`⚔️ FLEET STRIKE: ${alive.length} Battleships fired ${label} at MV NORDWIND!`, "alert");
   }
 
   restoreFreighter() {
@@ -1453,20 +2332,52 @@ export class Game {
       c.fill = 0;
       c.flow = 0;
     }
-    this.sim.sunk = false;
-    this.sim.forceSink = false;
-    this.sim.sinkDepth = 0;
-    this.sim.roll = 0;
-    this.sim.pitch = 0;
+    this.sim.reset();
+    for (const sec of this.ship.sections) {
+      sec.destroyed = false;
+      sec.hp = sec.maxHp;
+      sec.group.visible = true;
+      for (const col of sec.colliders) col.enabled = true;
+    }
+    for (const pane of this.ship.glass) {
+      pane.broken = false;
+      pane.mesh.visible = true;
+      pane.collider.enabled = true;
+    }
+    this.activeFires = [];
+    for (const d of this.debris) this.scene.remove(d.m);
+    this.debris = [];
+    while (this.ship.holeGroup.children.length > 0) {
+      const ch = this.ship.holeGroup.children[0];
+      this.ship.holeGroup.remove(ch);
+      this.disposeObject3D(ch);
+    }
     this.supervisor.keelFractured = false;
     this.supervisor.engineDestroyed = false;
+    this.supervisor.helm.speed = 0;
+    this.supervisor.helm.rudderDeg = 0;
+    this.supervisor.helm.rudderCmd = 0;
+    this.supervisor.helm.telegraph = "stop";
+    this.supervisor.helm.heading = 0;
+    this.helmMode = false;
+    this.ridingBs = null;
+    this.superlaserTimer = 0;
+    this.superlaserTargetBsId = null;
+    if (!this.orbitalLaserMode && this.orbitalBeamGroup) this.orbitalBeamGroup.visible = false;
     this.engineExploded = false;
     this.ship.group.visible = true;
-    this.ship.group.position.y = 0;
-    this.ship.group.rotation.set(0, this.supervisor.helm.heading, 0);
+    this.ship.group.position.set(0, 0, 0);
+    this.ship.group.rotation.set(0, 0, 0);
     this.alarm = false;
+    if (this.theatre === "maritime" && this.activeVessel === "freighter") {
+      this.player.body.vx = 0;
+      this.player.body.vy = 0;
+      this.player.body.vz = 0;
+      this.player.body.onGround = true;
+      this.player.teleport(9.8, DECK_Y + 0.5, -42, Math.PI);
+    }
     this.audio.click();
-    this.say("FREIGHTER RESTORED: Hull sealed, flooded water pumped!", "good");
+    this.say("FREIGHTER RESTORED: Hull rebuilt, sealed & pumped!", "good");
   }
 
   spawnExtraBattleship() {
@@ -1490,25 +2401,45 @@ export class Game {
 
   toggleTheatre(target?: "maritime" | "orbital") {
     const next = target ?? (this.theatre === "maritime" ? "orbital" : "maritime");
+    if (next === "maritime" && this.isFreighterDestroyed()) {
+      const aliveIdx = this.battleships.findIndex((b) => !b.sunk);
+      if (aliveIdx === -1) {
+        this.say("Freighter & all Battleships are 100% destroyed! Use Restart Freighter in [TAB] Tablet.", "warn");
+        return;
+      }
+      if (aliveIdx > 0) {
+        const [alive] = this.battleships.splice(aliveIdx, 1);
+        this.battleships.unshift(alive);
+      }
+    }
     this.theatre = next;
+    this.input.clearQueue();
     this.spaceStation.active = next === "orbital";
     this.spaceStation.root.visible = next === "orbital";
-    this.activeVessel = "freighter";
     this.helmMode = false;
     this.orbitalLaserMode = false;
+    if (this.orbitalBeamGroup) this.orbitalBeamGroup.visible = false;
     this.camera.fov = this.settings.fov;
     this.camera.updateProjectionMatrix();
     this.player.body.vx = 0;
     this.player.body.vy = 0;
     this.player.body.vz = 0;
     this.player.body.onGround = true;
-    this.ship.group.visible = true;
+    this.ship.group.visible = !this.sim.sunk || this.mode === "sandbox";
     this.ocean.mesh.visible = true;
     for (const bs of this.battleships) bs.group.visible = true;
+    this.spaceStation.earthMesh.visible = false;
+    this.spaceStation.atmosphereMesh.visible = false;
+    this.planetHidShip = false;
     if (next === "orbital") {
+      this.activeVessel = "freighter";
       this.player.teleport(0, STATION_BASE_Y + 0.35, 0, 0);
       this.say("🛰️ HYPERION-9 Orbital Space Station: Ships visible below — visit Command Center for Orbital Death Ray!", "good");
+    } else if (this.isFreighterDestroyed()) {
+      this.activeVessel = "battleship";
+      this.say("⚓ Returned to Maritime Theatre — commanding intact Battleship!", "good");
     } else {
+      this.activeVessel = "freighter";
       this.player.teleport(9.8, DECK_Y + 0.3, -42, Math.PI);
       this.say("⚓ Returned to Maritime Ocean Theatre.", "info");
     }
@@ -1517,16 +2448,31 @@ export class Game {
     else if (!this.paused && !this.isTouch()) this.requestLock();
   }
 
+  triggerSuperlaserStrike() {
+    if (this.theatre === "orbital") return;
+    const bs = this.battleships[0];
+    const targetBs = this.activeVessel === "battleship" && bs && !bs.sunk;
+    this.superlaserTarget = targetBs ? "battleship" : "freighter";
+    this.superlaserTargetBsId = targetBs ? bs.id : null;
+    this.superlaserTimer = 5.0;
+    if (this.tabletOpen) this.toggleTablet(false);
+    const label = targetBs ? bs.id.toUpperCase() : "MV NORDWIND";
+    this.say(`☄️ SUPERLASER STRIKE (5s) ON ${label}!`, "alert");
+    this.terminal.push(this.time, "alert", "ORBITAL", `5s Superlaser Strike activated over ${label}`);
+  }
+
   toggleOrbitalLaser(force?: boolean) {
     if (this.theatre !== "orbital") return;
     const next = force ?? !this.orbitalLaserMode;
     this.orbitalLaserMode = next;
+    this.input.clearQueue();
     if (next) {
       this.orbitalAimX = this.ship.group.position.x;
       this.orbitalAimZ = this.ship.group.position.z;
       this.orbitalZoomFov = 55;
       this.say("☄️ ORBITAL DEATH RAY ONLINE: Aim [Mouse/WASD] · Zoom [Q/Z or +/-] · Fire [LMB] · Exit [E]", "alert");
     } else {
+      if (this.orbitalBeamGroup) this.orbitalBeamGroup.visible = false;
       this.camera.fov = this.settings.fov;
       this.camera.updateProjectionMatrix();
       this.say("Exited Orbital Death Ray targeting.", "info");
@@ -1536,181 +2482,446 @@ export class Game {
     else if (!this.paused && !this.isTouch()) this.requestLock();
   }
 
+  private ensureOrbitalBeam(): THREE.Group {
+    if (this.orbitalBeamGroup) return this.orbitalBeamGroup;
+    const g = new THREE.Group();
+    const outerGeo = new THREE.CylinderGeometry(1.9, 3.5, 1, 16, 1, true);
+    const outerMat = new THREE.MeshBasicMaterial({
+      color: 0x38bdf8,
+      transparent: true,
+      opacity: 0.85,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const outer = new THREE.Mesh(outerGeo, outerMat);
+    outer.position.y = 0.5;
+    outer.frustumCulled = false;
+    g.add(outer);
+
+    const coreGeo = new THREE.CylinderGeometry(0.75, 1.35, 1, 12, 1, true);
+    const coreMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.95,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const core = new THREE.Mesh(coreGeo, coreMat);
+    core.position.y = 0.5;
+    core.frustumCulled = false;
+    g.add(core);
+
+    const glowGeo = new THREE.CircleGeometry(5.5, 24);
+    glowGeo.rotateX(-Math.PI / 2);
+    const glowMat = new THREE.MeshBasicMaterial({
+      color: 0x7dd3fc,
+      transparent: true,
+      opacity: 0.72,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const glow = new THREE.Mesh(glowGeo, glowMat);
+    glow.position.y = 0.008;
+    glow.frustumCulled = false;
+    g.add(glow);
+
+    g.visible = false;
+    g.frustumCulled = false;
+    this.scene.add(g);
+    this.orbitalBeamGroup = g;
+    return g;
+  }
+
   private shatterIntoPieces(center: THREE.Vector3, baseColor: number, count: number) {
-    const geo = new THREE.BoxGeometry(1.1, 0.75, 1.4);
-    const mat = new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.6, metalness: 0.45 });
+    if (!this.debrisGeo) this.debrisGeo = new THREE.BoxGeometry(1.1, 0.75, 1.4);
+    let mat = this.debrisMats.get(baseColor);
+    if (!mat) {
+      mat = new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.6, metalness: 0.45 });
+      this.debrisMats.set(baseColor, mat);
+    }
+    while (this.debris.length + count > 160 && this.debris.length > 0) {
+      const oldest = this.debris.shift()!;
+      this.scene.remove(oldest.m);
+    }
     for (let i = 0; i < count; i++) {
-      const m = new THREE.Mesh(geo, mat);
-      const sx = 0.5 + Math.random() * 1.9;
-      const sy = 0.4 + Math.random() * 1.3;
-      const sz = 0.6 + Math.random() * 2.2;
+      const m = new THREE.Mesh(this.debrisGeo, mat);
+      const sx = 0.45 + Math.random() * 1.4;
+      const sy = 0.35 + Math.random() * 1.0;
+      const sz = 0.5 + Math.random() * 1.6;
       m.scale.set(sx, sy, sz);
       m.position.set(
-        center.x + (Math.random() - 0.5) * 26,
-        Math.max(0.5, center.y + Math.random() * 7),
-        center.z + (Math.random() - 0.5) * 75,
+        center.x + (Math.random() - 0.5) * 14,
+        Math.max(0.5, center.y + Math.random() * 5),
+        center.z + (Math.random() - 0.5) * 16,
       );
-      const vel = V((Math.random() - 0.5) * 34, 14 + Math.random() * 28, (Math.random() - 0.5) * 34);
+      const vel = V((Math.random() - 0.5) * 32, 14 + Math.random() * 26, (Math.random() - 0.5) * 32);
       const rot = V((Math.random() - 0.5) * 9, (Math.random() - 0.5) * 9, (Math.random() - 0.5) * 9);
       this.scene.add(m);
-      this.debris.push({ m, vel, rot, life: 9 + Math.random() * 5 });
+      this.debris.push({ m, vel, rot, life: 8 + Math.random() * 4 });
     }
   }
 
-  private detachMeshesAt(root: THREE.Object3D, hitX: number, hitZ: number, radius: number, maxDetach: number) {
-    const candidates: THREE.Mesh[] = [];
-    const wp = V();
-    root.updateMatrixWorld(true);
-    root.traverse((obj) => {
-      if (obj instanceof THREE.Mesh && obj.visible) {
-        obj.getWorldPosition(wp);
-        if (Math.hypot(wp.x - hitX, wp.z - hitZ) <= radius) {
-          candidates.push(obj);
-        }
+  private disposeObject3D(obj: THREE.Object3D) {
+    obj.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.geometry?.dispose();
+        const mat = child.material;
+        if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+        else mat?.dispose();
       }
     });
-    // Sort closest to impact first so bridge/plates/superstructure rip off right under the beam
-    candidates.sort((a, b) => {
-      const pa = a.getWorldPosition(V());
-      const pb = b.getWorldPosition(V());
-      return Math.hypot(pa.x - hitX, pa.z - hitZ) - Math.hypot(pb.x - hitX, pb.z - hitZ);
-    });
-    const wq = new THREE.Quaternion();
-    const ws = V();
+  }
+
+  private destroyFreighterSection(sec: ShipSection, sourceLabel: string) {
+    if (sec.destroyed) return;
+    sec.destroyed = true;
+    sec.group.visible = false;
+    for (const col of sec.colliders) col.enabled = false;
+    const secWorld = this.worldPos(sec.center, V());
+    this.shatterIntoPieces(secWorld, 0x475569, 22);
+    const comp = this.ship.compartments.find((c) => c.id === sec.id);
+    if (comp) {
+      comp.water = comp.volume;
+      comp.fill = 1;
+      comp.holes.length = 0;
+    }
     let detached = 0;
-    for (const m of candidates) {
-      if (detached >= maxDetach) break;
-      m.getWorldPosition(wp);
-      m.getWorldQuaternion(wq);
-      m.getWorldScale(ws);
-      m.parent?.remove(m);
-      m.position.copy(wp);
-      m.quaternion.copy(wq);
-      m.scale.copy(ws);
-      this.scene.add(m);
-      const dx = wp.x - hitX;
-      const dz = wp.z - hitZ;
-      const len = Math.max(1, Math.hypot(dx, dz));
-      const vel = V((dx / len) * (14 + Math.random() * 24) + (Math.random() - 0.5) * 10, 14 + Math.random() * 28, (dz / len) * (14 + Math.random() * 24) + (Math.random() - 0.5) * 10);
-      const rot = V((Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6);
-      this.debris.push({ m, vel, rot, life: 11 + Math.random() * 5 });
-      detached++;
-    }
-  }
-
-  fireOrbitalDeathRay() {
-    if (this.laserCd > 0) return;
-    this.laserCd = 0.08;
-    const tx = this.orbitalAimX;
-    const tz = this.orbitalAimZ;
-    const beamGeo = new THREE.CylinderGeometry(2.2, 3.8, STATION_BASE_Y + 20, 14);
-    const beamMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
-    const beam = new THREE.Mesh(beamGeo, beamMat);
-    beam.position.set(tx, (STATION_BASE_Y - 10) * 0.5, tz);
-    this.scene.add(beam);
-    const coreGeo = new THREE.CylinderGeometry(0.9, 1.5, STATION_BASE_Y + 20, 10);
-    const coreMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false });
-    const core = new THREE.Mesh(coreGeo, coreMat);
-    core.position.copy(beam.position);
-    this.scene.add(core);
-    setTimeout(() => {
-      this.scene.remove(beam);
-      this.scene.remove(core);
-      beamGeo.dispose();
-      beamMat.dispose();
-      coreGeo.dispose();
-      coreMat.dispose();
-    }, 110);
-
-    this.audio.explosion({ dist: 14, pan: 0 }, 2.2);
-    this.shake = Math.max(this.shake, 1.4);
-    const hitPos = V(tx, 1.5, tz);
-    // Massive Orbital Fireball, Plasma Plume & Expanding Shockwave Ring
-    const ringGeo = new THREE.RingGeometry(2, 5.5, 32);
-    ringGeo.rotateX(-Math.PI / 2);
-    const ringMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, side: THREE.DoubleSide, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
-    const ring = new THREE.Mesh(ringGeo, ringMat);
-    ring.position.set(tx, 1.2, tz);
-    this.scene.add(ring);
-    let rScale = 1;
-    const ringInt = setInterval(() => {
-      rScale += 1.6;
-      ring.scale.set(rScale, 1, rScale);
-      ringMat.opacity = Math.max(0, ringMat.opacity - 0.08);
-      if (ringMat.opacity <= 0) {
-        clearInterval(ringInt);
-        this.scene.remove(ring);
-        ringGeo.dispose();
-        ringMat.dispose();
+    for (const cr of this.ship.crates) {
+      if (cr.dead || detached >= 6) continue;
+      if (Math.hypot(cr.pos.x - sec.center.x, cr.pos.z - sec.center.z) <= sec.radius + 6) {
+        cr.dead = true;
+        cr.collider.enabled = false;
+        cr.mesh.visible = false;
+        detached++;
+        const cw = this.worldPos(cr.pos, V());
+        const crateMesh = new THREE.Mesh(
+          new THREE.BoxGeometry(1.1, 0.9, 1.1),
+          new THREE.MeshStandardMaterial({ color: 0xb45309, roughness: 0.75 }),
+        );
+        crateMesh.position.copy(cw);
+        this.scene.add(crateMesh);
+        let vy = 3 + Math.random() * 4;
+        const vx = (Math.random() - 0.5) * 6;
+        const vz = (Math.random() - 0.5) * 6;
+        let life = 18;
+        this.effects.push({
+          update: (dt2) => {
+            life -= dt2;
+            const oh = this.ocean.height(crateMesh.position.x, crateMesh.position.z, this.time);
+            if (crateMesh.position.y < oh) {
+              vy += (oh - crateMesh.position.y) * 18 * dt2;
+              vy *= Math.exp(-dt2 * 4);
+            } else {
+              vy -= 14 * dt2;
+            }
+            crateMesh.position.x += vx * Math.exp(-Math.max(0, 18 - life) * 0.4) * dt2;
+            crateMesh.position.z += vz * Math.exp(-Math.max(0, 18 - life) * 0.4) * dt2;
+            crateMesh.position.y += vy * dt2;
+            crateMesh.rotation.x += dt2 * 0.7;
+            crateMesh.rotation.z += dt2 * 0.5;
+            return life > 0;
+          },
+          dispose: () => {
+            this.scene.remove(crateMesh);
+            crateMesh.geometry.dispose();
+            (crateMesh.material as THREE.Material).dispose();
+          },
+        });
       }
-    }, 30);
-
-    for (let i = 0; i < 36; i++) {
-      this.pa.emit(
-        tx + (Math.random() - 0.5) * 14,
-        1.5 + Math.random() * 4,
-        tz + (Math.random() - 0.5) * 14,
-        (Math.random() - 0.5) * 26,
-        8 + Math.random() * 24,
-        (Math.random() - 0.5) * 26,
-        4.5 + Math.random() * 4,
-        0.7,
-        1.8,
-        1.0,
-        0.52,
-        0.1,
-        0.95,
-        -1.5,
-        1.2,
-      );
-      this.pn.emit(
-        tx + (Math.random() - 0.5) * 16,
-        2 + Math.random() * 6,
-        tz + (Math.random() - 0.5) * 16,
-        (Math.random() - 0.5) * 18,
-        12 + Math.random() * 22,
-        (Math.random() - 0.5) * 18,
-        6 + Math.random() * 5,
-        0.5,
-        2.6,
-        0.15,
-        0.15,
-        0.18,
-        0.85,
-        -2,
-        1.4,
-      );
     }
-    if (this.activeFires.length < 18) {
-      this.activeFires.push({ pos: hitPos.clone(), life: 25, spreadCd: 2.0 });
+    for (const m of [...this.deckCrew, ...this.supervisor.crew]) {
+      if (Math.hypot(m.x - sec.center.x, m.z - sec.center.z) <= sec.radius + 4) {
+        m.onGround = false;
+        m.vy = 2.5;
+        m.targetId = null;
+      }
     }
-
-    // Check Freighter hit ONLY when aimed directly at Freighter hull -> rip off real plates/bridge, explode & sink!
-    const shipDist = Math.hypot(tx - this.ship.group.position.x, tz - this.ship.group.position.z);
-    if (shipDist < 62 && !this.sim.sunk) {
-      this.detachMeshesAt(this.ship.group, tx, tz, 24, 28);
-      this.shatterIntoPieces(V(tx, 4, tz), 0x475569, 90);
-      this.sim.sinking = true;
-      this.sim.sunk = true;
+    if (sec.id === "engine") {
+      this.supervisor.engineDestroyed = true;
+      this.engineExploded = true;
+    }
+    this.sim.sinking = true;
+    this.say(`☄️ ${sourceLabel} OBLITERATED: ${sec.name.toUpperCase()}!`, "alert");
+    this.terminal.push(this.time, "alert", "DAMAGE", `Freighter section destroyed (${sourceLabel}): ${sec.name}`);
+    if (this.ship.sections.every((s) => s.destroyed)) {
       for (const c of this.ship.compartments) {
         c.water = c.volume;
         c.fill = 1;
       }
-      this.say("☄️ ORBITAL DEATH RAY RIPPED APART & SUNK FREIGHTER NORDWIND!", "alert");
-    } else if (shipDist < 65) {
-      // Even if already sinking, keep tearing off remaining bridge/hull plates under the beam!
-      this.detachMeshesAt(this.ship.group, tx, tz, 22, 18);
+      this.sim.sinking = true;
+      this.sim.forceSink = true;
+    }
+  }
+
+  private freighterHitSection(localPos: THREE.Vector3): ShipSection | null {
+    if (this.isFreighterDestroyed()) return null;
+    if (localPos.z < -72 || localPos.z > 72 || localPos.y < -6.5 || localPos.y > 23) return null;
+    const clampedZ = Math.max(-70, Math.min(70, localPos.z));
+    const maxHalfW = Math.max(4.5, hullHalfWidth(clampedZ) + 1.4);
+    if (Math.abs(localPos.x) > maxHalfW) return null;
+
+    const isAboveDeck = localPos.y > 4.6;
+    let bestAlive: ShipSection | null = null;
+    let bestAliveDist = Infinity;
+    let bestAny: ShipSection | null = null;
+    let bestAnyDist = Infinity;
+
+    for (const sec of this.ship.sections) {
+      if (isAboveDeck && sec.center.y <= 3.8) continue;
+      const d = Math.hypot(
+        localPos.x - sec.center.x,
+        (localPos.y - sec.center.y) * 0.55,
+        localPos.z - sec.center.z,
+      );
+      if (d < bestAnyDist) {
+        bestAnyDist = d;
+        bestAny = sec;
+      }
+      if (!sec.destroyed && d < bestAliveDist) {
+        bestAliveDist = d;
+        bestAlive = sec;
+      }
     }
 
-    // Check Battleships ONLY when aimed directly at that Battleship -> rip off turrets/plates, explode & sink!
+    if (!bestAlive) return null;
+    if (
+      bestAny?.destroyed &&
+      bestAnyDist <= bestAny.radius * 0.9 &&
+      bestAliveDist > bestAlive.radius + 1.5
+    ) {
+      return null;
+    }
+    if (bestAliveDist <= bestAlive.radius + 7) return bestAlive;
+    return !isAboveDeck && bestAliveDist <= bestAlive.radius + 11 ? bestAlive : null;
+  }
+
+  private damageFreighterSectionAt(localPos: THREE.Vector3, dmg: number, sourceLabel: string) {
+    let sec = this.freighterHitSection(localPos);
+    if (!sec) {
+      let bestDist = Infinity;
+      for (const s of this.ship.sections) {
+        if (s.destroyed) continue;
+        const d = Math.hypot(localPos.x - s.center.x, (localPos.y - s.center.y) * 0.5, localPos.z - s.center.z);
+        if (d < bestDist && d <= s.radius + 14) {
+          bestDist = d;
+          sec = s;
+        }
+      }
+    }
+    if (!sec || sec.destroyed) return;
+    sec.hp = Math.max(0, sec.hp - dmg);
+    if (sec.hp <= 0) {
+      this.destroyFreighterSection(sec, sourceLabel);
+    }
+  }
+
+  private breachFreighterHullAt(localPos: THREE.Vector3, power: number) {
+    let comp = this.compAt(localPos.x, Math.min(localPos.y, 0.5), localPos.z);
+    if (!comp) {
+      let bestDist = Infinity;
+      for (const c of this.ship.compartments) {
+        const sec = this.ship.sections.find((s) => s.id === c.id);
+        if (sec?.destroyed) continue;
+        const cz = Math.max(c.min.z, Math.min(c.max.z, localPos.z));
+        const d = Math.abs(localPos.z - cz);
+        if (d < bestDist) {
+          bestDist = d;
+          comp = c;
+        }
+      }
+    }
+    if (!comp) return;
+    const sec = this.ship.sections.find((s) => s.id === comp.id);
+    if (sec?.destroyed) return;
+
+    const bz = Math.max(comp.min.z + 0.5, Math.min(comp.max.z - 0.5, localPos.z));
+    const isBottom = Math.abs(localPos.x) < 2.5;
+    const side = localPos.x >= 0 ? 1 : -1;
+    const bx = isBottom
+      ? localPos.x
+      : side * Math.min(WI - 0.25, Math.max(WI - 1.5, Math.abs(localPos.x)));
+    const by = isBottom
+      ? comp.min.y + 0.6
+      : Math.max(comp.min.y + 0.6, Math.min(-2.35, localPos.y));
+    const breachPos = V(bx, by, bz);
+
+    if (comp.id === "engine") {
+      this.triggerEngineExplosion("torpedo or hull impact in engine spaces");
+    }
+    const before = comp.holes.length;
+    const wp = this.worldPos(breachPos, V());
+    const seaH = this.ocean.height(wp.x, wp.z, this.time);
+    const hole = this.sim.addBreach(comp, breachPos, power, seaH);
+    if (hole) {
+      if (comp.holes.length > before) this.makeHoleVisual(hole);
+      this.say(`HULL BREACH in ${comp.name}! Water is flooding in!`, "alert");
+      this.audio.creak(1.3);
+      this.shake = Math.min(1.8, this.shake + 0.5);
+      this.terminal.push(this.time, "alert", "DAMAGE", `Hull breach in ${comp.name} (${hole.area.toFixed(1)} m2)`);
+    }
+  }
+
+  private damageBattleshipPartAt(bs: Battleship, worldPos: THREE.Vector3, rawDmg: number) {
+    bs.group.updateMatrixWorld(true);
+    const partWorld = V();
+    let bestIdx = -1;
+    let bestDist = Infinity;
+    for (const [pi, part] of bs.parts.entries()) {
+      if (part.destroyed) continue;
+      partWorld.copy(part.localCenter).applyMatrix4(bs.group.matrixWorld);
+      const d = partWorld.distanceTo(worldPos);
+      if (d <= part.radius + 7 && d < bestDist) {
+        bestDist = d;
+        bestIdx = pi;
+      }
+    }
+    if (bestIdx < 0) return;
+    const part = bs.parts[bestIdx];
+    part.hp = Math.max(0, part.hp - rawDmg);
+    if (part.hp <= 0 && !part.destroyed) {
+      part.destroyed = true;
+      part.object.visible = false;
+      if (bestIdx >= 6 && bs.turrets[bestIdx - 6]) {
+        bs.turrets[bestIdx - 6].destroyed = true;
+      }
+      partWorld.copy(part.localCenter).applyMatrix4(bs.group.matrixWorld);
+      this.shatterIntoPieces(partWorld, 0x64748b, 16);
+    }
+  }
+
+  fireOrbitalDeathRay() {
+    const tx = this.orbitalAimX;
+    const tz = this.orbitalAimZ;
+    const hitPos = V(tx, 1.5, tz);
+
+    if (this.orbitalBeamAudioCd <= 0) {
+      this.orbitalBeamAudioCd = 0.26;
+      this.audio.explosion({ dist: 14, pan: 0 }, 1.8);
+      this.shake = Math.max(this.shake, 1.1);
+    }
+
+    if (this.orbitalBeamFxCd <= 0) {
+      this.orbitalBeamFxCd = 0.18;
+      const ringGeo = new THREE.RingGeometry(2, 5.5, 28);
+      ringGeo.rotateX(-Math.PI / 2);
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: 0x38bdf8,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.85,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.position.set(tx, 1.2, tz);
+      this.scene.add(ring);
+      let rt = 0;
+      this.effects.push({
+        update: (dt) => {
+          rt += dt;
+          const k = rt / 0.42;
+          const s = 1 + k * 14;
+          ring.scale.set(s, 1, s);
+          ringMat.opacity = Math.max(0, 0.85 * (1 - k));
+          return k < 1;
+        },
+        dispose: () => {
+          this.scene.remove(ring);
+          ringGeo.dispose();
+          ringMat.dispose();
+        },
+      });
+
+      for (let i = 0; i < 20; i++) {
+        this.pa.emit(
+          tx + (Math.random() - 0.5) * 12,
+          1.5 + Math.random() * 4,
+          tz + (Math.random() - 0.5) * 12,
+          (Math.random() - 0.5) * 24,
+          8 + Math.random() * 22,
+          (Math.random() - 0.5) * 24,
+          4.0 + Math.random() * 3.5,
+          0.6,
+          1.6,
+          1.0,
+          0.52,
+          0.1,
+          0.95,
+          -1.5,
+          1.2,
+        );
+        this.pn.emit(
+          tx + (Math.random() - 0.5) * 14,
+          2 + Math.random() * 5,
+          tz + (Math.random() - 0.5) * 14,
+          (Math.random() - 0.5) * 16,
+          10 + Math.random() * 18,
+          (Math.random() - 0.5) * 16,
+          5.5 + Math.random() * 4,
+          0.45,
+          2.2,
+          0.15,
+          0.15,
+          0.18,
+          0.85,
+          -2,
+          1.4,
+        );
+      }
+      if (this.activeFires.length < 18) {
+        this.activeFires.push({ pos: hitPos.clone(), life: 25, spreadCd: 2.0 });
+      }
+    }
+
+    if (this.laserCd > 0) return;
+    this.laserCd = 0.18;
+
+    // Multi-part Freighter section destruction
+    this.ship.group.updateMatrixWorld(true);
+    const secWorld = V();
+    for (const sec of this.ship.sections) {
+      if (sec.destroyed) continue;
+      secWorld.copy(sec.center).applyMatrix4(this.ship.group.matrixWorld);
+      const dist = Math.hypot(tx - secWorld.x, tz - secWorld.z);
+      if (dist <= sec.radius + 9) {
+        const dmg = 95 * Math.max(0.35, 1 - dist / (sec.radius + 14));
+        sec.hp = Math.max(0, sec.hp - dmg);
+        if (sec.hp <= 0) {
+          this.destroyFreighterSection(sec, "ORBITAL LASER");
+        }
+      }
+    }
+
+    // Multi-part Battleship destruction
+    const partWorld = V();
     for (const bs of this.battleships) {
-      const d = Math.hypot(tx - bs.baseX, tz - bs.baseZ);
-      if (d < 28) {
-        this.detachMeshesAt(bs.group, tx, tz, 22, 18);
-        if (!bs.sunk) {
-          this.shatterIntoPieces(bs.group.position.clone().add(V(0, 3, 0)), 0x64748b, 80);
-          bs.sunk = true;
-          bs.hp = 0;
+      if (Math.hypot(tx - bs.baseX, tz - bs.baseZ) > 36) continue;
+      bs.group.updateMatrixWorld(true);
+      let partHit = false;
+      for (const [pi, part] of bs.parts.entries()) {
+        if (part.destroyed) continue;
+        partWorld.copy(part.localCenter).applyMatrix4(bs.group.matrixWorld);
+        const d = Math.hypot(tx - partWorld.x, tz - partWorld.z);
+        if (d <= part.radius + 8) {
+          partHit = true;
+          part.hp = Math.max(0, part.hp - 110);
+          if (part.hp <= 0) {
+            part.destroyed = true;
+            part.object.visible = false;
+            if (pi >= 6 && bs.turrets[pi - 6]) {
+              bs.turrets[pi - 6].destroyed = true;
+            }
+            this.shatterIntoPieces(partWorld, 0x64748b, 18);
+          }
+        }
+      }
+      if (partHit && !bs.sunk) {
+        const sunkNow = damageBattleship(bs, 260);
+        if (sunkNow) {
+          this.shatterIntoPieces(bs.group.position.clone().add(V(0, 3, 0)), 0x64748b, 28);
           this.say(`☄️ ORBITAL DEATH RAY TORE APART & SUNK ${bs.id.toUpperCase()}!`, "alert");
         }
       }
@@ -1759,6 +2970,13 @@ export class Game {
     this.say(`FLOOD RATE: ${rate}x`, "info");
   }
 
+  remoteToggleBilgePumps() {
+    const nextState = !this.ship.bilgePumps.some((p) => p.compId !== "master" && p.active);
+    for (const p of this.ship.bilgePumps) p.active = nextState;
+    this.audio.click();
+    this.say(`MASTER BILGE PUMPS ${nextState ? "ENGAGED (384 m³/s total)" : "SHUT DOWN"}`, nextState ? "good" : "info");
+  }
+
   private handleHelm(dt: number) {
     if (!this.helmMode) return;
     const inp = this.input;
@@ -1766,30 +2984,53 @@ export class Game {
     this.helmThrottleCooldown = Math.max(0, this.helmThrottleCooldown - dt);
 
     if (inp.pressed("interact")) {
+      inp.consumeHelmSteps();
       this.helmMode = false;
       this.say("Exited Helm Mode – walking freely", "info");
       this.audio.click();
       return;
     }
 
-    if (this.helmThrottleCooldown <= 0) {
-      if (inp.keys.has("KeyW") || inp.keys.has("ArrowUp")) {
+    const [upTaps, downTaps] = inp.consumeHelmSteps();
+
+    const [mx, my] = inp.getMove();
+    const holdUp = inp.keys.has("KeyW") || inp.keys.has("ArrowUp") || my > 0.45;
+    const holdDown = inp.keys.has("KeyS") || inp.keys.has("ArrowDown") || my < -0.45;
+
+    if (upTaps > 0) {
+      for (let i = 0; i < upTaps; i++) helm.telegraph = stepTelegraph(helm.telegraph, 1);
+      this.helmThrottleCooldown = 0.42;
+      this.audio.click();
+      this.say(`Engine Telegraph: ${helm.telegraph.toUpperCase()} (Target: ${TELEGRAPH_SPEED[helm.telegraph]} m/s)`, "good");
+    } else if (downTaps > 0) {
+      for (let i = 0; i < downTaps; i++) helm.telegraph = stepTelegraph(helm.telegraph, -1);
+      this.helmThrottleCooldown = 0.42;
+      this.audio.click();
+      this.say(`Engine Telegraph: ${helm.telegraph.toUpperCase()} (Target: ${TELEGRAPH_SPEED[helm.telegraph]} m/s)`, "warn");
+    } else if (this.helmThrottleCooldown <= 0) {
+      if (holdUp) {
         helm.telegraph = stepTelegraph(helm.telegraph, 1);
-        this.helmThrottleCooldown = 0.35;
+        this.helmThrottleCooldown = 0.42;
         this.audio.click();
         this.say(`Engine Telegraph: ${helm.telegraph.toUpperCase()} (Target: ${TELEGRAPH_SPEED[helm.telegraph]} m/s)`, "good");
-      } else if (inp.keys.has("KeyS") || inp.keys.has("ArrowDown")) {
+      } else if (holdDown) {
         helm.telegraph = stepTelegraph(helm.telegraph, -1);
-        this.helmThrottleCooldown = 0.35;
+        this.helmThrottleCooldown = 0.42;
         this.audio.click();
         this.say(`Engine Telegraph: ${helm.telegraph.toUpperCase()} (Target: ${TELEGRAPH_SPEED[helm.telegraph]} m/s)`, "warn");
       }
     }
 
-    if (inp.keys.has("KeyA") || inp.keys.has("ArrowLeft")) {
-      helm.rudderCmd = Math.max(-MAX_RUDDER_DEG, helm.rudderCmd - 28 * dt);
-    } else if (inp.keys.has("KeyD") || inp.keys.has("ArrowRight")) {
-      helm.rudderCmd = Math.min(MAX_RUDDER_DEG, helm.rudderCmd + 28 * dt);
+    const steerAxis =
+      inp.keys.has("KeyA") || inp.keys.has("ArrowLeft")
+        ? -1
+        : inp.keys.has("KeyD") || inp.keys.has("ArrowRight")
+          ? 1
+          : Math.abs(mx) > 0.15
+            ? mx
+            : 0;
+    if (steerAxis !== 0) {
+      helm.rudderCmd = Math.max(-MAX_RUDDER_DEG, Math.min(MAX_RUDDER_DEG, helm.rudderCmd + 28 * steerAxis * dt));
     } else {
       helm.rudderCmd += (0 - helm.rudderCmd) * Math.min(1, dt * 1.2);
     }
@@ -1859,7 +3100,7 @@ export class Game {
       d.addScaledVector(right, Math.cos(aa) * rr).addScaledVector(up, Math.sin(aa) * rr).normalize();
       this.hitscan(origin, d, w.damage, w.range, i === 0);
     }
-    if (a.mag <= 0 && a.res > 0) setTimeout(() => this.startReload(), 250);
+    if (a.mag <= 0 && a.res > 0) this.scheduleTimeout(() => this.startReload(), 250);
   }
 
   private tracer(from: THREE.Vector3, to: THREE.Vector3, color = 0xffe9a0) {
@@ -1976,7 +3217,7 @@ export class Game {
 
   private sparks(hp: THREE.Vector3, n: THREE.Vector3, count: number) {
     const w = this.worldPos(hp, V());
-    const nw = n.clone().transformDirection(this.ship.group.matrixWorld);
+    const nw = this.theatre === "orbital" ? n.clone() : n.clone().transformDirection(this.ship.group.matrixWorld);
     for (let i = 0; i < count; i++) {
       const v = nw.clone().multiplyScalar(2 + Math.random() * 3).add(V((Math.random() - 0.5) * 4, Math.random() * 2, (Math.random() - 0.5) * 4));
       this.pa.emit(w.x, w.y, w.z, v.x, v.y, v.z, 0.3 + Math.random() * 0.3, 0.05, 0.02, 1, 0.8, 0.35, 1, 9, 0.5);
@@ -2002,6 +3243,8 @@ export class Game {
     pane.collider.enabled = false;
     pane.collider.tag = "glassbroken";
     this.audio.glass(this.posAudio(pane.pos));
+    this.say("🪟 WINDOW SHATTERED – Crew dispatched for repairs!", "alert");
+    this.terminal.push(this.time, "warn", "DAMAGE", `Window shattered at (${pane.pos.x.toFixed(1)}, ${pane.pos.y.toFixed(1)}, ${pane.pos.z.toFixed(1)}) — crew dispatched`);
     const w = this.worldPos(pane.pos, V());
     for (let i = 0; i < 26; i++) {
       const dx = (Math.random() - 0.5) * pane.w * (pane.axis === "x" ? 1 : 0),
@@ -2065,6 +3308,11 @@ export class Game {
   }
 
   private spawnDyn(pos: THREE.Vector3, vel: THREE.Vector3, fuse: number) {
+    if (this.dyns.length >= 24) {
+      const oldest = this.dyns.shift()!;
+      this.ship.group.remove(oldest.mesh);
+      this.disposeObject3D(oldest.mesh);
+    }
     const { g, led } = this.makeTntMesh();
     g.position.copy(pos);
     this.ship.group.add(g);
@@ -2169,6 +3417,22 @@ export class Game {
     if (idx < 0) return;
     this.dyns.splice(idx, 1);
     this.ship.group.remove(d.mesh);
+    d.mesh.traverse((obj) => {
+      if (obj instanceof THREE.Mesh) {
+        obj.geometry?.dispose();
+        const m = obj.material;
+        if (Array.isArray(m)) m.forEach((x) => x.dispose());
+        else m?.dispose();
+      }
+    });
+    if (d.attachedBs && !d.attachedBs.sunk && d.attachedBs.hp > 0) {
+      d.attachedBs.hp = Math.max(0, d.attachedBs.hp - 260);
+      this.say(`💥 TNT attached to ${d.attachedBs.id.toUpperCase()} detonated (-260 HP)!`, "good");
+      if (d.attachedBs.hp <= 0) {
+        d.attachedBs.sunk = true;
+        this.say(`⚓ ${d.attachedBs.id.toUpperCase()} SUNK by TNT demolition!`, "alert");
+      }
+    }
     const p = V(d.body.x, d.body.y + 0.15, d.body.z);
     this.detonated = true;
     this.explode(p, 1.0, "tnt");
@@ -2176,6 +3440,8 @@ export class Game {
 
   private updateDyns(dt: number) {
     const w = this.ship.world;
+    const tmpW = V();
+    const tmpL = V();
     for (const d of [...this.dyns]) {
       const b = d.body;
       if (d.remote >= 0) {
@@ -2185,31 +3451,77 @@ export class Game {
           continue;
         }
       }
-      b.vy -= 14 * dt;
-      const sl = this.sim.tiltDeg > 6 ? this.sim.slideVector() : [0, 0];
-      if (b.onGround) {
-        b.vx *= Math.exp(-dt * 7);
-        b.vz *= Math.exp(-dt * 7);
-        b.vx += sl[0] * dt * 0.6;
-        b.vz += sl[1] * dt * 0.6;
+      if (d.attachedBs && !d.attachedBs.sunk && d.attachedBs.hp > 0 && d.attachLocal) {
+        tmpW.copy(d.attachLocal).applyMatrix4(d.attachedBs.group.matrixWorld);
+        tmpL.copy(tmpW);
+        this.ship.group.worldToLocal(tmpL);
+        b.x = tmpL.x;
+        b.y = tmpL.y;
+        b.z = tmpL.z;
+        b.vx = b.vy = b.vz = 0;
+        b.onGround = true;
+        d.mesh.position.set(b.x, b.y + 0.12, b.z);
+      } else {
+        d.attachedBs = undefined;
+        const wl = this.waterAt(b.x, b.y, b.z);
+        if (wl > -50 && b.y < wl) {
+          if (!d.inWater) {
+            d.inWater = true;
+            this.audio.splash(this.posAudio(d.mesh.position), false);
+            const sw = this.worldPos(V(b.x, wl, b.z), V());
+            for (let si = 0; si < 6; si++) {
+              this.pn.emit(sw.x, sw.y, sw.z, (Math.random() - 0.5) * 3, 2 + Math.random() * 3, (Math.random() - 0.5) * 3, 0.8, 0.18, 0.45, 0.85, 0.94, 1, 0.65, 9, 0.3);
+            }
+          }
+          b.vx *= Math.exp(-dt * 4.5);
+          b.vz *= Math.exp(-dt * 4.5);
+          b.vy += (-1.1 - b.vy) * Math.min(1, dt * 6);
+        } else {
+          d.inWater = false;
+          b.vy -= 14 * dt;
+        }
+        const sl = this.sim.tiltDeg > 6 ? this.sim.slideVector() : [0, 0];
+        if (b.onGround) {
+          b.vx *= Math.exp(-dt * 7);
+          b.vz *= Math.exp(-dt * 7);
+          b.vx += sl[0] * dt * 0.6;
+          b.vz += sl[1] * dt * 0.6;
+        }
+        const vx0 = b.vx,
+          vy0 = b.vy,
+          vz0 = b.vz;
+        const res = w.move(b, b.vx * dt, b.vy * dt, b.vz * dt);
+        if (res.hitX) b.vx = -vx0 * 0.35;
+        if (res.hitZ) b.vz = -vz0 * 0.35;
+        if (res.hitY && vy0 < -1.5) {
+          b.vy = -vy0 * 0.25;
+          this.audio.step("metal", 0.6);
+        }
+        // Stick thrown/placed TNT onto any Battleship hull/deck OBB
+        this.worldPos(V(b.x, b.y, b.z), tmpW);
+        for (const bs of this.battleships) {
+          if (bs.sunk || bs.hp <= 0) continue;
+          tmpL.copy(tmpW);
+          bs.group.worldToLocal(tmpL);
+          if (Math.abs(tmpL.x) <= 6.2 && Math.abs(tmpL.z) <= 29.2 && tmpL.y >= -2.2 && tmpL.y <= 7.8) {
+            d.attachedBs = bs;
+            d.attachLocal = tmpL.clone();
+            d.resting = true;
+            b.vx = b.vy = b.vz = 0;
+            b.onGround = true;
+            this.audio.step("metal", 0.7);
+            break;
+          }
+        }
+        if (b.y < -30) {
+          this.dyns.splice(this.dyns.indexOf(d), 1);
+          this.ship.group.remove(d.mesh);
+          this.disposeObject3D(d.mesh);
+          continue;
+        }
+        d.mesh.position.set(b.x, b.y + 0.12, b.z);
+        d.mesh.rotation.y += dt * (Math.abs(b.vx) + Math.abs(b.vz)) * 1.5;
       }
-      const vx0 = b.vx,
-        vy0 = b.vy,
-        vz0 = b.vz;
-      const res = w.move(b, b.vx * dt, b.vy * dt, b.vz * dt);
-      if (res.hitX) b.vx = -vx0 * 0.35;
-      if (res.hitZ) b.vz = -vz0 * 0.35;
-      if (res.hitY && vy0 < -1.5) {
-        b.vy = -vy0 * 0.25;
-        this.audio.step("metal", 0.6);
-      }
-      if (b.y < -30) {
-        this.dyns.splice(this.dyns.indexOf(d), 1);
-        this.ship.group.remove(d.mesh);
-        continue;
-      }
-      d.mesh.position.set(b.x, b.y + 0.12, b.z);
-      d.mesh.rotation.y += dt * (Math.abs(b.vx) + Math.abs(b.vz)) * 1.5;
       const spd = Math.hypot(b.vx, b.vz, b.vy);
       if (!d.resting && b.onGround && spd < 0.4) {
         d.resting = true;
@@ -2232,7 +3544,7 @@ export class Game {
         d.beep = rate;
         this.audio.beep(d.fuse < 1.5, this.posAudio(d.mesh.position));
         (d.led.material as THREE.MeshBasicMaterial).color.setHex(0xff2200);
-        setTimeout(() => ((d.led.material as THREE.MeshBasicMaterial).color.setHex(0x330500)), 90);
+        this.scheduleTimeout(() => ((d.led.material as THREE.MeshBasicMaterial).color.setHex(0x330500)), 90);
       }
       d.spark -= dt;
       if (d.spark <= 0) {
@@ -2247,6 +3559,7 @@ export class Game {
 
   // ------------------------------------------------------------------ Explosionen
   explode(p: THREE.Vector3, power: number, src: string) {
+    this.lastBlast = { pos: p.clone(), power, t: this.time };
     const R = (src === "tnt" ? 14 : 11) * power;
     const wp = this.worldPos(p, V());
     const pa = this.posAudio(p);
@@ -2347,12 +3660,25 @@ export class Game {
     }
     for (const c of this.ship.crates) if (!c.dead && c.pos.distanceTo(p) < R * 0.6) this.breakCrate(c);
     for (const g of this.ship.glass) if (!g.broken && g.pos.distanceTo(p) < R * 1.2) this.breakGlass(g);
-    // TNT in der Nähe zündet mit
+    // TNT in der Nähe zündet mit und wird von Druckwelle weggeschleudert
     for (const d of [...this.dyns]) {
       const dd = V(d.body.x, d.body.y, d.body.z).distanceTo(p);
       if (dd < R * 0.5 && d.remote < 0) d.remote = 0.1 + Math.random() * 0.2;
+      if (dd < R && dd > 0.05 && !d.attachedBs) {
+        const imp = (1 - dd / R) * 14 * power;
+        d.body.vx += ((d.body.x - p.x) / dd) * imp;
+        d.body.vy += 4.5 * (1 - dd / R) * power;
+        d.body.vz += ((d.body.z - p.z) / dd) * imp;
+        d.body.onGround = false;
+        d.resting = false;
+      }
     }
-    // Hüllenbruch
+    // Hüllenbruch (or Space Station blast in Orbital theatre)
+    if (this.theatre === "orbital") {
+      const events = this.spaceStation.applyBlast(wp.x, wp.y, wp.z, power);
+      for (const ev of events) this.say(ev, "alert");
+      return;
+    }
     const comp = this.compAt(p.x, p.y, p.z);
     if (comp) {
       if (comp.id === "engine") {
@@ -2374,7 +3700,7 @@ export class Game {
     this.noiseRange = 2.4;
     this.noisePos.copy(p);
     // Rumpf-Knarren
-    setTimeout(() => this.audio.creak(0.8), 700 + Math.random() * 800);
+    this.scheduleTimeout(() => this.audio.creak(0.8), 700 + Math.random() * 800);
   }
 
   private makeHoleVisual(h: { pos: THREE.Vector3; nx: number; ny: number; nz: number; area: number }) {
@@ -2394,6 +3720,7 @@ export class Game {
     }
     g.position.copy(h.pos);
     g.lookAt(h.pos.clone().add(V(h.nx, h.ny, h.nz)));
+    g.userData.hole = h;
     this.ship.holeGroup.add(g);
   }
 
@@ -2511,7 +3838,7 @@ export class Game {
     this.prompt = "";
     this.promptKind = "";
     this.promptTarget = null;
-    if (this.dead || this.escapeState) return;
+    if (this.dead || this.escapeState || this.ended || this.tabletOpen || this.orbitalLaserMode) return;
     if (this.activeVessel === "battleship") return;
     const eye = this.eyeLocal();
     const dir = this.lookDirLocal();
@@ -2553,6 +3880,17 @@ export class Game {
           bestAct = () => this.toggleOrbitalLaser();
         }
       }
+      const shuttlePos = new THREE.Vector3(0, STATION_BASE_Y + 0.8, 54);
+      const distShuttle = shuttlePos.distanceTo(eye);
+      if (distShuttle < 3.6 && !this.orbitalLaserMode) {
+        const score = 6.5 - distShuttle * 0.1;
+        if (score > best) {
+          best = score;
+          bestKind = "normal";
+          bestText = "Docking Bay Return Shuttle [E] – Return to Ocean";
+          bestAct = () => this.toggleTheatre("maritime");
+        }
+      }
     }
     for (const lb of this.ship.lifeboats) {
       const dd = Math.hypot(eye.x - lb.zone.x, eye.z - lb.zone.z);
@@ -2567,6 +3905,33 @@ export class Game {
         }
       }
     }
+    // Ship Bilge Pumps & Master Bilge Consoles [E]
+    for (const bp of this.ship.bilgePumps) {
+      const dPump = bp.pos.distanceTo(eye);
+      if (dPump < 3.0) {
+        const score = 4.5 - dPump * 0.2;
+        if (score > best) {
+          best = score;
+          bestKind = bp.active ? "confirm" : "normal";
+          const comp = bp.compId === "master" ? null : this.ship.compartments.find((c) => c.id === bp.compId);
+          const fillPct = comp ? ` · ${Math.round(comp.fill * 100)}% flooded` : "";
+          bestText = `${bp.active ? "Stop" : "Start"} ${bp.name} [E] (${bp.active ? "PUMPING" : "OFF"}${fillPct})`;
+          bestAct = () => {
+            if (bp.compId === "master") {
+              const nextState = !this.ship.bilgePumps.some((p) => p.compId !== "master" && p.active);
+              for (const p of this.ship.bilgePumps) p.active = nextState;
+              this.audio.click();
+              this.say(`MASTER BILGE PUMPS ${nextState ? "ENGAGED (384 m³/s total)" : "SHUT DOWN"}`, nextState ? "good" : "info");
+            } else {
+              bp.active = !bp.active;
+              this.audio.click();
+              this.say(`${bp.name} ${bp.active ? "STARTED (${bp.rateM3s.toFixed(0)} m³/s)" : "STOPPED"}`, bp.active ? "good" : "info");
+            }
+          };
+        }
+      }
+    }
+
     // Wheelhouse Bridge Helm & Telegraph Station
     const bridgeHelmPos = new THREE.Vector3(0, 12.6, -46.5);
     const toHelm = bridgeHelmPos.clone().sub(eye);
@@ -2614,6 +3979,10 @@ export class Game {
   }
 
   private useDoor(d: Door) {
+    if (this.theatre === "orbital" && d.locked) {
+      d.unlock();
+      this.say(`${d.name} airlock override engaged.`, "good");
+    }
     const decision = this.doorSecurity.request(d, this.securityContext());
     if (decision.action === "deny") {
       this.audio.locked();
@@ -2769,7 +4138,7 @@ export class Game {
     lb.launched = true;
     this.scene.attach(lb.group);
     const start = lb.group.position.clone();
-    const dir = V(lb.side, 0, 0);
+    const dir = V(lb.side, 0, 0).applyQuaternion(this.ship.group.quaternion).setY(0).normalize();
     this.escapeState = { boat: lb, t: 0, phase: 0, startPos: start, dir, speed: 0 };
     this.vm.root.visible = false;
     this.say("Lowering the lifeboat …", "good");
@@ -2789,10 +4158,12 @@ export class Game {
       const k = Math.min(1, e.t / dur);
       const ease = k * k * (3 - 2 * k);
       const tx = e.startPos.x + e.dir.x * 5;
+      const tz = e.startPos.z + e.dir.z * 5;
       boat.position.x = e.startPos.x + (tx - e.startPos.x) * ease;
-      boat.position.z = e.startPos.z;
+      boat.position.z = e.startPos.z + (tz - e.startPos.z) * ease;
       boat.position.y = e.startPos.y + (sea + 0.35 - e.startPos.y) * ease;
-      boat.rotation.y = e.dir.x * Math.PI / 2;
+      boat.rotation.order = "YXZ";
+      boat.rotation.y = Math.atan2(e.dir.x, e.dir.z);
       boat.rotation.x = Math.sin(e.t * 2) * 0.03;
       boat.rotation.z = Math.sin(e.t * 1.7) * 0.05;
       if (k >= 1) {
@@ -2806,18 +4177,20 @@ export class Game {
     } else {
       e.speed = Math.min(7, e.speed + dt * 1.8);
       boat.position.x += e.dir.x * e.speed * dt;
+      boat.position.z += e.dir.z * e.speed * dt;
       const h = this.ocean.height(boat.position.x, boat.position.z, this.time);
-      const hf = this.ocean.height(boat.position.x + e.dir.x * 3, boat.position.z, this.time);
+      const hf = this.ocean.height(boat.position.x + e.dir.x * 3, boat.position.z + e.dir.z * 3, this.time);
       boat.position.y += (h + 0.35 - boat.position.y) * Math.min(1, dt * 6);
-      boat.rotation.z = Math.sin(e.t * 1.6) * 0.06 + (hf - h) * 0.05 * e.dir.x;
-      boat.rotation.x = Math.sin(e.t * 1.3) * 0.04;
+      boat.rotation.order = "YXZ";
+      boat.rotation.x = Math.sin(e.t * 1.3) * 0.04 - (hf - h) * 0.08;
+      boat.rotation.z = Math.sin(e.t * 1.6) * 0.06;
       // Gischt
-      if (Math.random() < dt * 40) this.pn.emit(boat.position.x - e.dir.x * 3.5, h, boat.position.z + (Math.random() - 0.5), -e.dir.x * 2, 1.5, (Math.random() - 0.5), 1.2, 0.5, 1.4, 0.9, 0.95, 1, 0.4, 3, 0.5);
+      if (Math.random() < dt * 40) this.pn.emit(boat.position.x - e.dir.x * 3.5, h, boat.position.z - e.dir.z * 3.5 + (Math.random() - 0.5), -e.dir.x * 2, 1.5, -e.dir.z * 2 + (Math.random() - 0.5), 1.2, 0.5, 1.4, 0.9, 0.95, 1, 0.4, 3, 0.5);
       if (!this.sim.sinking) this.sim.forceSink = true;
       if ((this.sim.sunk || e.t > 40) && !this.ended) {
         this.ended = true;
         this.audio.win();
-        this.cb.onEnd({ kind: "win", cause: "Entkommen", time: this.time, kills: this.kills, flood: this.sim.F, mode: this.mode });
+        this.cb.onEnd({ kind: "win", cause: "Escaped", time: this.time, kills: this.kills, flood: this.sim.F, mode: this.mode });
       }
     }
   }
@@ -2930,7 +4303,7 @@ export class Game {
     // Tropfen auf der Kamera/Blitz bei Sturm
     if (env.storm > 0.8 && Math.random() < dt * 0.1) {
       this.lightning = 1;
-      setTimeout(() => this.audio.explosion({ dist: 120, pan: 0 }, 1.5), 600 + Math.random() * 1500);
+      this.scheduleTimeout(() => this.audio.explosion({ dist: 120, pan: 0 }, 1.5), 600 + Math.random() * 1500);
     }
     this.lightning = Math.max(0, this.lightning - dt * 3);
     // Mündungslicht abklingen
@@ -2942,8 +4315,8 @@ export class Game {
         if (tr.t <= 0) tr.line.visible = false;
       }
     }
-    // Keep Freighter visible while sinking in Sandbox/Battleship mode so it never despawns
-    if (this.sim.sunk && this.mode !== "sandbox" && this.activeVessel !== "battleship") {
+    // Keep Freighter visible while sinking in Sandbox/Battleship/Orbital mode so it never despawns
+    if (this.sim.sunk && this.mode !== "sandbox" && this.activeVessel !== "battleship" && this.theatre !== "orbital") {
       this.ship.group.visible = false;
     } else {
       this.ship.group.visible = true;
@@ -2955,6 +4328,7 @@ export class Game {
         const cz = (c.min.z + c.max.z) / 2;
         const wp = this.worldPos(V(0, c.level, cz), V());
         wm.position.set(wp.x, c.worldLevel, wp.z);
+        wm.rotation.set(-Math.PI / 2, -this.supervisor.helm.heading, 0, "YXZ");
         // Clip-Ebenen aktualisieren
         const mw = this.ship.group.matrixWorld;
         const nrm = [V(1, 0, 0), V(-1, 0, 0), V(0, 1, 0), V(0, -1, 0), V(0, 0, 1), V(0, 0, -1)];
@@ -3051,17 +4425,20 @@ export class Game {
     eye.y += bobY + shk.y;
     const lookRight = V(Math.cos(p.yaw), 0, -Math.sin(p.yaw));
     eye.addScaledVector(lookRight, bobX + shk.x);
-    const onBsDeck = this.battleships.some((bs) => {
-      const wx = p.body.x + this.ship.group.position.x;
-      const wz = p.body.z + this.ship.group.position.z;
-      return Math.abs(wx - bs.baseX) <= bs.deckBounds.maxX + 0.8 && Math.abs(wz - bs.baseZ) <= bs.deckBounds.maxZ + 0.8;
-    });
-    const ew =
-      this.theatre === "orbital"
-        ? eye
-        : onBsDeck
-          ? V(eye.x + this.ship.group.position.x, eye.y, eye.z + this.ship.group.position.z)
-          : this.worldPos(eye, V());
+    const pwCam = this.worldPos(V(p.body.x, p.body.y, p.body.z), V());
+    const onBsDeck =
+      !!this.ridingBs ||
+      this.battleships.some(
+        (bs) =>
+          !bs.sunk &&
+          pointInHull(pwCam.x, pwCam.z, this.battleshipHull(bs), 0.8) &&
+          pwCam.y >= bs.group.position.y + bs.deckBounds.deckY - 1.8,
+      );
+    const ew = this.theatre === "orbital"
+      ? eye
+      : onBsDeck
+        ? pwCam.clone().add(V(0, eye.y - p.body.y, 0))
+        : this.worldPos(eye, V());
     cam.position.copy(ew);
     const lean = Math.sin(p.bob) * 0.004 * (p.speed > 1 ? 1 : 0);
     this.tmpE.set(p.pitch + (Math.random() - 0.5) * 0.02 * sk, p.yaw + (Math.random() - 0.5) * 0.02 * sk, lean + fall * 1.2 + (Math.random() - 0.5) * 0.02 * sk, "YXZ");
@@ -3105,7 +4482,7 @@ export class Game {
       this.spaceStation.starPoints.visible = spaceMix > 0.1;
     }
     this.ocean.apply(env, fog.density, st.waveHeight);
-    this.ocean.update(cam.position, this.time, this.shipInv(), !this.sim.sunk, under);
+    this.ocean.update(cam.position, this.time, this.shipInv(), !this.sim.sunk && !this.isFreighterDestroyed(), under);
     this.sky.update(cam.position, this.time);
     // Lampen-Pool
     const lamps = this.ship.lamps;
@@ -3159,7 +4536,7 @@ export class Game {
 
   private cameraUnderwater(): boolean {
     if (this.theatre === "orbital") return false;
-    if (this.escapeState) {
+    if (this.escapeState || this.ridingBs) {
       const h = this.ocean.height(this.camera.position.x, this.camera.position.z, this.time);
       return this.camera.position.y < h - 0.05;
     }
@@ -3205,12 +4582,45 @@ export class Game {
   }
 
   // ------------------------------------------------------------------ HUD
+  private vesselStatusSnapshot(): Pick<HudState, "statusKind" | "statusTitle" | "statusHullPct" | "statusParts"> {
+    if (this.theatre === "orbital") {
+      const parts = this.spaceStation.modules.map((m) => ({
+        name: m.name,
+        pct: m.detached ? 0 : Math.max(0, Math.min(100, Math.round((m.pressureKpa / 101.3) * 100))),
+      }));
+      const hull = parts.length ? Math.round(parts.reduce((s, p) => s + p.pct, 0) / parts.length) : 0;
+      return { statusKind: "station", statusTitle: "HYPERION-9 STATION", statusHullPct: hull, statusParts: parts };
+    }
+    if (this.activeVessel === "battleship" && this.battleships[0]) {
+      const bs = this.battleships[0];
+      return {
+        statusKind: "battleship",
+        statusTitle: `${bs.id.toUpperCase()} · LV${bs.level}`,
+        statusHullPct: bs.sunk ? 0 : Math.max(0, Math.round((bs.hp / bs.maxHp) * 100)),
+        statusParts: bs.parts.map((pt) => ({
+          name: pt.name,
+          pct: pt.destroyed ? 0 : Math.max(0, Math.round((pt.hp / pt.maxHp) * 100)),
+        })),
+      };
+    }
+    return {
+      statusKind: "freighter",
+      statusTitle: "MV NORDWIND",
+      statusHullPct: this.getFreighterIntegrityPct(),
+      statusParts: [],
+    };
+  }
+
   private pushHud() {
     const p = this.player;
     const w = WEAPONS[this.cur];
     const a = this.cur === "tnt" ? { mag: 0, res: 0 } : this.ammo[this.cur];
-    const dir = this.lookDirLocal();
-    const heading = ((Math.atan2(dir.x, dir.z) * 180) / Math.PI + 360) % 360;
+    const wdir = this.activeVessel === "battleship"
+      ? V(-Math.sin(p.yaw) * Math.cos(p.pitch), 0, -Math.cos(p.yaw) * Math.cos(p.pitch))
+      : this.theatre === "orbital"
+        ? this.lookDirLocal()
+        : this.lookDirLocal().applyQuaternion(this.ship.group.quaternion);
+    const heading = ((Math.atan2(-wdir.x, wdir.z) * 180) / Math.PI + 360) % 360;
     const now = this.time;
     this.msgs = this.msgs.filter((m) => m.t > now);
     const chase = this.guards.some((g) => g.state === "chase" && !g.dead);
@@ -3284,6 +4694,22 @@ export class Game {
       theatre: this.theatre,
       orbitalLaserMode: this.orbitalLaserMode,
       orbitalZoomFov: this.orbitalZoomFov,
+      freighterIntegrityPct: this.getFreighterIntegrityPct(),
+      freighterDestroyed: this.isFreighterDestroyed(),
+      battleshipSunk: this.isBattleshipSunk(),
+      aliveBattleshipCount: this.battleships.filter((b) => !b.sunk).length,
+      ...this.vesselStatusSnapshot(),
+      lockedTargetLabel: (() => {
+        const pos = this.resolveTargetPos(this.lockedTarget);
+        if (!pos || !this.lockedTarget) return "NONE";
+        return this.lockedTarget.kind === "freighter" ? "FREIGHTER" : this.lockedTarget.id.toUpperCase();
+      })(),
+      lockedTargetDist: (() => {
+        const pos = this.resolveTargetPos(this.lockedTarget);
+        if (!pos || !this.battleships[0]) return 0;
+        return Math.round(this.battleships[0].group.position.distanceTo(pos));
+      })(),
+      bilgePumpsActive: this.ship.bilgePumps.some((bp) => bp.active),
     };
     this.cb.onHud(hud);
   }
@@ -3293,6 +4719,8 @@ export class Game {
     this.disposed = true;
     this.running = false;
     cancelAnimationFrame(this.raf);
+    for (const tid of this.pendingTimers) clearTimeout(tid);
+    this.pendingTimers = [];
     document.removeEventListener("pointerlockchange", this.onLockChange);
     document.removeEventListener("pointerlockerror", this.onLockError);
     document.removeEventListener("visibilitychange", this.onVis);
@@ -3309,6 +4737,22 @@ export class Game {
     this.audio.dispose();
     try {
       this.effects.forEach((e) => e.dispose?.());
+      if (this.orbitalBeamGroup) {
+        this.scene.remove(this.orbitalBeamGroup);
+        this.orbitalBeamGroup.traverse((obj) => {
+          if (obj instanceof THREE.Mesh) {
+            obj.geometry?.dispose();
+            const m = obj.material;
+            if (Array.isArray(m)) m.forEach((x) => x.dispose());
+            else m?.dispose();
+          }
+        });
+        this.orbitalBeamGroup = null;
+      }
+      this.debrisGeo?.dispose();
+      this.debrisMats.forEach((m) => m.dispose());
+      this.debrisMats.clear();
+      this.spaceStation?.dispose();
       this.pn?.dispose();
       this.pa?.dispose();
       this.ship?.dispose();

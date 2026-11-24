@@ -142,7 +142,7 @@ console.log('Starting Stormworks prototype tests...');
   for (let i = 0; i < 600; i++) bridge.stepHelm(h, 0.1, 140, true);
   near(h.rudderDeg, 35, 1e-9, 'rudder limited to 35 degrees');
   assert.ok(h.speed > 6 && h.speed <= 8);
-  assert.ok(h.heading < 0, 'starboard rudder lowers the heading (bow swings to starboard)');
+  assert.ok(h.heading > 0, 'starboard rudder raises the heading (bow swings to starboard)');
   const bow = bridge.vesselForward(h.heading);
   assert.ok(bow.x < 0, 'starboard turn points the +Z bow toward -X');
   const flooded = bridge.createHelm();

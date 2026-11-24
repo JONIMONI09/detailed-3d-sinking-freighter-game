@@ -1,6 +1,6 @@
 # Error and Solution Ledger
 
-Last reviewed: 2026-11-13 (Europe/Berlin)
+Last reviewed: 2026-11-24 (Europe/Berlin)
 Audience: Freebuff AI agent working in this repository only
 Owner skill: `error-fix-document`
 
@@ -28,6 +28,336 @@ Do not use this file for speculative risks. Put open limitations in
 - Prevention:
 - Related files / skills:
 ```
+
+### ERR-2026-11-24-04 - Audit branch merged into main's negated-heading helm convention
+
+- Date (Europe/Berlin): 2026-11-24
+- Area: `bridge.ts`, `game.ts`, `battleships.ts`, `tests/vessel-steering-and-engine-breakdown.test.mjs`
+- Status: Resolved
+- Symptom: The audit branch was based on `8fd625a`, while `main` advanced by 24
+  commits and fixed the same stern-first/rudder bug independently
+  (`ERR-2026-11-20-03`) with the opposite sign convention: `main` keeps
+  `heading += yawRate` in `stepHelm` and applies `rotationY(-heading)` to the
+  ship, so its forward vector is `(-sin h, 0, cos h)`. Merging produced a mixed
+  tree: the branch's `+heading` yaw, `main`'s `-heading` quaternion, a duplicated
+  ragdoll `enter()` call and a superseded 14 m battleship hit sphere.
+- Root cause: Two valid but incompatible fixes for the same convention were
+  developed in parallel; a textual merge cannot detect that a quaternion and a
+  propulsion vector must flip together.
+- Solution:
+  1. Adopted `main`'s convention everywhere: `stepHelm` raises the heading for a
+     starboard rudder, `vesselForward()` returns `(-sin h, cos h)` and is
+     documented as matching `rotationY(-heading)`, and the autopilot uses
+     `atan2(-awayX, awayZ)` with a positive rudder order for a positive error.
+  2. Dropped the branch's `battleshipHitTest()`; `main` already tests projectiles
+     against the oriented `pointInHull` / `BATTLESHIP_HULL` envelope, which also
+     feeds deck standing and orbital strikes.
+  3. Removed the duplicated `enter()` while keeping the 6 s ragdoll cooldown, and
+     reverted the two tests that encoded the branch's sign convention.
+- Verification: `npx tsc --noEmit` (root and Sonnet) pass; `npm test` runs all 13
+  suites including `orbital-laser-and-multipart` and `vessel-collision`; both
+  Vite builds succeed; `tests/physics-integrity-and-orientation.test.mjs` proves
+  `vesselForward(h)` equals the mesh bow vector under `rotationY(-h)`.
+- Prevention: The helm convention is documented once, at `vesselForward()`, and
+  the steering test compares the forward vector against the actual 3D bow
+  position instead of hard-coded signs.
+- Related files / skills: `.../game/bridge.ts`, `.../game/game.ts`,
+  `.../game/shipSim.ts`, `.../game/battleships.ts`,
+  `tests/vessel-steering-and-engine-breakdown.test.mjs`,
+  `tests/physics-integrity-and-orientation.test.mjs`, `error-fix-document`.
+
+### ERR-2026-11-24-01 - Collision solver teleported embedded bodies and accepted NaN deltas
+
+- Date (Europe/Berlin): 2026-11-24
+- Area: `CollisionWorld.move` (`physics.ts`) used by the player, crew, guards and debris
+- Status: Resolved
+- Symptom: A body that spawned, was teleported, pushed by a blast or caught by a
+  closing door inside a collider was snapped onto the roof of that collider.
+  Dropping into any overlapping geometry moved the player to `y = 9` (the top of
+  the wall) instead of leaving them where they were. A single `NaN` velocity
+  (division by a zero-length frame somewhere upstream) permanently poisoned
+  `body.x`, and the vertical pass also resolved collisions against colliders
+  whose `enabled` flag was false.
+- Root cause: The vertical pass treated *any* overlapping box as a floor and set
+  `body.y = b.maxY` without checking whether the body had actually been above
+  that surface before the step. There was no depenetration path and no
+  `Number.isFinite` guard on the incoming deltas.
+- Solution:
+  1. Land only when `prevY >= b.maxY - 0.02` (the highest such surface wins);
+     block ceilings only when `prevY + h <= b.minY + 0.02`.
+  2. New `depenetrate()` separates a genuinely embedded body along its shallowest
+     penetration axis, reports `hitX/hitY/hitZ`, and climbs onto the roof only
+     when that **is** the shallowest axis.
+  3. Non-finite `dx/dy/dz` are replaced with `0`, and the vertical pass honours
+     `Collider.enabled` exactly like the horizontal and overlap passes.
+- Verification: `tests/physics-integrity-and-orientation.test.mjs` - an embedded
+  body is pushed out of a 9 m wall (stays at `y < 2`, `z` moves > 0.5 m), a
+  30 m/s fall still lands on the deck at `y = 0.4`, and `move(body, NaN, 0, NaN)`
+  leaves the position finite.
+- Prevention: The new suite runs inside `npm test`, and `tools/ci_check.py`
+  fails when it is no longer wired in.
+- Related files / skills: `.../game/physics.ts`,
+  `tests/physics-integrity-and-orientation.test.mjs`, `error-fix-document`.
+
+### ERR-2026-11-24-02 - Trapped-air regulator was dead code and flooding ignored the wave surface
+
+- Date (Europe/Berlin): 2026-11-24
+- Area: `shipSim.ts` flooding model, `stormworksSupervisor.ts`, `ingress.ts`
+- Status: Resolved
+- Symptom: Sealed compartments flooded exactly like vented ones: a breached
+  sealed engine room reached 69-100 % fill within 80 s even though the Boyle
+  pocket cap at that depth is about 25 %. The Torricelli head was computed
+  against a fixed sea level `y = 0`, so a hull breach that was above a wave
+  trough still flooded and a crest did not increase the inflow.
+- Root cause: `StormworksSupervisor.step()` scaled `c.flow` *before* calling
+  `shipSim.update()`, but the simulation recomputes `c.flow` from scratch every
+  step, so the factor never reached the integral. `ShipSim.update()` had no
+  notion of the real sea surface at the hole and no regulator hook.
+- Solution:
+  1. `ShipSim.update(dt, t, ocean, floodSpeed, inflowFactor?)` accepts a
+     per-compartment regulator and derives the head from
+     `ocean.height(worldX, worldZ, t)` at the hole (hole position projected with
+     `matrixWorld`).
+  2. The supervisor builds `regulator(c)` from the matrix-projected hole
+     depth (`inflowFactor(pocket, c.water, depth)`) and passes it as the fifth
+     argument; vented holds and compartments without holes pass `1`.
+  3. Merged blast openings are clamped to `MAX_HOLE_AREA = 6 m²`, and the wreck
+     stops descending at `WRECK_REST_DEPTH = 135 m` instead of sinking forever.
+- Verification: `supervisor.mjs` scratch run shows the sealed engine inflow
+  decaying `45.1 -> 5.9 m³/s` instead of staying at ~53 m³/s; the new unit test
+  floods a sealed engine to < 60 % and a vented hold to > 90 %, keeps a hole
+  above a -6 m sea surface dry, and proves the 6 m² cap.
+- Prevention: `ingress.ts` no longer claims to be an unwired prototype, and the
+  regulator signature is covered by a test so the parameter cannot silently be
+  dropped again.
+- Related files / skills: `.../game/shipSim.ts`, `.../game/stormworksSupervisor.ts`,
+  `.../game/ingress.ts`, `.../game/shipTypes.ts`,
+  `tests/physics-integrity-and-orientation.test.mjs`, `error-fix-document`.
+
+### ERR-2026-11-24-03 - Ragdoll damping was frame-rate dependent and crew breach ids shifted
+
+- Date (Europe/Berlin): 2026-11-24
+- Area: `ragdoll.ts`, `crew.ts`, `stormworksSupervisor.ts`
+- Status: Resolved
+- Symptom: Ragdoll limbs behaved differently at 30 fps and 144 fps, and a crew
+  member repairing a breach could switch to a different hole after an unrelated
+  repair finished. Crew ragdolls also re-triggered on the next frame after
+  recovery while the water flow was still violent, producing one
+  `[NORDWIND/CREW] ... ragdoll_triggered` log line per step, and the breach
+  write-back loop ran once per crew member (3x per frame) with a `holes` filter
+  nested inside the compartment loop.
+- Root cause: Velocity retention used a fixed `0.98` per *frame* instead of a
+  per-second decay; breach ids were renumbered `1..n` every frame; there was no
+  cooldown after a ragdoll recovered; and the synchronization block sat inside
+  the `for (const member of this.crew)` loop.
+- Solution: `damp = exp(-1.2 * dt)`; a zero-length or non-finite ragdoll step is
+  skipped instead of dividing by `dt`; `Hole.breachId` is assigned once and
+  reused; `ragdollCooldown = 6 s` after recovery; and the breach write-back plus
+  the fully-patched-hole filter now run once per frame after the crew loop.
+- Verification: `tests/ragdoll-physics.test.mjs` and the new suite pass with the
+  dt guard, and `tests/stormworks-supervisor.test.mjs` still proves that the
+  autonomous crew seals a deck breach after the sync refactor.
+- Prevention: The cooldown and the stable ids are commented at their definition
+  sites, and the supervisor sync loop is no longer nested in the crew loop.
+- Related files / skills: `.../game/ragdoll.ts`, `.../game/crew.ts`,
+  `.../game/stormworksSupervisor.ts`, `.../game/shipTypes.ts`,
+  `tests/ragdoll-physics.test.mjs`, `tests/stormworks-supervisor.test.mjs`,
+  `error-fix-document`.
+
+### ERR-2026-11-20-04 - Bridge Helm Double-Tap, Tablet Input Leaks, Battleship Deck Riding, Torpedo/Collision Hull Breaches & Superlaser Target Switching
+
+- Date (Europe/Berlin): 2026-11-20
+- Area: Helm & Input (`input.ts`, `game.ts`), Naval combat/ramming/breaches (`game.ts`), Battleship deck riding (`game.ts`), Spawn/Nav Lights/HUD (`shipBuilder.ts`, `Hud.tsx`)
+- Status: Resolved
+- Symptom: Rapidly double-tapping `[W]`/`[S]` at the Bridge Helm dropped the second tap (`telegraph` stayed at `half-ahead` instead of advancing to `full-ahead`) and collapsed multiple key presses inside slow render frames; opening the `[TAB]` Command Tablet leaked `[W/A/S/D/E]` into helm mode and interaction prompts; torpedoes, Fleet Strike missiles, and heavy vessel ramming failed to breach Freighter compartments or lower Freighter integrity (`0` hull breaches, `100%` integrity); walking on a Battleship deck dragged the player along with the moving/rotating Freighter and triggered Freighter-local out-of-bounds falls; triggering a Superlaser Strike over the player's Battleship switched onto `MV NORDWIND` mid-strike as soon as the Battleship sank; evacuating a sunk Battleship could fall through after orbital evacuation; lifeboat wave pitch rolled `boat.rotation.z`; player spawned atop an explosive barrel at `(9.6, 3.0, -42)` while Port/Stbd nav lights and pump labels were inverted for `+Z` bow; and the HUD status schematic pitched backwards.
+- Root cause:
+  1. `handleHelm()` polled held `KeyW`/`KeyS` behind a fixed `0.35s` cooldown without discrete tap actions, and `Input.queue` used a `Set` that deduplicated two `KeyW`/`KeyS` taps occurring in a single frame.
+  2. `handleHelm` and `updateInteraction` did not return early when `tabletOpen` / `ended` / `orbitalLaserMode` were active.
+  3. `navalProjectiles` only tested `|localHit.x| < 11.5` and fired `explode()` where `compAt` returned `null` outside `[-69.8, 57.05] x [-10.2, 10.2]` and `ShipSim.addBreach()` rejected `y > -2.0` waterline torpedoes (`-0.15m`) or inner hull contacts; `stepVesselCollisions()` hit the same `compAt`/`addBreach` rejection on bow/side impacts; and `navalProjectiles` did not damage `ShipSection`/`BattleshipPart` HP or allow already-destroyed sections to pass projectiles cleanly.
+  4. `step()` had no Battleship-local coordinate tracking (`ridingBs`/`ridingLocal`), world-yaw offset for `Player.update()`, world ocean depth lookup, or Battleship-safe bounds guard (`b.y < -25`).
+  5. `superlaserTimer` re-resolved `this.battleships[0]` every frame, `activeVessel === "battleship"` sink fallback was not guarded before running driving logic, and `restoreFreighter()` / `dyns` did not recursively dispose child meshes in `THREE.Group`.
+  6. `shipBuilder.ts` placed a barrel on `(9.6, 3.0, -42)` at spawn and swapped Port (`+X` red) vs Stbd (`-X` green) for `+Z` bow, while `Hud.tsx` multiplied `h.pitchDeg` by `-0.6` and `updateEscape()` applied wave pitch on `boat.rotation.z`.
+- Solution:
+  1. Added counted `helmUp`/`helmDown` discrete taps (`consumeHelmSteps()`) plus touch joystick throttle/rudder in `input.ts` and `handleHelm(dt)` in `game.ts`, and isolated helm/interaction while `tabletOpen`, `dead`, `ended`, or `orbitalLaserMode`.
+  2. Implemented `freighterHitSection`, `breachFreighterHullAt`, `damageFreighterSectionAt`, `destroyFreighterSection`, and `damageBattleshipPartAt` in `game.ts`, wiring naval projectiles (with `ownerId` self-hit guards and velocity-aligned torpedo quaternions) and `stepVesselCollisions()` so underwater torpedoes, diving missiles, and heavy collisions reliably breach compartments and shatter sections while letting projectiles fly through destroyed sections.
+  3. Implemented `ridingBs` / `ridingLocal` Battleship-deck riding with world-space camera height, Freighter-heading-compensated `Player.yaw`, world ocean immersion check, and bounds-check exemption when riding a Battleship.
+  4. Locked `superlaserTargetBsId` at `triggerSuperlaserStrike()` start, fixed Battleship sink-evacuation branching, added recursive `disposeObject3D` cleanup on `holeGroup`/`dyns` and `helm.rudderCmd` resets in `switchVessel()`/`restoreFreighter()`, fixed `boat.rotation.order = "YXZ"` wave pitch in `updateEscape()`, moved the colliding barrel to `[9.6, -39.5]` and aligned Port/Stbd nav lights/pump labels in `shipBuilder.ts`, and flipped `Hud.tsx` schematic pitch sign to `+0.6`.
+- Verification: `npx tsc --noEmit`, `npx tsc -p detailed-3d-sinking-freighter-game_sonnet/tsconfig.json --noEmit`, `npm test` (including new helm double-tap/tablet-isolation and collision/breach assertions), `npm run docs:check`, both Vite builds, and live headless Chrome CDP E2E verification on `http://127.0.0.1:5173/`.
+- Prevention: Verify discrete action counters across slow render frames, test naval impacts and Battleship deck riding in headless WebGL CDP, and keep all vessel orientation conventions (`+Z` Freighter vs `-Z` Battleship) consistent across geometry, physics, UI, and input.
+- Related files / skills: `detailed-3d-sinking-freighter-game_sonnet/src/game/input.ts`, `game.ts`, `shipBuilder.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/ui/Hud.tsx`, `tests/vessel-steering-and-engine-breakdown.test.mjs`, `tests/vessel-collision.test.mjs` / `error-fix-document`.
+
+### ERR-2026-11-20-03 - Inverted Freighter Propulsion (+Z Bow), Rudder Yaw, Battleship Steering & Gameplay Physics Bugs
+
+- Date (Europe/Berlin): 2026-11-20
+- Area: Vessel kinematics & steering (`shipSim.ts`, `game.ts`, `battleships.ts`, `vesselCollision.ts`), Flood water/compass/torpedo/TNT sync (`game.ts`)
+- Status: Resolved
+- Symptom: Commanding `full-ahead` on `MV NORDWIND` drove the freighter backwards (stern-first toward `-Z`); starboard/port `[D]/[A]` rudder inputs rotated both the freighter (`+Z` bow) and battleship (`-Z` bow) in the opposite direction; rotated freighter OBB collision boxes, evasive autopilot, flood `waterMesh`, lifeboat launch direction, and HUD compass were misaligned; torpedoes spun around their roll axis instead of yawing toward target; attached TNT reducing a battleship to `0 HP` left `bs.sunk === false`; and `ShipSim.update()` produced `NaN` when compartment volume totaled `0`.
+- Root cause:
+  1. Freighter geometry in `shipBuilder.ts`/`shipTypes.ts` places the bow at `+Z` (`Z_BOW = 70`) and stern at `-Z` (`Z_STERN = -70`), whereas `game.ts` used `(-sin(heading), 0, -cos(heading))` (the `-Z` FPS/Battleship forward vector), `shipSim.ts` applied `+heading` to `qYaw` (turning starboard rudder to port `-X`/`+X` opposite), and `vesselCollision.ts` + Freighter autopilot/velocity/superlaser assumed `-Z` bow.
+  2. `battleships.ts` added `+rudderDeg` to `bs.heading` (`group.rotation.y`), turning its `-Z` bow left (`-X`) on starboard `[D]` input instead of right (`+X`).
+  3. `game.ts` kept compartment `waterMesh` unrotated in world space, computed HUD compass from ship-local `lookDirLocal()` with inverted `atan2(dir.x, dir.z)`, rotated torpedoes with `XYZ` Euler `rotation.x = Math.PI/2`, omitted `sunk = true` in `explodeDyn`, checked non-existent `"superstructure"` section id in `waterAt`, left `rudderCmd`/`helmMode` dirty in `restoreFreighter()`, and omitted `totV > 0` guard in `shipSim.ts`.
+- Solution:
+  1. In `shipSim.ts` & `game.ts`: Changed `qYaw` to `-this.heading` and Freighter forward/velocity/autopilot/superlaser sweep to `(-sin(heading), 0, cos(heading))` / `Math.atan2(-awayX, awayZ)`, and guarded `totV > 0 ? totW / totV : 0`.
+  2. In `vesselCollision.ts` & `game.ts`: Added optional `bowZ?: 1 | -1` to `HullBox` (`fz = (b.bowZ ?? -1) * Math.cos(b.heading)`), set `bowZ: 1` on `freighterHull()`, and updated Freighter collision velocity.
+  3. In `battleships.ts` & `game.ts`: Fixed Battleship steering sign (`bs.heading -= ...` and AI `turnSign`), set chase camera `yaw = bs.heading` on `switchVessel()`, cleared queued inputs on mode transitions, rotated `waterMesh` with `(-Math.PI/2, -heading, 0, "YXZ")`, computed world-space compass heading `atan2(-wdir.x, wdir.z)`, oriented torpedoes via `quaternion.setFromUnitVectors`, synced `bs.sunk = true` + mesh disposal in `explodeDyn`, fixed `waterAt` `super_*` check, rotated lifeboat launch vector, used `worldPos` + `pointInHull` for walkable Battleship decks, and reset `rudderCmd`/`helmMode` in `restoreFreighter()`.
+- Verification: `npx tsc --noEmit`, `npx tsc -p detailed-3d-sinking-freighter-game_sonnet/tsconfig.json --noEmit`, `npm test` (including updated `tests/vessel-steering-and-engine-breakdown.test.mjs` and `tests/vessel-collision.test.mjs`), `npm run docs:check`, both Vite builds, and live Chrome CDP verification on `http://127.0.0.1:5173/`.
+- Prevention: Always derive forward/steering/collision vectors from each vessel's actual 3D bow axis (`+Z` for Freighter, `-Z` for Battleship) and test `ShipSim` + `stepBattleship` directly against 3D world bow transforms.
+- Related files / skills: `detailed-3d-sinking-freighter-game_sonnet/src/game/shipSim.ts`, `game.ts`, `battleships.ts`, `vesselCollision.ts`, `tests/vessel-steering-and-engine-breakdown.test.mjs`, `tests/vessel-collision.test.mjs` / `error-fix-document`.
+
+### ERR-2026-11-20-02 - Bilge Capacity, Incomplete Dewatering, Gap Jumping & Surface Swimming
+
+- Date (Europe/Berlin): 2026-11-20
+- Area: Bilge pumps (`shipBuilder.ts`, `game.ts`, `Hud.tsx`), crew navigation (`shipNavGraph.ts`, `crew.ts`)
+- Status: Resolved
+- Symptom: Flooded compartments never drained fully (residual water kept the ship sinking), only 6 pump stations at 16 m3/s existed, and crew fell into floor gaps or sank in flood water.
+- Root cause: Pumping stopped at low fill levels, compartment fill/level/mesh were not re-synced after pumping, the sinking state was never reset, and the nav graph had no jump edges or swimming buoyancy.
+- Solution: 14 pump stations (12 x 32 m3/s = 384 m3/s plus 2 master consoles); crew activate all pumps of their compartment while water remains; `syncCompartmentsAfterPumping` clamps to exactly 0 m3, hides the water mesh, recomputes `sim.F` and clears `sim.sinking` when `F < 0.28`; overboard spray particles; jump edges on Level 1/2 gaps; surface swimming at `waterLevel - 0.55` with ragdoll recovery.
+- Verification: `testGapJumpSwimmingAndCompleteDewatering` in `tests/crew-navigation.test.mjs`, `tsc --noEmit`, `npm test`.
+- Prevention: Test asserts pump count, per-unit rate, total capacity and full drainage.
+- Related files / skills: `error-fix-document`, `documentation-maintenance`
+
+### ERR-2026-11-20-01 - Catwalk Clamping, Phantom Stair/Room Graph Edges, Disabled Open-Door Centering & Localized Sandbox Physics
+
+- Date (Europe/Berlin): 2026-11-20
+- Area: Crew & Guard AI Navigation (`shipNavGraph.ts`, `crew.ts`, `stormworksSupervisor.ts`, `enemies.ts`), Localized Blast Physics, Hole Cleanup & Bilge Control (`game.ts`, `Hud.tsx`)
+- Status: Resolved
+- Symptom: Crew bots on exterior catwalks remained pinned against the superstructure wall/aft edge; corridor/stairwell/Control Room bots collided with divider walls, `z = -50` bulkheads, `engineHole` railings, Galley/Lounge furniture, diesel engine blocks, and deck container stacks; open doorframes (`door.open >= 0.4`) lost center-alignment; `StormworksSupervisor.crew` spawned at `y = 0.1` mid-air without patrols or peer separation; distant crew ragdolled from global camera shake; sealed breach meshes remained visible; and thrown TNT ignored water drag/buoyancy.
+- Root cause: (1) `enforceShipBoundsAndRespawn` clamped `m.x` to `[-9.2, 9.2]` and `m.z` to `[-65.5, 62.0]`, pressing catwalk/stern crew into superstructure walls at `|x| = 9.0` and `z = -66.0`; (2) `shipNavGraph.ts` contained blocked phantom edges (`d0_corr_mid <-> d0_corr_aft`, `d0_port_mid <-> d0_port_aft`, `d0_stbd_mid <-> d0_stbd_aft`, `d1_corr_mid <-> d1_corr_aft`, `d2_corr_aft <-> d2_corr_mid`), orphaned nodes, and waypoints inside containers, Galley counter, diesel engine, and `holdHole` railings, while `isInStairwellBand` spanned `|x| <= 1.9, z in [-53.2, -47.2]` and blocked adjacent doorway alignment; (3) `door.collider.enabled` became `false` once `door.open >= 0.4`, hiding open doorways from `world.raycast`, and `(!door.locked || door.key)` failed because `Door` has no `.key` property; (4) `StormworksSupervisor.crew` spawned at `y = 0.1` with min-water `-99`; (5) `game.ts` fed global `this.shake * 420` to all crew and omitted Level 1/3 `deckFloorY`, hole mesh disposal, TNT hydrodynamics, and remote bilge toggle.
+- Solution:
+  1. In `shipNavGraph.ts` & `game.ts`: Rebuilt `NODES`/`EDGES` around obstacle-free deck walkways (`deck_port_aft/mid/prehold/fwd/bow`), catwalks (`x = +-9.55, z = -43.2`), Level 0 starboard stairwell bypass (`x = 0.875`), Control Room North bypass around `engineHole`, connected Level 1/2 stair landings/cabins without phantom walls, engine side aisles around the diesel engine, and updated all 22 crew spawns/patrols plus multi-deck `deckFloorY` (`12.6/9.4/6.2/3.0/-5.0`).
+  2. In `crew.ts`: Widened ship bounds clamp to `x in [-10.2, 10.2], z in [-68.5, 62.0]`; scanned `world.boxes` (including disabled open door colliders) regardless of `stairMode` for perpendicular doorway alignment; removed the broken `door.key` guard; and added idle patrol kit/ladder replenishment after `8.0s` when no breaches are targeted.
+  3. In `stormworksSupervisor.ts` & `enemies.ts`: Grounded `supervisor.crew` on `DECK_Y = 3.0` with patrol routes, peer separation, and accurate active flood level (`Math.max`); upgraded `Guard.moveTo()` to route via `navgrid.ts` A* and open swinging doors in the approach direction.
+  4. In `game.ts` & `Hud.tsx`: Attenuated blast ragdoll impulse per crew member by inverse-square distance (`lastBlast`), pushed loose `dyns` radially, added water drag/buoyancy/splash to thrown TNT in `updateDyns`, removed/disposed 3D breach meshes upon seal, translated remaining German strings to English, and added `remoteToggleBilgePumps()` + button in the `[TAB]` Command Tablet.
+- Verification: `npx tsc --noEmit`, `npx tsc -p detailed-3d-sinking-freighter-game_sonnet/tsconfig.json --noEmit`, `npm test` (all 12 Node test suites including new catwalk/bypass/open-door regression checks + 10 Python CI checks), `npm run build`, Sonnet Vite build, and `npm run docs:check` passed after final edits.
+- Prevention: Validate every navigation graph node and spawn/patrol coordinate against actual collider bounds (walls, stairs, railings, furniture, machinery, containers), keep open-door alignment active via `world.boxes`, and test multi-floor/catwalk/doorway topology in `tests/crew-navigation.test.mjs`.
+- Related files / skills: `detailed-3d-sinking-freighter-game_sonnet/src/game/shipNavGraph.ts`, `crew.ts`, `stormworksSupervisor.ts`, `enemies.ts`, `game.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/ui/Hud.tsx`, `tests/crew-navigation.test.mjs` / `error-fix-document`.
+
+### ERR-2026-11-13-11 - Catwalk Edge Cornering, Doorway Collider Centering & Ragdoll Fall-and-Stand Recovery
+
+- Date (Europe/Berlin): 2026-11-13
+- Area: Crew AI Edge/Doorframe Recovery (`navgrid.ts`, `crew.ts`)
+- Status: Resolved
+- Symptom: Bots could repeatedly loop on narrow catwalk corners (`0.90m` clearance) and doorframes for long runs instead of forcing past or falling/standing up to break the loop.
+- Root cause: (1) `navgrid.ts` (`pad = 0.08`) choked the `0.90m` catwalk clearance and steered diagonally into the superstructure corner; (2) `walkToward()` did not center-align onto the exact doorway `Collider` center; (3) `monitorProgressAndUnstick()` only hopped laterally and reversed `patrolIndex`, allowing indefinite edge loops.
+- Fix: Lowered `navgrid.ts` padding to `0.04` and bypassed 2D `navgrid` on narrow catwalks (`shipNavGraph` centerline), added doorway `Collider` center-alignment in `walkToward()`, upgraded `stuckCount === 2` to a forward force-vault (`0.75m` + `0.35m` hop), and added `stuckCount >= 3` brief ragdoll fall-and-stand recovery (`fallRecovery`, `1.15-1.9s`) that tumbles past the snag and resumes cleanly.
+- Prevention: Break persistent edge/doorframe loops with a physical forward force-vault followed by a brief ragdoll fall/stand-up reset rather than reversing patrol waypoints indefinitely.
+- Related files / skills: `detailed-3d-sinking-freighter-game_sonnet/src/game/crew.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/navgrid.ts`, `tests/crew-navigation.test.mjs`.
+
+### ERR-2026-11-13-10 - Peer Yielding, Catwalk Lateral Sidestep & Exterior Wall-Climb Fallback
+
+- Date (Europe/Berlin): 2026-11-13
+- Area: Crew AI Peer Separation & Exterior Traversal (`crew.ts`)
+- Status: Resolved
+- Symptom: Bots could overlap inside each other on narrow catwalks (`isOnNarrowCatwalk` previously skipped separation), push continuously head-on without yielding, or stall outside elevated hull/superstructure walls.
+- Root cause: `stepCrew()` skipped peer separation on narrow catwalks and had no priority-based `yieldTimer` waiting or exterior vertical wall-climbing fallback.
+- Fix: Enabled `0.52m` no-cramming peer separation everywhere (with lateral sidestepping on catwalks), added `yieldTimer` so lower-priority bots wait cleanly instead of pushing forever, and added `wallClimbing` fallback when blocked outside (climbs up to fix the breach and jumps down cleanly onto the deck upon `"sealed"`).
+- Prevention: Never disable peer separation completely on narrow corridors; use lateral sidestep + priority yielding, and provide a clean exterior wall-climb/jump-down fallback.
+- Related files / skills: `detailed-3d-sinking-freighter-game_sonnet/src/game/crew.ts`, `tests/crew-navigation.test.mjs`.
+
+### ERR-2026-11-13-09 - Stair-Entry Ping-Pong Fix, Anti-Oscillation Replanning & Expanded 22-NPC Crew Roster
+
+- Date (Europe/Berlin): 2026-11-13
+- Area: Crew AI Stair Alignment & Population (`shipNavGraph.ts`, `crew.ts`, `game.ts`)
+- Status: Resolved
+- Symptom: Bots oscillated back and forth ("hin und her") in front of Level 1/2 stairwells and cabin doors instead of climbing through, and the ship needed more crew NPCs across all decks.
+- Root cause: (1) `findNextShipGraphWaypoint()` skipped `path[1]` stair-entry nodes at `< 0.85m`, causing bots in the corridor to angle diagonally into the stairwell center divider wall, bounce back `>= 0.85m`, and ping-pong between `path[1]` and `path[2]`; (2) `monitorProgressAndUnstick()` flipped `slideSign` every `0.45s` (`stuckCount >= 1`), amplifying back-and-forth oscillation; (3) Level 1/2 lacked cabin doorway center nodes and `distXZ < 3.2` bypassed the graph near walls.
+- Fix: Tightened stair-entry alignment tolerance to `0.35m` and direct-target shortcut to `1.1m`, added Level 1/2 cabin doorway nodes, removed premature `slideSign` flipping at `stuckCount === 1`, and expanded `deckCrew` to 19 active NPCs (22 total with `supervisor.crew`) across Bridge, Officer/Cabin Decks, Catwalks, Control Room, Main Deck, Engine Room, and Cargo Holds 1-3.
+- Prevention: Never skip a stair-entry node before strict centerline alignment (`<= 0.35m`), and never flip lateral steering sign on the first replan attempt.
+- Related files / skills: `detailed-3d-sinking-freighter-game_sonnet/src/game/shipNavGraph.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/crew.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/game.ts`, `tests/crew-navigation.test.mjs`.
+
+### ERR-2026-11-13-08 - Progress-Based Crew Replanning, Doorway Centering & Interactive Ship Bilge Pumps
+
+- Date (Europe/Berlin): 2026-11-13
+- Area: Crew AI Replanning & Ship Dewatering (`crew.ts`, `shipNavGraph.ts`, `shipBuilder.ts`, `game.ts`)
+- Status: Resolved
+- Symptom: Bots that bounced off peers or doorframes could run in place without recomputing paths, failed to align cleanly through all doorways, and the ship lacked physical interactive bilge pumps to pump water out.
+- Root cause: (1) Stuck detection checked single-frame speed (`moved < 0.2 * dt`), which missed lateral oscillation/bouncing and did not clear `navWaypoint` on peer collisions; (2) `shipNavGraph.ts` lacked explicit doorway-center nodes for Level 0 interior/exterior doors and `barrierHit` deflected bots at open doorframes; (3) only portable crew pumps existed with no physical ship-mounted bilge pumps or master consoles.
+- Fix: Added `monitorProgressAndUnstick()` (0.45s net-displacement check -> immediate `navWaypoint` reset, `slideSign` flip, and self-unstick hop), peer-bounce path reset, doorway-center nodes in `shipNavGraph.ts`, open-doorway `barrierHit` suppression, and 6 interactive `BilgePumpUnit` stations (4 compartment pumps at `16 m^3/s` each + Bridge & Control Room master consoles).
+- Prevention: Measure net progress over a time window rather than single-step speed when triggering A* replanning, and anchor graph edges at exact doorway centers.
+- Related files / skills: `detailed-3d-sinking-freighter-game_sonnet/src/game/crew.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/shipNavGraph.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/shipBuilder.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/game.ts`, `tests/crew-navigation.test.mjs`.
+
+### ERR-2026-11-13-07 - 3D ShipNavGraph Stair Mode, Stair Tagging & Narrow Catwalk Separation Fix
+
+- Date (Europe/Berlin): 2026-11-13
+- Area: Crew AI 3D Pathfinding & Stair/Catwalk Navigation (`shipNavGraph.ts`, `navgrid.ts`, `crew.ts`, `shipBuilder.ts`)
+- Status: Resolved
+- Symptom: Bots got stuck on overlapping superstructure/lower-deck stair flights (sliding sideways into stairwell divider walls) and on the narrow `1.15m` exterior catwalk (`|x| ~ 9.45m`).
+- Root cause: (1) `stairSteps` colliders were untagged (`"wall"`), so `navgrid.ts` marked stairs as impassable floor obstacles and `walkToward()`'s `barrierHit` ray at `y + 0.75` mistook the next stair step for a vertical wall and pushed bots sideways into the center divider; (2) `computeDeckWaypoint` used ad-hoc heuristics instead of an explicit 3D deck/stair/doorway graph; (3) `0.72m` peer separation pushed passing bots sideways into the `1.15m` catwalk walls and railings.
+- Fix: Added `shipNavGraph.ts` (~46 nodes across exterior deck/catwalks, Deck 0-3 corridors/rooms, A/B stairs, `engineHole`, `holdHole`, and lower holds), tagged `stairSteps` colliders `"stair"` in `shipBuilder.ts`, skipped `"stair"` colliders in `navgrid.ts` and `walkToward()`, bypassed wall-slide/grid-steering when `onStair` is active, and suppressed peer separation on narrow catwalks and inside stairwells.
+- Prevention: Never treat sloped/stepped stair colliders as horizontal wall obstacles in 2D floor grids or chest-height barrier rays; route multi-deck and narrow-corridor movement through an explicit 3D node-edge graph with `onStair` mode.
+- Related files / skills: `detailed-3d-sinking-freighter-game_sonnet/src/game/shipNavGraph.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/crew.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/navgrid.ts`, `detailed-3d-sinking-freighter-game_sonnet/src/game/shipBuilder.ts`, `tests/crew-navigation.test.mjs`.
+
+### ERR-2026-11-13-06 - 2D Grid A* Pathfinding, Proactive Door Opening & Patrol Waypoint Routing
+
+- Date (Europe/Berlin): 2026-11-13
+- Area: Crew AI Pathfinding (`navgrid.ts`, `crew.ts`)
+- Status: Resolved
+- Symptom: Bots still walked in place in front of closed corridor doors or against interior walls/corners during patrol and off-axis movement.
+- Root cause: (1) `walkToward()` used a single forward `doorRay` that missed off-axis doors and did not wait for the swinging door collider (`open < 0.65`) to clear, causing `stuckTime` / `exteriorBypass` loops; (2) `patrol` bypassed `computeDeckWaypoint()` and walked straight through walls; (3) local 5-ray steering without a real floor-level A* NavGrid cannot route around L-shaped walls, stair columns, or narrow `1.0m` doorways.
+- Solution: Added `navgrid.ts` (`findNextGridWaypoint`) building a `0.35m` per-floor 8-way A* grid from `CollisionWorld.boxes` with `0.08m` Minkowski inflation, full perpendicular doorway passage carving, wall-clearance cost weighting (`cost = 5`), and 1-step look-ahead (no corner cutting); added proactive omnidirectional door opening + swing-wait pause and tangential surface-normal barrier sliding with `0.6s` anti-oscillation `slideSign` in `walkToward()` (`crew.ts`); routed `patrol` through `computeDeckWaypoint()` + A*; and added `testGridAStarDoorwayAndWallBypass` in `tests/crew-navigation.test.mjs`.
+- Verification: `npx tsc --noEmit` (root & sonnet), `npm test`, `npm run build`, and `npm run docs:check` executed after final edit.
+- Prevention: Always use floor-level A* (`navgrid.ts`) + proactive doorway clearance for both `patrol` and `moving`, and never count door swing time toward `stuckTime`.
+- Related files / skills: `detailed-3d-sinking-freighter-game_sonnet/src/game/navgrid.ts`, `crew.ts`, `tests/crew-navigation.test.mjs` / `error-fix-document`
+
+### ERR-2026-11-13-05 - Window Burst Hole Ring, Doorway Steering Lock & Below-Deck Crew Descent
+
+- Date (Europe/Berlin): 2026-11-13
+- Area: Crew Doorway & Wall-Slide Navigation, Below-Deck Descent, Window Burst Visuals
+- Status: Resolved
+- Symptom: (1) Burst windows rendered a circular steel hull-breach ring inside the glass opening; (2) crew froze in narrow `1.0m` doorframes or walked head-first into corridor walls; (3) crew could not descend into lower cargo holds/engine room after explosions due to locked keycard doors (`red`/`blue`), missing `holdHole`/bulkhead routing, and lack of drop-down fallback.
+- Root cause: (1) `game.ts` called `this.makeHoleVisual(hole)` on `shouldWindowBurst` even though `this.breakGlass(pane)` already handled the shattered window; (2) `CrewBody.r = 0.34` + 5-ray `computeAntiClippingSteering` deflected crew into narrow `1.0m` doorjambs and perpendicular corridor walls; (3) `walkToward` skipped doors with `door.locked === true` and `computeDeckWaypoint` lacked `holdHole`/side-room/bulkhead waypoints.
+- Solution: Removed `this.makeHoleVisual(hole)` from window burst in `game.ts`; reduced `CrewBody.r` to `0.2`, bypassed 5-ray steering when threading doors, added 90-degree wall-slide clearance (`walkToward`), added side-room/corridor/`holdHole`/bulkhead routing (`computeDeckWaypoint`), granted crew master-key door access (`door.key`), and added shaft jump (`vy = 4.2`) + `2.2s` drop-down fallback (`stepCrew`) plus regression test `testBelowDeckDescentAndDropJump`.
+- Verification: `npx tsc --noEmit` (root & sonnet), `npm test`, `npm run build`, and `npm run docs:check` executed after final edit.
+- Prevention: Never spawn steel hull-breach rings on broken glass panes; test multi-deck crew descent, doorway clearance, and wall-slide steering in `tests/crew-navigation.test.mjs`.
+- Related files / skills: `detailed-3d-sinking-freighter-game_sonnet/src/game/crew.ts`, `game.ts`, `tests/crew-navigation.test.mjs` / `error-fix-document`
+
+### ERR-2026-11-13-04 - Superstructure Ocean Wave Clipping & Water Query Isolation
+
+- Date (Europe/Berlin): 2026-11-13
+- Area: Ocean Shader Clipping, Superstructure Water Isolation
+- Status: Resolved
+- Symptom: (1) Ocean waves visibly clipped and rendered inside the enclosed superstructure rooms (e.g., Engine Control Room at `y = 3.0`) through solid collision walls when the ship heeled or waves rose above `lp.y = 2.95`, and `waterAt` reported ocean water inside dry superstructure compartments; (2) the temporary `engineHole2` deck cutout and U-stair at `x = 4.6..7.6, z = -44.2..-39.8` obstructed the main deck in front of the superstructure entrance.
+- Root cause: (1) The ocean fragment shader in `ocean.ts` only discarded fragments inside the lower hull (`lp.y < 2.95`), leaving the superstructure volume (`lp.y >= 2.95 && lp.y < 15.6`, `abs(lp.x) < 8.85`, `lp.z` in `-65.7..-44.3`) unclipped, while `waterAt` in `game.ts` only checked `this.ship.compartments` (`y <= 2.95`) before falling back to `this.ocean.height(...)`; (2) `engineHole2` had been placed directly on the open weather deck instead of routing via the aft Engine Control Room staircase (`engineHole`).
+- Solution: Added a superstructure interior discard in `ocean.ts` (`lp.y >= 2.95 && lp.y < 15.6 && lp.z > -65.7 && lp.z < -44.3 && abs(lp.x) < 8.85`), guarded `waterAt` in `game.ts` to return `-Infinity` inside intact superstructure when `sinkDepth < 14`, removed `engineHole2` and its deck railings from `shipBuilder.ts`, and updated `computeDeckWaypoint()` in `crew.ts` to route down into the Engine Room via the Main Entrance and aft `engineHole` U-stair.
+- Verification: `npx tsc --noEmit` (root & sonnet), `npm test`, `npm run build`, and `npm run docs:check` executed after final edit.
+- Prevention: Ensure both visual ocean shader cutouts and physical `waterAt` queries cover all enclosed ship volumes above `y = 2.95` as well as lower hull compartments, and never cut ad-hoc stairwells into the open weather deck outside established superstructure/hold access shafts.
+- Related files / skills: `detailed-3d-sinking-freighter-game_sonnet/src/game/ocean.ts`, `game.ts`, `shipBuilder.ts`, `crew.ts` / `error-fix-document`
+
+### ERR-2026-11-13-03 - Grounded Crew Routing, Airborne Fall/Swim Animations, Engine Room Staircase, Laser Debris & Battleship Sticky TNT
+
+- Date (Europe/Berlin): 2026-11-13
+- Area: Crew Physics & Multi-Deck Navigation, Orbital Laser Debris, Freighter Stairs, TNT Physics
+- Status: Resolved
+- Symptom: (1) Crew climbed exterior walls into mid-air toward bridge windows instead of using doors and interior stairs, and lacked airborne fall/swim animations; (2) Engine Room only had the aft Control Room staircase; (3) Orbital Laser section destruction left crew trying to repair obliterated sections without dropping floating crates; (4) thrown TNT passed through Battleship hulls instead of sticking as physics bodies.
+- Root cause: (1) `stepCrew()` allowed `deploying_ladder` for high exterior targets (`target.y > 3.2`) and lacked interior stair waypoints, airborne fall tracking, and underwater swimming physics; (2) forward Engine Room deck slab lacked a second open stair opening; (3) `fireOrbitalDeathRay` did not clear destroyed compartment holes, detach crates, or nudge crew into the water; (4) `updateDyns()` only tested `this.ship.world` without checking Battleship OBBs.
+- Solution: Added `computeDeckWaypoint()` (routing via Main Entrance + interior Superstructure stairs `LV = [3.0, 6.2, 9.4, 12.6]` and forward Engine Room stair), restricted `deploying_ladder` to lower holds (`target.y <= 3.2 && m.y < 2.0`), added airborne `falling` flail + underwater `swimming` physics & animations (`crew.ts`, `crewVisual.ts`), added second open Engine Room U-stair (`engineHole2` in `shipBuilder.ts`), detached up to 6 floating crates & cleared destroyed breaches on Orbital Laser section destruction, and added Battleship OBB sticking (`attachedBs`, `MAX_DYNS = 24`) + `260` HP detonation damage in `game.ts`.
+- Verification: `npx tsc --noEmit` (root & sonnet), `npm test`, `npm run build`, and `npm run docs:check` executed after final edit.
+- Prevention: Never allow portable-ladder mid-air climbs above `y = 3.2`; route multi-deck crew via interior stair waypoints and test dynamic props (`dyns`) against all active vessel OBBs.
+- Related files / skills: `detailed-3d-sinking-freighter-game_sonnet/src/game/crew.ts`, `crewVisual.ts`, `stormworksSupervisor.ts`, `shipBuilder.ts`, `game.ts` / `error-fix-document`
+
+### ERR-2026-11-13-02 - Crew Window Repair, Door/Stair Traversal, Bilge Pumping & Closed-Door Water Bleed
+
+- Date (Europe/Berlin): 2026-11-13
+- Area: Damage Control Crew AI, Crew Visuals, Compartment Water Containment
+- Status: Resolved
+- Symptom: (1) Crew could not repair broken windows (`repair` callback never fired); (2) crew got stuck in front of doors and on stairs; (3) crew standing in flooded compartments did not hold a bilge pump or pump water out; (4) water level queries and water planes bled slightly past closed bulkhead doors.
+- Root cause: (1) `stepCrew()` in `crew.ts` decremented `target.area` without invoking `target.repair?.(sealedDelta)`; (2) `crewRay` in `game.ts` included `"door"` colliders causing `computeAntiClippingSteering` to steer crew away before `doorRay` opened them, and `body.step` was `0.35`; (3) `CrewVisual` only had a welding torch and `game.ts` did not drain flooded compartments when crew stood in water; (4) `waterAt` checked `z >= c.min.z - 0.3 && z <= c.max.z + 0.3` and compartment water `PlaneGeometry` had `+ 2` margin.
+- Solution: Added `repair?: (amount: number) => void` invocation in `crew.ts`, increased `doorRay` range to `1.8` and `body.step` to `0.48`, filtered `"door"` out of `crewRay` in `game.ts`, added a visible portable bilge pump in `crewVisual.ts` (`member.pumping`) paired with active compartment draining (`1.8 m^3/s` per pumping crew member) in `game.ts`, tightened `waterAt` bounds to `[c.min, c.max]`, and removed the `+ 2` margin on compartment `PlaneGeometry` in `shipBuilder.ts`.
+- Verification: `npx tsc --noEmit` (root & sonnet), `npm test`, `npm run build`, and `npm run docs:check` executed after final edit.
+- Prevention: Always pass custom `repair` callbacks through `CrewBreach`, exclude dynamic `"door"` colliders from anti-clipping steering rays, and keep `waterAt` / `PlaneGeometry` bounds strictly inside `[c.min, c.max]`.
+- Related files / skills: `detailed-3d-sinking-freighter-game_sonnet/src/game/crew.ts`, `crewVisual.ts`, `game.ts`, `shipBuilder.ts` / `error-fix-document`
+
+### ERR-2026-11-13-01 - Orbital Death Ray, Multi-Part Destruction, Hull Collisions & Fleet Battle AI
+
+- Date (Europe/Berlin): 2026-11-13
+- Area: Orbital Death Ray, Space Station, Multi-Part Ships, Hull Collisions, Fleet AI, HUD
+- Status: Resolved
+- Symptom: (1) Orbital laser spawned 80ms cylinder bursts instead of a persistent beam; (2) Earth sphere occluded ocean/ships until zoomed inside; (3) Freighter vanished in 1 frame or left giant floating hull/container plates; (4) `[TAB]` Tablet had duplicate Salvo/Missile buttons alongside Fleet Strike; (5) Fleet Battle AI rammed vessels without avoiding collisions or firing real projectiles at both Battleships and Freighter.
+- Root cause: (1) Per-burst geometry creation + `setTimeout`/`setInterval`; (2) `earthMesh` visible in orbital view regardless of zoom; (3) unpartitioned `InstancedMesh` containers & missing `ShipSim.reset()` fields; (4) redundant single-ship fire buttons in `Hud.tsx`; (5) `stepBattleshipAI()` lacked obstacle avoidance and `onTurretFire` only drew tracers without spawning `navalProjectiles`.
+- Solution: Added persistent `orbitalBeamGroup`, zoom-gated `earthMesh`, 13-section Freighter + `InstancedMesh` partitioning, 8-part Battleships, complete `ShipSim.reset()` & `restoreFreighter()`, `vesselCollision.ts` OBB hull collisions + quadratic speed damage, `[TAB]` Fleet Strike (`fleetStrikeFreighter`), `[X]` Target Lock + seeking missiles, live `vesselStatusSnapshot()` HUD, and obstacle-avoidance + real shell projectiles in Fleet Battle AI.
+- Verification: `npx tsc --noEmit` (root & sonnet), `npm test` (12 Node suites + 10 Python CI checks), `npm run build`, GitHub CI runs `43400718381` & `43400718327` passed.
+- Prevention: Keep `tests/orbital-laser-and-multipart.test.mjs` and `tests/vessel-collision.test.mjs` wired in `npm test`, and avoid duplicating single-ship attack buttons in `Hud.tsx`.
+- Related files / skills: `detailed-3d-sinking-freighter-game_sonnet/src/game/game.ts`, `battleships.ts`, `vesselCollision.ts`, `shipBuilder.ts`, `spaceStation.ts`, `Hud.tsx` / `error-fix-document`
 
 Keep secrets, tokens, account identifiers, and private URLs out of this ledger.
 Use exact commands and real run IDs when they exist.
@@ -392,135 +722,6 @@ Use exact commands and real run IDs when they exist.
 - Related files / skills: `tools/check_skill_docs.py`, `docs/AGENT_TOOLS.md`,
   `AGENTS.md`, `documentation-maintenance`, `ci-workflow-audit`.
 
-
-### ERR-2026-11-13-03 - Collision solver teleported embedded bodies and accepted NaN deltas
-
-- Date (Europe/Berlin): 2026-11-13
-- Area: `CollisionWorld.move` (`physics.ts`) used by the player, crew, guards and debris
-- Status: Resolved
-- Symptom: A body that spawned, was teleported, pushed by a blast or caught by a
-  closing door inside a collider was snapped onto the roof of that collider.
-  Dropping into any overlapping geometry moved the player to `y = 9` (the top of
-  the wall) instead of leaving them where they were. A single `NaN` velocity
-  (division by a zero-length frame somewhere upstream) permanently poisoned
-  `body.x`, and the vertical pass also resolved collisions against colliders
-  whose `enabled` flag was false.
-- Root cause: The vertical pass treated *any* overlapping box as a floor and set
-  `body.y = b.maxY` without checking whether the body had actually been above
-  that surface before the step. There was no depenetration path and no
-  `Number.isFinite` guard on the incoming deltas.
-- Solution:
-  1. Land only when `prevY >= b.maxY - 0.02` (the highest such surface wins);
-     block ceilings only when `prevY + h <= b.minY + 0.02`.
-  2. New `depenetrate()` separates a genuinely embedded body along its shallowest
-     penetration axis, reports `hitX/hitY/hitZ`, and climbs onto the roof only
-     when that **is** the shallowest axis.
-  3. Non-finite `dx/dy/dz` are replaced with `0`, and the vertical pass honours
-     `Collider.enabled` exactly like the horizontal and overlap passes.
-- Verification: `tests/physics-integrity-and-orientation.test.mjs` - an embedded
-  body is pushed out of a 9 m wall (stays at `y < 2`, `z` moves > 0.5 m), a
-  30 m/s fall still lands on the deck at `y = 0.4`, and `move(body, NaN, 0, NaN)`
-  leaves the position finite.
-- Prevention: The new suite runs inside `npm test`, and `tools/ci_check.py`
-  fails when it is no longer wired in.
-- Related files / skills: `.../game/physics.ts`,
-  `tests/physics-integrity-and-orientation.test.mjs`, `error-fix-document`.
-
-### ERR-2026-11-13-04 - Trapped-air regulator was dead code and flooding ignored the wave surface
-
-- Date (Europe/Berlin): 2026-11-13
-- Area: `shipSim.ts` flooding model, `stormworksSupervisor.ts`, `ingress.ts`
-- Status: Resolved
-- Symptom: Sealed compartments flooded exactly like vented ones: a breached
-  sealed engine room reached 69-100 % fill within 80 s even though the Boyle
-  pocket cap at that depth is about 25 %. The Torricelli head was computed
-  against a fixed sea level `y = 0`, so a hull breach that was above a wave
-  trough still flooded and a crest did not increase the inflow.
-- Root cause: `StormworksSupervisor.step()` scaled `c.flow` *before* calling
-  `shipSim.update()`, but the simulation recomputes `c.flow` from scratch every
-  step, so the factor never reached the integral. `ShipSim.update()` had no
-  notion of the real sea surface at the hole and no regulator hook.
-- Solution:
-  1. `ShipSim.update(dt, t, ocean, floodSpeed, inflowFactor?)` accepts a
-     per-compartment regulator and derives the head from
-     `ocean.height(worldX, worldZ, t)` at the hole (hole position projected with
-     `matrixWorld`).
-  2. The supervisor builds `regulator(c)` from the matrix-projected hole
-     depth (`inflowFactor(pocket, c.water, depth)`) and passes it as the fifth
-     argument; vented holds and compartments without holes pass `1`.
-  3. Merged blast openings are clamped to `MAX_HOLE_AREA = 6 m²`, and the wreck
-     stops descending at `WRECK_REST_DEPTH = 135 m` instead of sinking forever.
-- Verification: `supervisor.mjs` scratch run shows the sealed engine inflow
-  decaying `45.1 -> 5.9 m³/s` instead of staying at ~53 m³/s; the new unit test
-  floods a sealed engine to < 60 % and a vented hold to > 90 %, keeps a hole
-  above a -6 m sea surface dry, and proves the 6 m² cap.
-- Prevention: `ingress.ts` no longer claims to be an unwired prototype, and the
-  regulator signature is covered by a test so the parameter cannot silently be
-  dropped again.
-- Related files / skills: `.../game/shipSim.ts`, `.../game/stormworksSupervisor.ts`,
-  `.../game/ingress.ts`, `.../game/shipTypes.ts`,
-  `tests/physics-integrity-and-orientation.test.mjs`, `error-fix-document`.
-
-### ERR-2026-11-13-05 - Every vessel steamed stern-first and rudders turned the wrong way
-
-- Date (Europe/Berlin): 2026-11-13
-- Area: Freighter helm (`bridge.ts`, `game.ts`) and battleship steering (`battleships.ts`)
-- Status: Resolved
-- Symptom: With `astern` orders the freighter moved *bow first*, and a starboard
-  rudder order swung the bow to port. The AI freighter autopilot used the same
-  inverted convention, so its emergency turn became a turn into the attacker,
-  and battleship AI oversteered away from its target.
-- Root cause: The Nordwind model carries its bow on local **+Z**, but propulsion
-  used `(-sin h, 0, -cos h)` (the camera/Oz convention), while `stepHelm` added
-  the yaw rate for a positive (starboard) rudder. Both signs were inverted
-  relative to the mesh, and `atan2(-dx, -dz)` headings matched the old error.
-- Solution: Added `vesselForward(heading) = (sin h, cos h)` to `bridge.ts`, moved
-  the freighter along it, subtracted the yaw rate for starboard rudder and
-  wrapped the heading to +/-PI. The autopilot now uses `atan2(awayX, awayZ)` and
-  sends `-hDiff` as the rudder order. Battleships got the same sign fix plus a
-  heading wrap. `battleshipHitTest()` replaces the 14 m centre sphere with a
-  yaw-aware 57 m x 12 m x 12.6 m hull envelope.
-- Verification: `tests/vessel-steering-and-engine-breakdown.test.mjs` and
-  `tests/stormworks-prototypes.test.mjs` assert that a +25 deg rudder lowers the
-  heading, that heading 0 advances toward +Z, and that the bow moves to -X when
-  turning to starboard; the new suite checks bow/stern hits, beam and overshoot
-  misses, a 90 deg rotated hull, and that AI closes 40+ m on a distant target.
-- Prevention: The convention is documented at `vesselForward`, and both old
-  tests that encoded the wrong sign were corrected in the same commit.
-- Related files / skills: `.../game/bridge.ts`, `.../game/game.ts`,
-  `.../game/battleships.ts`, `tests/vessel-steering-and-engine-breakdown.test.mjs`,
-  `tests/stormworks-prototypes.test.mjs`,
-  `tests/physics-integrity-and-orientation.test.mjs`, `error-fix-document`.
-
-### ERR-2026-11-13-06 - Ragdoll damping was frame-rate dependent and crew breach ids shifted
-
-- Date (Europe/Berlin): 2026-11-13
-- Area: `ragdoll.ts`, `crew.ts`, `stormworksSupervisor.ts`
-- Status: Resolved
-- Symptom: Ragdoll limbs behaved differently at 30 fps and 144 fps, and a crew
-  member repairing a breach could switch to a different hole after an unrelated
-  repair finished. Crew ragdolls also re-triggered on the next frame after
-  recovery while the water flow was still violent, producing one
-  `[NORDWIND/CREW] ... ragdoll_triggered` log line per step, and the breach
-  write-back loop ran once per crew member (3x per frame) with a `holes` filter
-  nested inside the compartment loop.
-- Root cause: Velocity retention used a fixed `0.98` per *frame* instead of a
-  per-second decay; breach ids were renumbered `1..n` every frame; there was no
-  cooldown after a ragdoll recovered; and the synchronization block sat inside
-  the `for (const member of this.crew)` loop.
-- Solution: `damp = exp(-1.2 * dt)`; a zero-length or non-finite ragdoll step is
-  skipped instead of dividing by `dt`; `Hole.breachId` is assigned once and
-  reused; `ragdollCooldown = 6 s` after recovery; and the breach write-back plus
-  the fully-patched-hole filter now run once per frame after the crew loop.
-- Verification: `tests/ragdoll-physics.test.mjs` and the new suite pass with the
-  dt guard, and `tests/stormworks-supervisor.test.mjs` still proves that the
-  autonomous crew seals a deck breach after the sync refactor.
-- Prevention: The cooldown and the stable ids are commented at their definition
-  sites, and the supervisor sync loop is no longer nested in the crew loop.
-- Related files / skills: `.../game/ragdoll.ts`, `.../game/crew.ts`,
-  `.../game/stormworksSupervisor.ts`, `.../game/shipTypes.ts`,
-  `tests/ragdoll-physics.test.mjs`, `tests/stormworks-supervisor.test.mjs`,
-  `error-fix-document`.
 
 
 ## Open incidents

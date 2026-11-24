@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { Body, CollisionWorld } from "./physics";
 import type { Door, GuardSpawn } from "./shipTypes";
+import { findNextGridWaypoint } from "./navgrid";
 
 const mats = {
   suit: new THREE.MeshStandardMaterial({ color: 0x2c4a73, roughness: 0.85 }),
@@ -60,6 +61,8 @@ export class Guard {
   private avoidAng = 0;
   private drown = 0;
   private aimPose = 0;
+  private navWp: { x: number; z: number } | null = null;
+  private navT = 0;
   name: string;
   private color: THREE.MeshStandardMaterial;
   private spawn: THREE.Vector3;
@@ -145,10 +148,24 @@ export class Guard {
   }
 
   private moveTo(dt: number, tx: number, tz: number, speed: number, ctx: GuardCtx) {
-    let dx = tx - this.body.x,
-      dz = tz - this.body.z;
+    let steerX = tx;
+    let steerZ = tz;
+    if (ctx.world.boxes && Math.hypot(tx - this.body.x, tz - this.body.z) > 1.1) {
+      this.navT -= dt;
+      const wpClose = this.navWp ? Math.hypot(this.navWp.x - this.body.x, this.navWp.z - this.body.z) < 0.55 : true;
+      if (this.navT <= 0 || wpClose || !this.navWp) {
+        this.navWp = findNextGridWaypoint(ctx.world.boxes, this.body.x, this.body.y, this.body.z, tx, tz);
+        this.navT = 0.25;
+      }
+      if (this.navWp) {
+        steerX = this.navWp.x;
+        steerZ = this.navWp.z;
+      }
+    }
+    let dx = steerX - this.body.x,
+      dz = steerZ - this.body.z;
     const d = Math.hypot(dx, dz);
-    if (d < 0.05) return d;
+    if (d < 0.05) return Math.hypot(tx - this.body.x, tz - this.body.z);
     dx /= d;
     dz /= d;
     if (this.avoidT > 0) {
@@ -165,16 +182,19 @@ export class Guard {
     while (da > Math.PI) da -= Math.PI * 2;
     while (da < -Math.PI) da += Math.PI * 2;
     this.yaw += da * Math.min(1, dt * 8);
-    // Türen öffnen
-    const ray = ctx.world.raycast(this.body.x, this.body.y + 1.0, this.body.z, dx, 0, dz, 1.3, (c) => c.tag === "door");
+    // Open doors in approach direction
+    const ray = ctx.world.raycast(this.body.x, this.body.y + 1.0, this.body.z, dx, 0, dz, 1.4, (c) => c.tag === "door");
     if (ray && ray.collider.owner) {
       const door = ray.collider.owner as Door;
-      if (!door.locked && door.target === 0) door.forceOpen(Math.sign(this.body.z - door.fixed) || 1);
+      if (!door.locked && door.target === 0) {
+        const side = door.axis === "z" ? Math.sign(this.body.x - door.fixed) : Math.sign(this.body.z - door.fixed);
+        door.forceOpen(side || 1);
+      }
     }
-    const sp = Math.min(speed, d / Math.max(dt, 0.001));
+    const sp = Math.min(speed, Math.hypot(tx - this.body.x, tz - this.body.z) / Math.max(dt, 0.001));
     this.body.vx = dx * sp;
     this.body.vz = dz * sp;
-    return d;
+    return Math.hypot(tx - this.body.x, tz - this.body.z);
   }
 
   update(dt: number, ctx: GuardCtx) {

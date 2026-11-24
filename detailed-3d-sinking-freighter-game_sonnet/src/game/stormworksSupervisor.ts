@@ -86,12 +86,23 @@ export class StormworksSupervisor {
       });
     }
 
-    // Initialize standard 3-man Damage Control team on clear walkable DECK_Y lanes
-    this.crew.push(
-      createCrewMember("Chief Engineer", "chief-engineer", 9.2, 0.1, -34.0, 4),
-      createCrewMember("Boatswain", "boatswain", -9.2, 0.1, 4.0, 3),
-      createCrewMember("DC Sailor", "damage-control", 2.5, 0.1, 44.0, 5),
-    );
+    // Initialize standard 3-man Damage Control team on clear walkable DECK_Y (3.0) lanes
+    const chief = createCrewMember("Chief Engineer", "chief-engineer", 9.2, 3.0, -34.0, 4);
+    chief.patrol = [
+      { x: 9.2, y: 3.0, z: -38.0 },
+      { x: 8.5, y: 3.0, z: -9.2 },
+    ];
+    const bosun = createCrewMember("Boatswain", "boatswain", -9.2, 3.0, 4.0, 3);
+    bosun.patrol = [
+      { x: -8.5, y: 3.0, z: -9.2 },
+      { x: -8.5, y: 3.0, z: 17.5 },
+    ];
+    const sailor = createCrewMember("DC Sailor", "damage-control", 2.5, 3.0, 44.0, 5);
+    sailor.patrol = [
+      { x: 8.5, y: 3.0, z: 25.5 },
+      { x: 8.5, y: 3.0, z: 55.0 },
+    ];
+    this.crew.push(chief, bosun, sailor);
   }
 
   /**
@@ -186,18 +197,25 @@ export class StormworksSupervisor {
 
     // 7. Step Autonomous Damage Control Crew NPCs & Ragdoll Physics
     const vesselRollDeg = (this.sim.roll * 180) / Math.PI;
-    const lowestCompartmentWaterY = this.compartments.reduce((minY, c) => Math.min(minY, c.worldLevel), 0);
+    const floodedLevels = this.compartments
+      .filter((c) => c.fill > 0.004 && ((c as { level?: number }).level ?? c.worldLevel ?? -99) > -90)
+      .map((c) => (c as { level?: number }).level ?? c.worldLevel);
+    const activeWaterY = floodedLevels.length > 0 ? Math.max(...floodedLevels) : -999;
 
     for (const member of this.crew) {
+      const deckFloorY =
+        member.y >= 11.0 ? 12.6 : member.y >= 7.8 ? 9.4 : member.y >= 4.6 ? 6.2 : member.y >= 1.0 ? 3.0 : -5.0;
       const ev = stepCrew(member, dt, breaches, undefined, {
         navmesh: this.navmesh,
         raycast,
         world,
         waterVelocity: this.activeWaterVelocity,
-        waterLevelY: lowestCompartmentWaterY,
+        waterLevelY: activeWaterY,
         blastImpulse,
         vesselRollDeg,
-        deckFloorY: -5.0,
+        deckFloorY,
+        waterLevel: Number.isFinite(activeWaterY) && activeWaterY > -5 ? activeWaterY : undefined,
+        peers: this.crew,
       });
       if (ev) {
         console.log(`[NORDWIND/CREW] ${member.name} (${member.role}) -> ${ev} at (${member.x.toFixed(1)}, ${member.y.toFixed(1)}, ${member.z.toFixed(1)}) [kits=${member.patchKits}, breaches=${breaches.length}]`);

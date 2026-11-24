@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { CollisionWorld } from "./physics";
+import { Collider, CollisionWorld } from "./physics";
 import { TexSet, textTexture } from "./textures";
 import {
   Barrel,
@@ -25,10 +25,34 @@ import {
   hullHalfWidth,
 } from "./shipTypes";
 
+export interface ShipSection {
+  id: string;
+  name: string;
+  center: THREE.Vector3;
+  radius: number;
+  hp: number;
+  maxHp: number;
+  destroyed: boolean;
+  group: THREE.Group;
+  colliders: Collider[];
+}
+
+export interface BilgePumpUnit {
+  id: string;
+  name: string;
+  compId: string; // "engine" | "hold3" | "hold2" | "hold1" | "master"
+  pos: THREE.Vector3;
+  active: boolean;
+  rateM3s: number;
+  rotor: THREE.Object3D;
+  indicatorMat: THREE.MeshBasicMaterial;
+}
+
 export interface ShipModel {
   group: THREE.Group;
   waterGroup: THREE.Group;
   world: CollisionWorld;
+  sections: ShipSection[];
   doors: Door[];
   glass: GlassPane[];
   pickups: Pickup[];
@@ -38,6 +62,7 @@ export interface ShipModel {
   lampMat: THREE.MeshBasicMaterial;
   zones: THREE.Box3[];
   compartments: Compartment[];
+  bilgePumps: BilgePumpUnit[];
   markers: Marker[];
   lifeboats: Lifeboat[];
   guardSpawns: GuardSpawn[];
@@ -82,12 +107,17 @@ function boxGeo(sx: number, sy: number, sz: number, tile = 2.5): THREE.BoxGeomet
 }
 
 class Batch {
-  private m = new Map<string, THREE.BufferGeometry[]>();
-  constructor(private mats: Record<string, THREE.Material>) {}
-  add(g: THREE.BufferGeometry, mat: string) {
+  private m = new Map<string, Map<string, THREE.BufferGeometry[]>>();
+  constructor(
+    private mats: Record<string, THREE.Material>,
+    private sectionAt: (x: number, y: number, z: number) => string,
+  ) {}
+  add(g: THREE.BufferGeometry, mat: string, sectionId: string) {
     if (!this.mats[mat]) throw new Error("Unknown material " + mat);
-    let l = this.m.get(mat);
-    if (!l) this.m.set(mat, (l = []));
+    let secMap = this.m.get(sectionId);
+    if (!secMap) this.m.set(sectionId, (secMap = new Map()));
+    let l = secMap.get(mat);
+    if (!l) secMap.set(mat, (l = []));
     l.push(g);
   }
   box(mat: string, cx: number, cy: number, cz: number, sx: number, sy: number, sz: number, rotY = 0, tile = 2.5) {
@@ -95,28 +125,33 @@ class Batch {
     const g = boxGeo(sx, sy, sz, tile);
     if (rotY) g.rotateY(rotY);
     g.translate(cx, cy, cz);
-    this.add(g, mat);
+    this.add(g, mat, this.sectionAt(cx, cy, cz));
   }
   cyl(mat: string, cx: number, cy: number, cz: number, r: number, h: number, axis: "x" | "y" | "z" = "y", seg = 14, r2?: number) {
     const g = new THREE.CylinderGeometry(r2 ?? r, r, h, seg, 1);
     if (axis === "x") g.rotateZ(Math.PI / 2);
     else if (axis === "z") g.rotateX(Math.PI / 2);
     g.translate(cx, cy, cz);
-    this.add(g, mat);
+    this.add(g, mat, this.sectionAt(cx, cy, cz));
   }
-  build(parent: THREE.Object3D, disposables: THREE.BufferGeometry[]) {
-    for (const [mat, list] of this.m) {
-      const merged = mergeGeometries(list, false);
-      list.forEach((g) => g.dispose());
-      if (!merged) {
-        console.warn("merge failed for", mat);
-        continue;
+  build(sections: Map<string, ShipSection>, disposables: THREE.BufferGeometry[]) {
+    for (const [secId, matMap] of this.m) {
+      const parent = sections.get(secId)?.group;
+      if (!parent) continue;
+      for (const [mat, list] of matMap) {
+        const merged = mergeGeometries(list, false);
+        list.forEach((g) => g.dispose());
+        if (!merged) {
+          console.warn("merge failed for", mat);
+          continue;
+        }
+        disposables.push(merged);
+        const mesh = new THREE.Mesh(merged, this.mats[mat]);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        parent.add(mesh);
       }
-      disposables.push(merged);
-      const mesh = new THREE.Mesh(merged, this.mats[mat]);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      parent.add(mesh);
+      matMap.clear();
     }
     this.m.clear();
   }
@@ -192,22 +227,81 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
     ledRed: new THREE.MeshBasicMaterial({ color: 0xff3322 }),
     doorMat: std({ map: tex.steel, color: 0x8da0b4, roughness: 0.5, metalness: 0.5 }),
   };
-  const B = new Batch(mats);
+  const sectionSpecs: { id: string; name: string; center: [number, number, number]; radius: number; maxHp: number }[] = [
+    { id: "stern", name: "Stern & Rudder", center: [0, 0, -63], radius: 14, maxHp: 220 },
+    { id: "engine", name: "Engine Room", center: [0, 0, -47.5], radius: 15, maxHp: 260 },
+    { id: "hold3", name: "Cargo Hold 3", center: [0, 0, -23.5], radius: 18, maxHp: 260 },
+    { id: "hold2", name: "Cargo Hold 2", center: [0, 0, 9], radius: 19, maxHp: 260 },
+    { id: "hold1", name: "Cargo Hold 1", center: [0, 0, 39], radius: 16, maxHp: 240 },
+    { id: "bow", name: "Forecastle & Bow", center: [0, 1, 61], radius: 15, maxHp: 220 },
+    { id: "super_0", name: "Deckhouse Level 1", center: [0, 5.5, -52], radius: 14, maxHp: 180 },
+    { id: "super_1", name: "Deckhouse Level 2", center: [0, 8.8, -52], radius: 13, maxHp: 180 },
+    { id: "super_2", name: "Deckhouse Level 3", center: [0, 12.1, -52], radius: 12, maxHp: 160 },
+    { id: "bridge", name: "Navigation Bridge", center: [0, 15.5, -47], radius: 11, maxHp: 150 },
+    { id: "funnel", name: "Exhaust Funnel", center: [0, 16, -59.5], radius: 9, maxHp: 150 },
+    { id: "cargo_aft", name: "Aft Container Bay", center: [0, 6.5, -11], radius: 19, maxHp: 200 },
+    { id: "cargo_fwd", name: "Fwd Container Bay", center: [0, 6.5, 30], radius: 20, maxHp: 200 },
+  ];
+  const sections: ShipSection[] = sectionSpecs.map((s) => {
+    const sg = new THREE.Group();
+    sg.name = `section_${s.id}`;
+    group.add(sg);
+    return {
+      id: s.id,
+      name: s.name,
+      center: v3(s.center[0], s.center[1], s.center[2]),
+      radius: s.radius,
+      hp: s.maxHp,
+      maxHp: s.maxHp,
+      destroyed: false,
+      group: sg,
+      colliders: [],
+    };
+  });
+  const sectionMap = new Map<string, ShipSection>(sections.map((s) => [s.id, s]));
+  const sectionIdAt = (_x: number, y: number, z: number): string => {
+    if (y > 4.0) {
+      if (z < -30) {
+        if (y > 10.5 && z <= -55) return "funnel";
+        if (y > 13.8) return "bridge";
+        if (y > 10.5) return "super_2";
+        if (y > 7.2) return "super_1";
+        return "super_0";
+      }
+      if (z < 8) return "cargo_aft";
+      if (z < 52) return "cargo_fwd";
+      return "bow";
+    }
+    if (z < -56) return "stern";
+    if (z < -39) return "engine";
+    if (z < -8) return "hold3";
+    if (z < 26) return "hold2";
+    if (z < 52) return "hold1";
+    return "bow";
+  };
+
+  const B = new Batch(mats, sectionIdAt);
   const doorMat = mats.doorMat;
   const heavyDoorMat = std({ map: tex.rust, color: 0xb0b8c0, roughness: 0.6, metalness: 0.6 });
 
   // ------------------------------------------------------------------ helpers
   const sbox = (mat: string, cx: number, cy: number, cz: number, sx: number, sy: number, sz: number, tag = "wall") => {
     B.box(mat, cx, cy, cz, sx, sy, sz);
-    return world.addCentered(cx, cy, cz, Math.max(sx, 0.001), sy, Math.max(sz, 0.001), tag);
+    const col = world.addCentered(cx, cy, cz, Math.max(sx, 0.001), sy, Math.max(sz, 0.001), tag);
+    sectionMap.get(sectionIdAt(cx, cy, cz))?.colliders.push(col);
+    return col;
   };
-  const colOnly = (cx: number, cy: number, cz: number, sx: number, sy: number, sz: number, tag = "wall") => world.addCentered(cx, cy, cz, sx, sy, sz, tag);
-  const rectBox = (mat: string, x0: number, x1: number, y0: number, y1: number, z0: number, z1: number, collide = true) => {
+  const colOnly = (cx: number, cy: number, cz: number, sx: number, sy: number, sz: number, tag = "wall") => {
+    const col = world.addCentered(cx, cy, cz, sx, sy, sz, tag);
+    sectionMap.get(sectionIdAt(cx, cy, cz))?.colliders.push(col);
+    return col;
+  };
+  const rectBox = (mat: string, x0: number, x1: number, y0: number, y1: number, z0: number, z1: number, collide = true, tag = "wall") => {
     if (x1 <= x0 || y1 <= y0 || z1 <= z0) throw new Error(`rectBox with invalid dimensions: ${mat} ${x0},${x1} ${y0},${y1} ${z0},${z1}`);
     const cx = (x0 + x1) / 2,
       cy = (y0 + y1) / 2,
       cz = (z0 + z1) / 2;
-    if (collide) sbox(mat, cx, cy, cz, x1 - x0, y1 - y0, z1 - z0);
+    if (collide) sbox(mat, cx, cy, cz, x1 - x0, y1 - y0, z1 - z0, tag);
     else B.box(mat, cx, cy, cz, x1 - x0, y1 - y0, z1 - z0);
   };
   const floorPad = (mat: string, x0: number, x1: number, z0: number, z1: number, y: number) => {
@@ -226,9 +320,11 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
     const mesh = new THREE.Mesh(geo, glassMat);
     const pos = axis === "x" ? v3(c, (y0 + y1) / 2, fixed) : v3(fixed, (y0 + y1) / 2, c);
     mesh.position.copy(pos);
-    group.add(mesh);
+    const sec = sectionMap.get(sectionIdAt(pos.x, pos.y, pos.z));
+    (sec?.group ?? group).add(mesh);
     const pane: GlassPane = { mesh, collider: null as any, broken: false, pos, w, h: y1 - y0, axis };
     pane.collider = world.addCentered(pos.x, pos.y, pos.z, axis === "x" ? w : 0.1, y1 - y0, axis === "x" ? 0.1 : w, "glass", pane);
+    sec?.colliders.push(pane.collider);
     glass.push(pane);
   };
 
@@ -247,7 +343,9 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
       heavy,
       bulkhead: !!o.bulkhead,
     });
-    group.add(d.pivot);
+    const sec = sectionMap.get(sectionIdAt(d.center.x, d.center.y, d.center.z));
+    (sec?.group ?? group).add(d.pivot);
+    sec?.colliders.push(d.collider);
     doors.push(d);
     return d;
   };
@@ -346,7 +444,7 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
       const top = yStart + i * h;
       const za = zStart + (i - 1) * d,
         zb = zStart + i * d;
-      rectBox(mat, x0, x1, Math.min(bottomY, top - 0.1), top, Math.min(za, zb), Math.max(za, zb));
+      rectBox(mat, x0, x1, Math.min(bottomY, top - 0.1), top, Math.min(za, zb), Math.max(za, zb), true, "stair");
     }
   };
 
@@ -385,68 +483,85 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
     for (let z = Z_STERN; z <= 52; z += 2) stations.push(z);
     for (let z = 53; z < Z_BOW; z += 1) stations.push(z);
     stations.push(Z_BOW - 0.05);
-    const pos: number[] = [],
-      col: number[] = [],
-      uv: number[] = [],
-      idx: number[] = [];
-    const ringSize = P * 2;
-    stations.forEach((z, si) => {
-      const hw = Math.max(hullHalfWidth(z), 0.04);
-      const rise = z > 40 ? Math.pow((z - 40) / 30, 2) * 4.5 : 0;
-      const pts: [number, number][] = [];
-      for (let j = 0; j < P; j++) {
-        const [u, y0] = profile[j];
-        const y = y0 < -2 ? y0 + rise * Math.min(1, (-2 - y0) / 4.7) : y0;
-        pts.push([u * hw, y]);
+    const hullMat = std({ map: tex.hull, vertexColors: true, roughness: 0.65, metalness: 0.35, side: THREE.DoubleSide });
+    const hullZones: { id: string; z0: number; z1: number; capStern?: boolean }[] = [
+      { id: "stern", z0: Z_STERN, z1: -56, capStern: true },
+      { id: "engine", z0: -56, z1: -39 },
+      { id: "hold3", z0: -39, z1: -8 },
+      { id: "hold2", z0: -8, z1: 26 },
+      { id: "hold1", z0: 26, z1: 52 },
+      { id: "bow", z0: 52, z1: Z_BOW },
+    ];
+    for (const hz of hullZones) {
+      const zList: number[] = [hz.z0];
+      for (const z of stations) {
+        if (z > hz.z0 + 0.01 && z < hz.z1 - 0.01) zList.push(z);
       }
-      let arc = 0;
-      for (let k = 0; k < ringSize; k++) {
-        const j = k < P ? k : ringSize - 1 - k;
-        const sgn = k < P ? 1 : -1;
-        const [x, y] = pts[j];
-        pos.push(sgn * x, y, z);
-        if (k > 0) {
-          const pj = (k - 1) < P ? k - 1 : ringSize - 1 - (k - 1);
-          const psg = k - 1 < P ? 1 : -1;
-          arc += Math.hypot(sgn * x - psg * pts[pj][0], y - pts[pj][1]);
+      zList.push(hz.id === "bow" ? Z_BOW - 0.05 : hz.z1);
+      const pos: number[] = [],
+        col: number[] = [],
+        uv: number[] = [],
+        idx: number[] = [];
+      const ringSize = P * 2;
+      zList.forEach((z, si) => {
+        const hw = Math.max(hullHalfWidth(z), 0.04);
+        const rise = z > 40 ? Math.pow((z - 40) / 30, 2) * 4.5 : 0;
+        const pts: [number, number][] = [];
+        for (let j = 0; j < P; j++) {
+          const [u, y0] = profile[j];
+          const y = y0 < -2 ? y0 + rise * Math.min(1, (-2 - y0) / 4.7) : y0;
+          pts.push([u * hw, y]);
         }
-        uv.push(z / 8, arc / 8);
-        if (y > -0.35) col.push(0.62, 0.64, 0.68);
-        else if (y > -1.0) col.push(0.8, 0.8, 0.82);
-        else col.push(0.75, 0.22, 0.17);
-      }
-      if (si > 0) {
-        const a = (si - 1) * ringSize,
-          b = si * ringSize;
-        for (let k = 0; k < ringSize - 1; k++) {
-          idx.push(a + k, b + k, a + k + 1, a + k + 1, b + k, b + k + 1);
+        let arc = 0;
+        for (let k = 0; k < ringSize; k++) {
+          const j = k < P ? k : ringSize - 1 - k;
+          const sgn = k < P ? 1 : -1;
+          const [x, y] = pts[j];
+          pos.push(sgn * x, y, z);
+          if (k > 0) {
+            const pj = k - 1 < P ? k - 1 : ringSize - 1 - (k - 1);
+            const psg = k - 1 < P ? 1 : -1;
+            arc += Math.hypot(sgn * x - psg * pts[pj][0], y - pts[pj][1]);
+          }
+          uv.push(z / 8, arc / 8);
+          if (y > -0.35) col.push(0.62, 0.64, 0.68);
+          else if (y > -1.0) col.push(0.8, 0.8, 0.82);
+          else col.push(0.75, 0.22, 0.17);
         }
+        if (si > 0) {
+          const a = (si - 1) * ringSize,
+            b = si * ringSize;
+          for (let k = 0; k < ringSize - 1; k++) {
+            idx.push(a + k, b + k, a + k + 1, a + k + 1, b + k, b + k + 1);
+          }
+        }
+      });
+      if (hz.capStern) {
+        const base = pos.length / 3;
+        pos.push(0, -2, Z_STERN);
+        col.push(0.6, 0.6, 0.62);
+        uv.push(0, 0);
+        for (let k = 0; k < ringSize - 1; k++) idx.push(base, k + 1, k);
       }
-    });
-    // Heckspiegel
-    const base = pos.length / 3;
-    pos.push(0, -2, Z_STERN);
-    col.push(0.6, 0.6, 0.62);
-    uv.push(0, 0);
-    for (let k = 0; k < ringSize - 1; k++) idx.push(base, k + 1, k);
-    const g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
-    g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
-    g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
-    g.setIndex(idx);
-    g.computeVertexNormals();
-    geoms.push(g);
-    const m = new THREE.Mesh(g, std({ map: tex.hull, vertexColors: true, roughness: 0.65, metalness: 0.35, side: THREE.DoubleSide }));
-    m.castShadow = true;
-    m.receiveShadow = true;
-    group.add(m);
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+      g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+      g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+      g.setIndex(idx);
+      g.computeVertexNormals();
+      geoms.push(g);
+      const m = new THREE.Mesh(g, hullMat);
+      m.castShadow = true;
+      m.receiveShadow = true;
+      (sectionMap.get(hz.id)?.group ?? group).add(m);
+    }
     // Schiffsname
     const nameTex = textTexture("NORDWIND", 512, 96, null, "#f2f2f2", "bold 78px Arial, sans-serif");
     for (const s of [1, -1]) {
       const p = new THREE.Mesh(new THREE.PlaneGeometry(14, 2.1), new THREE.MeshBasicMaterial({ map: nameTex, transparent: true, side: THREE.DoubleSide }));
       p.position.set(s * (HULL_HW + 0.03), 1.25, 38);
       p.rotation.y = s * Math.PI / 2;
-      group.add(p);
+      (sectionMap.get("hold1")?.group ?? group).add(p);
     }
     // Wasserlinie-Streifen & Tiefgangsmarken sind im Vertex-Color enthalten
   }
@@ -455,7 +570,15 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
   const ZB0 = 52; // Bugbeginn
   const engineHole: [number, number, number, number] = [-1.6, 1.6, -64.6, -58.0];
   const holdHole: [number, number, number, number] = [-9.35, -6.05, 18.5, 25.5];
-  slab(-HULL_HW, HULL_HW, Z_STERN, ZB0, DECK_Y, 0.3, "deck", [engineHole, holdHole]);
+  for (const [dz0, dz1] of [
+    [Z_STERN, -56],
+    [-56, -39],
+    [-39, -8],
+    [-8, 26],
+    [26, ZB0],
+  ]) {
+    slab(-HULL_HW, HULL_HW, dz0, dz1, DECK_Y, 0.3, "deck", [engineHole, holdHole]);
+  }
   // Bugdeck als Polygon
   {
     const shape = new THREE.Shape();
@@ -476,7 +599,7 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
     const bm = new THREE.Mesh(eg, mats.deck);
     bm.receiveShadow = true;
     bm.castShadow = true;
-    group.add(bm);
+    (sectionMap.get("bow")?.group ?? group).add(bm);
     // Kollision Bugdeck + Reling (gestuft)
     for (let z = ZB0; z < Z_BOW - 0.05; z += 1) {
       const z1 = Math.min(z + 1, Z_BOW);
@@ -546,7 +669,7 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
     const volume = (max.x - min.x) * (max.y - min.y) * (max.z - min.z) * 0.78;
     const planes = Array.from({ length: 6 }, () => new THREE.Plane());
     const wm = new THREE.Mesh(
-      new THREE.PlaneGeometry(WI * 2 + 2, c.z1 - c.z0 + 2),
+      new THREE.PlaneGeometry(WI * 2, c.z1 - c.z0),
       new THREE.MeshStandardMaterial({
         color: 0x1c6478,
         transparent: true,
@@ -583,7 +706,7 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
       geoms.push(p.geometry);
       p.position.set(0, 1.6, z);
       p.castShadow = true;
-      group.add(p);
+      (sectionMap.get("engine")?.group ?? group).add(p);
       pistons.push(p);
       // seitliche Rohre
       B.cyl("steelDark", 2.2, -1.2, z, 0.16, 2.4, "y", 8);
@@ -607,7 +730,7 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
       sp.rotation.z = (i * Math.PI) / 4;
       fly.add(sp);
     }
-    group.add(fly);
+    (sectionMap.get("engine")?.group ?? group).add(fly);
     animated.push((_t, dt) => (fly.rotation.z -= dt * 5));
     colOnly(0, -3, -43.4, 3.6, 4, 0.7);
     // Generatoren
@@ -909,7 +1032,7 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
     geoms.push(wheelG);
     const wh = new THREE.Mesh(wheelG, mats.wood);
     wh.position.set(0, y0 + 1.5, -46.2);
-    group.add(wh);
+    (sectionMap.get("bridge")?.group ?? group).add(wh);
     animated.push((t) => (wh.rotation.z = Math.sin(t * 0.4) * 0.6));
     // Kartentisch
     sbox("wood", -5.5, y0 + 0.5, -49.6, 2.4, 1.0, 1.4);
@@ -929,10 +1052,10 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
     const rdisc = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.05, 20), new THREE.MeshBasicMaterial({ color: 0x0a3a1a }));
     geoms.push(rdisc.geometry);
     rdisc.position.set(-2.9, y0 + 1.15, -49.5);
-    group.add(rdisc);
+    (sectionMap.get("bridge")?.group ?? group).add(rdisc);
     sbox("steelDark", -2.9, y0 + 0.55, -49.5, 1.0, 1.1, 1.0);
     sweep.position.set(0, 0, -0.2);
-    group.add(sweepG);
+    (sectionMap.get("bridge")?.group ?? group).add(sweepG);
     sweepG.position.y = y0 + 1.19;
     animated.push((_t, dt) => (sweepG.rotation.y += dt * 3));
     for (const x of [-6, 0, 6]) addLamp(x, y0 + 2.9, -47.5, -1);
@@ -977,19 +1100,20 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
     geoms.push(bar.geometry);
     bar.castShadow = true;
     radar.add(bar);
-    group.add(radar);
+    (sectionMap.get("bridge")?.group ?? group).add(radar);
     animated.push((_t, dt) => (radar.rotation.y += dt * 2.2));
     // Positionslichter
     const mk = (c: number, x: number, y: number, z: number) => {
       const m = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), new THREE.MeshBasicMaterial({ color: c }));
       geoms.push(m.geometry);
       m.position.set(x, y, z);
-      group.add(m);
+      (sectionMap.get(sectionIdAt(x, y, z))?.group ?? group).add(m);
       navLights.push(m);
       return m;
     };
-    mk(0xff2020, -9.2, LV[3] + 2.3, -46);
-    mk(0x20ff40, 9.2, LV[3] + 2.3, -46);
+    // Port (+X when facing +Z bow) = red, Starboard (-X) = green
+    mk(0xff2020, 9.2, LV[3] + 2.3, -46);
+    mk(0x20ff40, -9.2, LV[3] + 2.3, -46);
     mk(0xffffff, 0, ry + 4.1 + 0.9, -48);
     mk(0xffffff, 0, DECK_Y + 6, 66);
     // Warnleuchten (Alarm)
@@ -1044,7 +1168,7 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
       geoms.push(hook.geometry);
       hook.position.set(0, 0.2, 14.4);
       crane.add(hook);
-      group.add(crane);
+      (sectionMap.get(sectionIdAt(0, DECK_Y + 5.4, z))?.group ?? group).add(crane);
       const off = z * 0.3;
       animated.push((t) => {
         crane.rotation.y = Math.sin(t * 0.12 + off) * 0.55;
@@ -1063,7 +1187,7 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
     flag.position.set(0, DECK_Y + 5.2, Z_STERN + 1.2);
     flag.rotation.y = Math.PI / 2;
     flag.translateX(0.9);
-    group.add(flag);
+    (sectionMap.get("stern")?.group ?? group).add(flag);
     const fp = flag.geometry.attributes.position as THREE.BufferAttribute;
     const fp0 = Float32Array.from(fp.array as Float32Array);
     animated.push((t) => {
@@ -1112,7 +1236,7 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
       [-9.5, 50],
       [9.5, 27],
       [-9.6, -41],
-      [9.6, -42],
+      [9.6, -39.5],
     ] as [number, number][])
       addBarrel(x, DECK_Y, z);
     for (const [x, z, loot] of [
@@ -1182,27 +1306,37 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
   }
 
   // ---------------------------------------------------- Ende: Merges
-  B.build(group, geoms);
+  B.build(sectionMap, geoms);
 
-  // Instanced Container
+  // Instanced Container (partitioned by ShipSection so destroyed bays never leave floating containers)
   const mkInst = (list: typeof inst20, len: number) => {
     if (!list.length) return;
+    const bySec = new Map<string, typeof inst20>();
+    for (const it of list) {
+      const sid = sectionIdAt(it.x, it.y, it.z);
+      let arr = bySec.get(sid);
+      if (!arr) bySec.set(sid, (arr = []));
+      arr.push(it);
+    }
     const g = boxGeo(2.44, CH, len, 2.5);
     geoms.push(g);
-    const m = new THREE.InstancedMesh(g, std({ map: tex.container, roughness: 0.55, metalness: 0.5 }), list.length);
+    const mat = std({ map: tex.container, roughness: 0.55, metalness: 0.5 });
     const mt = new THREE.Matrix4();
     const c = new THREE.Color();
-    list.forEach((it, i) => {
-      mt.makeTranslation(it.x, it.y, it.z);
-      m.setMatrixAt(i, mt);
-      c.setHex(it.c);
-      m.setColorAt(i, c);
-    });
-    m.instanceMatrix.needsUpdate = true;
-    if (m.instanceColor) m.instanceColor.needsUpdate = true;
-    m.castShadow = true;
-    m.receiveShadow = true;
-    group.add(m);
+    for (const [sid, sub] of bySec) {
+      const m = new THREE.InstancedMesh(g, mat, sub.length);
+      sub.forEach((it, i) => {
+        mt.makeTranslation(it.x, it.y, it.z);
+        m.setMatrixAt(i, mt);
+        c.setHex(it.c);
+        m.setColorAt(i, c);
+      });
+      m.instanceMatrix.needsUpdate = true;
+      if (m.instanceColor) m.instanceColor.needsUpdate = true;
+      m.castShadow = true;
+      m.receiveShadow = true;
+      (sectionMap.get(sid)?.group ?? group).add(m);
+    }
   };
   mkInst(inst20, 6.06);
   mkInst(inst40, 12.19);
@@ -1413,11 +1547,87 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
     }
   }
 
+  const bilgePumps: BilgePumpUnit[] = [];
+  const addBilgePump = (id: string, name: string, compId: string, px: number, py: number, pz: number, isConsole = false) => {
+    const pumpGrp = new THREE.Group();
+    pumpGrp.position.set(px, py, pz);
+    if (isConsole) {
+      const ped = new THREE.Mesh(new THREE.BoxGeometry(0.55, 1.05, 0.42), mats.steelDark);
+      ped.position.y = 0.525;
+      pumpGrp.add(ped);
+      const top = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.14, 0.46), mats.yellow);
+      top.position.y = 1.08;
+      pumpGrp.add(top);
+    } else {
+      const base = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.65, 0.72), mats.yellow);
+      base.position.y = 0.34;
+      pumpGrp.add(base);
+      const motor = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.58, 12), mats.engine);
+      motor.rotation.z = Math.PI / 2;
+      motor.position.set(0.1, 0.48, 0);
+      pumpGrp.add(motor);
+      const riser = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 2.4, 10), mats.blue);
+      riser.position.set(-0.28, 1.35, 0);
+      pumpGrp.add(riser);
+    }
+    const rotor = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.08, 0.08), mats.chrome);
+    rotor.position.set(isConsole ? 0 : 0.44, isConsole ? 1.19 : 0.48, 0);
+    pumpGrp.add(rotor);
+    const indicatorMat = new THREE.MeshBasicMaterial({ color: 0xff8800 });
+    const led = new THREE.Mesh(new THREE.SphereGeometry(0.085, 8, 8), indicatorMat);
+    led.position.set(0, isConsole ? 1.24 : 0.82, 0.22);
+    pumpGrp.add(led);
+    group.add(pumpGrp);
+
+    const unit: BilgePumpUnit = {
+      id,
+      name,
+      compId,
+      pos: v3(px, py + (isConsole ? 1.0 : 0.6), pz),
+      active: false,
+      rateM3s: isConsole ? 0 : 32.0,
+      rotor,
+      indicatorMat,
+    };
+    bilgePumps.push(unit);
+    animated.push((_t, dt) => {
+      if (unit.active) {
+        unit.rotor.rotation.x += dt * 14.0;
+        unit.rotor.rotation.y += dt * 10.0;
+        unit.indicatorMat.color.setHex(0x22ff66);
+      } else {
+        unit.indicatorMat.color.setHex(0xff8800);
+      }
+    });
+  };
+
+  addBilgePump("pump_engine", "Engine Room Stbd Bilge Pump", "engine", -7.2, FLOOR_Y, -52.0);
+  addBilgePump("pump_hold3", "Cargo Hold 3 Stbd Bilge Pump", "hold3", -7.8, FLOOR_Y, -24.0);
+  addBilgePump("pump_hold2", "Cargo Hold 2 Stbd Bilge Pump", "hold2", -7.8, FLOOR_Y, 8.0);
+  addBilgePump("pump_hold1", "Cargo Hold 1 Stbd Bilge Pump", "hold1", -7.8, FLOOR_Y, 40.0);
+  addBilgePump("pump_master_bridge", "Bridge Master Bilge Pumps", "master", -1.8, LV[3], -46.2, true);
+  addBilgePump("pump_master_ctrl", "Control Room Master Bilge Pumps", "master", 1.8, LV[0], -56.0, true);
+
+  // Additional bilge pumps (total 14 units)
+  // Lower holds (port +X and starboard -X relative to +Z bow)
+  addBilgePump("pump_engine_stbd", "Engine Room Port Bilge Pump", "engine", 7.2, FLOOR_Y, -56.0);
+  addBilgePump("pump_hold3_stbd", "Cargo Hold 3 Port Bilge Pump", "hold3", 7.8, FLOOR_Y, -16.0);
+  addBilgePump("pump_hold2_stbd", "Cargo Hold 2 Port Bilge Pump", "hold2", 7.8, FLOOR_Y, 16.0);
+  addBilgePump("pump_hold1_stbd", "Cargo Hold 1 Port Bilge Pump", "hold1", 7.8, FLOOR_Y, 32.0);
+
+  // Main Deck Emergency Manifolds
+  addBilgePump("pump_deck_engine", "Deck Engine Bilge Manifold", "engine", -9.2, DECK_Y, -58.0);
+  addBilgePump("pump_deck_hold3", "Deck Hold 3 Bilge Manifold", "hold3", 9.2, DECK_Y, -24.0);
+  addBilgePump("pump_deck_hold2", "Deck Hold 2 Bilge Manifold", "hold2", 9.2, DECK_Y, 8.0);
+  addBilgePump("pump_deck_hold1", "Deck Hold 1 Bilge Manifold", "hold1", -9.2, DECK_Y, 40.0);
+
+
   const dispose = () => {
     geoms.forEach((g) => g.dispose());
     Object.values(mats).forEach((m) => m.dispose());
     glassMat.dispose();
     heavyDoorMat.dispose();
+    bilgePumps.forEach((p) => p.indicatorMat.dispose());
     compartments.forEach((c) => {
       (c.waterMesh.material as THREE.Material).dispose();
       c.waterMesh.geometry.dispose();
@@ -1428,6 +1638,7 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
     group,
     waterGroup,
     world,
+    sections,
     doors,
     glass,
     pickups,
@@ -1437,6 +1648,7 @@ export function buildShip(tex: TexSet, opts: { sandbox: boolean }): ShipModel {
     lampMat,
     zones,
     compartments,
+    bilgePumps,
     markers,
     lifeboats,
     guardSpawns,

@@ -22,6 +22,8 @@ import {
   shouldTriggerRagdoll,
   RagdollTriggerSensors,
 } from "./ragdoll";
+import { findNextGridWaypoint, NavBox } from "./navgrid";
+import { findNextShipGraphWaypoint, isInStairwellBand, isOnNarrowCatwalk } from "./shipNavGraph";
 
 export type CrewRole =
   | "chief-engineer"
@@ -49,6 +51,8 @@ export interface CrewBreach {
   inflowRate?: number;
   isEngineRoom?: boolean;
   kind?: "hull-breach" | "broken-window";
+  /** Optional callback invoked as breach area is repaired (receives sealed delta). */
+  repair?: (amount: number) => void;
 }
 
 export interface CrewMember {
@@ -77,6 +81,30 @@ export interface CrewMember {
   deployedLadderId?: string | null;
   /** Seconds until another hydrodynamic ragdoll may be triggered. */
   ragdollCooldown?: number;
+  pumping?: boolean;
+  swimming?: boolean;
+  jumpCooldown?: number;
+  jumpingGap?: boolean;
+  falling?: boolean;
+  airTime?: number;
+  stuckTime?: number;
+  lastX?: number;
+  lastZ?: number;
+  exteriorBypass?: number;
+  navWaypoint?: { x: number; z: number } | null;
+  navTimer?: number;
+  waitingForDoor?: boolean;
+  slideSign?: number;
+  slideTimer?: number;
+  progressTimer?: number;
+  progressX?: number;
+  progressZ?: number;
+  stuckCount?: number;
+  yieldTimer?: number;
+  wallClimbing?: boolean;
+  fallRecovery?: boolean;
+  ragdollFloorY?: number;
+  patrol?: readonly { x: number; y: number; z: number }[];
 }
 
 export interface CrewConfig {
@@ -89,6 +117,7 @@ export interface CrewConfig {
 }
 
 export interface CrewWorld {
+  boxes?: readonly (NavBox & { owner?: unknown })[];
   raycast: (
     ox: number,
     oy: number,
@@ -98,7 +127,7 @@ export interface CrewWorld {
     dz: number,
     maxDist: number,
     filter?: (c: { tag?: string; owner?: unknown }) => boolean,
-  ) => { collider: { owner?: unknown }; dist: number } | null;
+  ) => { collider: { owner?: unknown }; dist: number; nx?: number; ny?: number; nz?: number } | null;
   move: (
     body: CrewBody,
     dx: number,
@@ -130,6 +159,8 @@ export interface CrewStepContext {
   blastImpulse?: number;
   vesselRollDeg?: number;
   deckFloorY?: number;
+  waterLevel?: number;
+  peers?: readonly CrewMember[];
 }
 
 export const PATCH_KIT_AREA = 1.5;
@@ -188,17 +219,27 @@ export function enforceShipBoundsAndRespawn(m: CrewMember & { spawnX?: number; s
   const sx = m.spawnX ?? 0;
   const sy = m.spawnY ?? 3.0;
   const sz = m.spawnZ ?? -36.0;
-  if (!Number.isFinite(m.x) || !Number.isFinite(m.y) || !Number.isFinite(m.z) || m.y < -5.5 || Math.abs(m.x) > 10.5 || m.z < -68 || m.z > 65) {
+  if (!Number.isFinite(m.x) || !Number.isFinite(m.y) || !Number.isFinite(m.z) || m.y < -5.5 || Math.abs(m.x) > 11.2 || m.z < -69.5 || m.z > 65) {
     m.x = sx;
     m.y = sy;
     m.z = sz;
+    m.vy = 0;
+    m.falling = false;
+    m.airTime = 0;
     m.targetId = null;
     m.state = "patrol";
     return;
   }
-  m.x = Math.max(-9.2, Math.min(9.2, m.x));
-  m.z = Math.max(-65.5, Math.min(62.0, m.z));
+  m.x = Math.max(-10.2, Math.min(10.2, m.x));
+  m.z = Math.max(-68.5, Math.min(62.0, m.z));
   m.y = Math.max(-5.2, m.y);
+  // If hovering above main deck outside superstructure (which only spans z = -65.85..-44.15, |x| <= 9.0), re-align onto main deck
+  if (m.y > 4.2 && (m.z > -44.0 || Math.abs(m.x) > 8.9) && !m.swimming) {
+    m.y = 3.05;
+    m.vy = 0;
+    m.falling = false;
+    m.airTime = 0;
+  }
 }
 
 const dist = (m: CrewMember, b: { x: number; y: number; z: number }) =>
@@ -251,6 +292,28 @@ function nearestBreach(
   return selectBestBreach(m, breaches, radius);
 }
 
+function computeDeckWaypoint(
+  m: CrewMember,
+  target: { x: number; y: number; z: number },
+): { x: number; z: number; onStair: boolean; jump?: boolean } {
+  // Exterior catwalk bypass when an interior route/doorway is blocked
+  if ((m.exteriorBypass ?? 0) > 0 && m.y >= 2.7 && m.y < 5.2 && Math.abs(target.y - m.y) <= 2.4) {
+    const sideX = m.x >= 0 ? 9.45 : -9.45;
+    const insideSuper = Math.abs(m.x) < 8.9 && m.z <= -44.0 && m.z >= -66.0;
+    if (insideSuper) {
+      if (Math.abs(m.x) < 2.2 && m.z > -49.5) return { x: 0.88, z: -43.0, onStair: false };
+      if (Math.abs(m.z - -47.0) > 1.0) return { x: m.x >= 0 ? 3.0 : -3.0, z: -47.0, onStair: false };
+      return { x: sideX, z: -47.0, onStair: false };
+    }
+    if (Math.abs(m.z - target.z) > 2.2 && Math.abs(m.x) < 9.0) return { x: sideX, z: m.z, onStair: false };
+    if (Math.abs(m.z - target.z) > 2.2) return { x: sideX, z: target.z, onStair: false };
+    return { x: target.x, z: target.z, onStair: false };
+  }
+
+  const wp = findNextShipGraphWaypoint(m.x, m.y, m.z, target.x, target.y, target.z);
+  return { x: wp.x, z: wp.z, onStair: wp.onStair, jump: Boolean(wp.jump) };
+}
+
 function walkToward(
   m: CrewMember,
   tx: number,
@@ -259,41 +322,241 @@ function walkToward(
   raycast?: RaycastFn,
   world?: CrewWorld,
   dt = 0.016,
+  waterLevel = -Infinity,
+  swimTargetY?: number,
+  onStair = false,
+  jumpGap = false,
 ) {
-  const dx = tx - m.x,
-    dz = tz - m.z;
+  const stairMode = onStair || isInStairwellBand(m.x, m.y, m.z);
+  const onCatwalk = isOnNarrowCatwalk(m.x, m.y, m.z);
+  let steerX = tx;
+  let steerZ = tz;
+  if (world?.boxes && !stairMode && !onCatwalk) {
+    m.navTimer = (m.navTimer ?? 0) - dt;
+    const wpClose = m.navWaypoint ? Math.hypot(m.navWaypoint.x - m.x, m.navWaypoint.z - m.z) < 0.55 : true;
+    if (m.navTimer <= 0 || wpClose || !m.navWaypoint) {
+      const next = findNextGridWaypoint(world.boxes, m.x, m.y, m.z, tx, tz);
+      m.navWaypoint = next ?? { x: tx, z: tz };
+      m.navTimer = 0.25;
+    }
+    steerX = m.navWaypoint.x;
+    steerZ = m.navWaypoint.z;
+  } else if (stairMode || onCatwalk) {
+    m.navWaypoint = null;
+  }
+
+  // Scan all doors (including already-open ones whose collider is disabled) to open & perpendicular-align cleanly
+  let doorAhead = false;
+  let waitingForDoor = false;
+  if (world?.boxes) {
+    const preDx = steerX - m.x;
+    const preDz = steerZ - m.z;
+    const preLen = Math.hypot(preDx, preDz);
+    const pnx = preLen > 1e-4 ? preDx / preLen : 0;
+    const pnz = preLen > 1e-4 ? preDz / preLen : 0;
+    let bestDoorDist = Infinity;
+    let alignTarget: { x: number; z: number } | null = null;
+    for (const box of world.boxes) {
+      if (box.tag !== "door") continue;
+      if (m.y < box.minY - 0.6 || m.y > box.maxY + 0.4) continue;
+      const cx = (box.minX + box.maxX) * 0.5;
+      const cz = (box.minZ + box.maxZ) * 0.5;
+      const distToDoor = Math.hypot(cx - m.x, cz - m.z);
+      if (distToDoor > 2.3) continue;
+      const dot = distToDoor > 1e-4 ? ((cx - m.x) * pnx + (cz - m.z) * pnz) / distToDoor : 1;
+      if (dot < -0.15) continue;
+
+      const door = box.owner as {
+        axis?: "x" | "z";
+        target: number;
+        open?: number;
+        fixed: number;
+        forceOpen: (dir: number) => void;
+      } | undefined;
+      if (door && door.target === 0) {
+        const side = door.axis === "z" ? Math.sign(m.x - door.fixed) : Math.sign(m.z - door.fixed);
+        door.forceOpen(side || 1);
+      }
+      if (door && distToDoor < 1.35 && door.target === 1 && door.open !== undefined && door.open < 0.65) {
+        waitingForDoor = true;
+      }
+
+      if (distToDoor < 1.65 && dot >= 0.25 && distToDoor < bestDoorDist) {
+        bestDoorDist = distToDoor;
+        const isZWall = (box.maxX - box.minX) < (box.maxZ - box.minZ);
+        const alongOffset = isZWall ? Math.abs(m.z - cz) : Math.abs(m.x - cx);
+        const perpDist = isZWall ? Math.abs(m.x - cx) : Math.abs(m.z - cz);
+        if (alongOffset > 0.24 && perpDist > 0.18) {
+          alignTarget = isZWall
+            ? { x: cx - (Math.sign(cx - m.x) || 1) * 0.45, z: cz }
+            : { x: cx, z: cz - (Math.sign(cz - m.z) || 1) * 0.45 };
+        } else {
+          alignTarget = { x: steerX * 0.25 + cx * 0.75, z: steerZ * 0.25 + cz * 0.75 };
+        }
+        if (distToDoor < 1.35 && alongOffset < 0.42 && (!door || door.open === undefined || door.open >= 0.5)) {
+          doorAhead = true;
+        }
+      }
+    }
+    if (alignTarget) {
+      steerX = alignTarget.x;
+      steerZ = alignTarget.z;
+    }
+  }
+
+  const dx = steerX - m.x,
+    dz = steerZ - m.z;
   const d = Math.hypot(dx, dz);
-  if (d <= 1e-6) return;
+  if (d <= 1e-6 && waterLevel <= m.y + 0.55) return;
 
-  const nx = dx / d;
-  const nz = dz / d;
+  const nx = d > 1e-6 ? dx / d : 0;
+  const nz = d > 1e-6 ? dz / d : 0;
 
-  // Enemy-AI style automatic door opening when approaching closed unlocked doors
-  if (world) {
-    const doorRay = world.raycast(m.x, m.y + 1.0, m.z, nx, 0, nz, 1.4, (c) => c.tag === "door");
-    if (doorRay && doorRay.collider.owner) {
-      const door = doorRay.collider.owner as { locked?: boolean; target: number; fixed: number; forceOpen: (dir: number) => void };
-      if (!door.locked && door.target === 0) {
-        door.forceOpen(Math.sign(m.z - door.fixed) || 1);
+  if (!world?.boxes && world && d > 1e-6) {
+    const doorRay = world.raycast(m.x, m.y + 1.0, m.z, nx, 0, nz, 2.4, (c) => c.tag === "door");
+    if (doorRay && doorRay.collider?.owner) {
+      const door = doorRay.collider.owner as {
+        axis?: "x" | "z";
+        target: number;
+        open?: number;
+        fixed: number;
+        forceOpen: (dir: number) => void;
+      };
+      if (door.target === 0) {
+        const side = door.axis === "z" ? Math.sign(m.x - door.fixed) : Math.sign(m.z - door.fixed);
+        door.forceOpen(side || 1);
+      }
+      if (doorRay.dist < 1.35 && door.target === 1 && door.open !== undefined && door.open < 0.65) {
+        waitingForDoor = true;
+      }
+      if (door.target === 1 && (door.open === undefined || door.open >= 0.55)) {
+        doorAhead = true;
+      }
+    }
+  }
+  m.waitingForDoor = waitingForDoor;
+
+  let desiredStep: Vector3Like = waitingForDoor ? v3(0, 0, 0) : v3(nx * step, 0, nz * step);
+
+  if ((m.slideTimer ?? 0) > 0) m.slideTimer = Math.max(0, (m.slideTimer ?? 0) - dt);
+
+  // Smooth tangential barrier sliding + anti-oscillation memory (disabled on stairs and through open doorways)
+  const airborneJump = Boolean(m.jumpingGap) && !m.onGround;
+  if (!waitingForDoor && !stairMode && !doorAhead && !airborneJump && d > 1e-6) {
+    const barrierHit = world?.raycast(m.x, m.y + 0.75, m.z, nx, 0, nz, 0.85, (c) => c.tag !== "door" && c.tag !== "stair");
+    if (barrierHit && (barrierHit.nx !== undefined || barrierHit.nz !== undefined)) {
+      const hnx = barrierHit.nx ?? 0;
+      const hnz = barrierHit.nz ?? 0;
+      // Tangent along the barrier surface
+      let txDir = nx - (nx * hnx + nz * hnz) * hnx;
+      let tzDir = nz - (nx * hnx + nz * hnz) * hnz;
+      const tLen = Math.hypot(txDir, tzDir);
+      if (tLen < 0.2) {
+        // Head-on hit: commit to one lateral slide direction for 0.6s so bot never oscillates in thin corridors
+        if ((m.slideTimer ?? 0) <= 0 || !m.slideSign) {
+          const leftDir = v3(-nz, 0, nx);
+          const rightDir = v3(nz, 0, -nx);
+          const lHit = world?.raycast(m.x, m.y + 0.75, m.z, leftDir.x, 0, leftDir.z, 1.8, (c) => c.tag !== "door");
+          const rHit = world?.raycast(m.x, m.y + 0.75, m.z, rightDir.x, 0, rightDir.z, 1.8, (c) => c.tag !== "door");
+          m.slideSign = (lHit ? lHit.dist : 1.8) >= (rHit ? rHit.dist : 1.8) ? 1 : -1;
+          m.slideTimer = 0.6;
+        }
+        txDir = -nz * m.slideSign;
+        tzDir = nx * m.slideSign;
+      } else {
+        txDir /= tLen;
+        tzDir /= tLen;
+      }
+      // Blend tangent with a slight push away from the wall normal so character clears doorframes cleanly
+      const bx = txDir + hnx * 0.25;
+      const bz = tzDir + hnz * 0.25;
+      const bLen = Math.hypot(bx, bz) || 1;
+      desiredStep = v3((bx / bLen) * step, 0, (bz / bLen) * step);
+    } else if (raycast && !doorAhead) {
+      const centerHit = raycast(v3(m.x, m.y + 0.9, m.z), v3(nx, 0, nz), 0.9);
+      if (centerHit.hit) {
+        if ((m.slideTimer ?? 0) <= 0 || !m.slideSign) {
+          const leftDir = v3(-nz, 0, nx);
+          const rightDir = v3(nz, 0, -nx);
+          const leftHit = raycast(v3(m.x, m.y + 0.9, m.z), leftDir, 2.0);
+          const rightHit = raycast(v3(m.x, m.y + 0.9, m.z), rightDir, 2.0);
+          m.slideSign = (leftHit.hit ? leftHit.distance : 2.0) >= (rightHit.hit ? rightHit.distance : 2.0) ? 1 : -1;
+          m.slideTimer = 0.6;
+        }
+        desiredStep = v3(-nz * m.slideSign * step, 0, nx * m.slideSign * step);
+      } else {
+        const steering = computeAntiClippingSteering(
+          v3(m.x, m.y, m.z),
+          desiredStep,
+          raycast,
+          0.42,
+        );
+        desiredStep = steering.vel;
       }
     }
   }
 
-  let desiredStep: Vector3Like = v3(nx * step, 0, nz * step);
+  const inWater = waterLevel > m.y + 0.45;
+  m.swimming = inWater;
 
-  // Apply 5-ray anti-clipping steering if raycast function is provided
-  if (raycast) {
-    const steering = computeAntiClippingSteering(
-      v3(m.x, m.y, m.z),
-      desiredStep,
-      raycast,
-      0.5,
-    );
-    desiredStep = steering.vel;
+  m.jumpCooldown = Math.max(0, (m.jumpCooldown ?? 0) - dt);
+  let launchedThisTick = false;
+  if (!inWater && m.onGround && (m.jumpCooldown ?? 0) <= 0 && d > 0.5) {
+    const inHoleX = (hx: number) => Math.abs(m.x - hx) <= 1.0;
+    const l1 = m.y >= 5.6 && m.y <= 7.5 && inHoleX(-0.875);
+    const l2 = m.y >= 8.8 && m.y <= 10.7 && inHoleX(0.875);
+    let gapAhead = jumpGap;
+    if (!gapAhead && (l1 || l2)) {
+      const towardAft = nz < -0.3 && m.z >= -48.9 && m.z <= -47.8 && steerZ <= -52.0;
+      const towardFwd = nz > 0.3 && m.z <= -51.5 && m.z >= -52.6 && steerZ >= -48.2;
+      gapAhead = towardAft || towardFwd;
+    }
+    if (!gapAhead && world) {
+      const isHit = (rr: any) => rr !== null && rr !== undefined && rr.hit !== false;
+      const floorFilter = (c: { tag?: string }) => c.tag !== "door";
+      const near = world.raycast(m.x + nx * 0.95, m.y + 0.35, m.z + nz * 0.95, 0, -1, 0, 1.4, floorFilter);
+      if (!isHit(near)) {
+        const far28 = world.raycast(m.x + nx * 2.8, m.y + 0.35, m.z + nz * 2.8, 0, -1, 0, 1.8, floorFilter);
+        const far38 = isHit(far28) ? far28 : world.raycast(m.x + nx * 3.8, m.y + 0.35, m.z + nz * 3.8, 0, -1, 0, 1.8, floorFilter);
+        gapAhead = isHit(far28) || isHit(far38);
+      }
+    }
+    if (gapAhead && world) {
+      m.vy = 6.6;
+      m.onGround = false;
+      m.jumpingGap = true;
+      m.jumpCooldown = 0.9;
+      launchedThisTick = true;
+    }
+  }
+  if (m.jumpingGap && !m.onGround) {
+    {
+      const mag = Math.hypot(desiredStep.x, desiredStep.z);
+      const boosted = Math.max(step * 1.85, 6.2 * dt);
+      if (mag > 1e-9) desiredStep = v3((desiredStep.x / mag) * boosted, 0, (desiredStep.z / mag) * boosted);
+      else if (d > 1e-6) desiredStep = v3(nx * boosted, 0, nz * boosted);
+    }
+    m.progressTimer = 0;
+    m.stuckTime = 0;
+    m.falling = false;
+    m.airTime = 0;
   }
 
   if (world) {
-    const vy = Math.max(-20, (m.vy ?? 0) - 18 * dt);
+    let vy = m.vy ?? 0;
+    if (inWater) {
+      const surfaceY = waterLevel - 0.55;
+      let desiredY = surfaceY;
+      if (swimTargetY !== undefined && Math.hypot(tx - m.x, tz - m.z) < 2.8 && swimTargetY < surfaceY) {
+        desiredY = Math.min(surfaceY, swimTargetY);
+      }
+      vy = Math.max(-2.6, Math.min(3.0, (desiredY - m.y) * 3.2));
+      m.falling = false;
+      m.airTime = 0;
+      m.jumpingGap = false;
+    } else {
+      vy = Math.max(-20, vy - 18 * dt);
+    }
     const body: CrewBody = {
       x: m.x,
       y: m.y,
@@ -301,10 +564,10 @@ function walkToward(
       vx: 0,
       vy,
       vz: 0,
-      r: 0.34,
+      r: 0.2,
       h: 1.75,
       onGround: m.onGround ?? false,
-      step: 0.35,
+      step: 0.48,
     };
     world.move(body, desiredStep.x, body.vy * dt, desiredStep.z);
     m.x = body.x;
@@ -312,11 +575,94 @@ function walkToward(
     m.z = body.z;
     m.vy = body.onGround ? 0 : body.vy;
     m.onGround = body.onGround;
+    if (body.onGround && !launchedThisTick) m.jumpingGap = false;
+    if (!inWater && !body.onGround && m.jumpingGap) {
+      m.airTime = 0;
+      m.falling = false;
+    } else if (!inWater && !body.onGround) {
+      m.airTime = (m.airTime ?? 0) + dt;
+      if (m.airTime > 0.35 || m.vy < -4.5) m.falling = true;
+    } else {
+      m.airTime = 0;
+      m.falling = false;
+    }
   } else {
     m.x += desiredStep.x;
     m.y += desiredStep.y;
     m.z += desiredStep.z;
   }
+}
+
+function monitorProgressAndUnstick(
+  m: CrewMember,
+  wp: { x: number; z: number },
+  dt: number,
+  world?: CrewWorld,
+): boolean {
+  if (!world || m.waitingForDoor) {
+    m.progressTimer = 0;
+    m.progressX = m.x;
+    m.progressZ = m.z;
+    m.stuckCount = 0;
+    return false;
+  }
+  if (m.progressX === undefined || m.progressZ === undefined) {
+    m.progressX = m.x;
+    m.progressZ = m.z;
+    m.progressTimer = 0;
+  }
+  m.progressTimer = (m.progressTimer ?? 0) + dt;
+  if (m.progressTimer < 0.45) return false;
+
+  const netDist = Math.hypot(m.x - m.progressX, m.z - m.progressZ);
+  m.progressX = m.x;
+  m.progressZ = m.z;
+  m.progressTimer = 0;
+
+  if (netDist >= 0.14) {
+    m.stuckCount = 0;
+    return false;
+  }
+
+  // Net progress stalled -> replan first without flipping direction (prevents back-and-forth oscillation)
+  m.stuckCount = (m.stuckCount ?? 0) + 1;
+  m.navWaypoint = null;
+  m.navTimer = 0;
+
+  if (m.stuckCount === 2 && m.onGround) {
+    // Force-push / vault past snagging edge or doorframe toward waypoint
+    const dx = wp.x - m.x;
+    const dz = wp.z - m.z;
+    const d = Math.hypot(dx, dz) || 1;
+    const sign = m.slideSign || 1;
+    const tx = (-dz / d) * sign;
+    const tz = (dx / d) * sign;
+    const hopBody: CrewBody = { x: m.x, y: m.y, z: m.z, vx: 0, vy: 3.8, vz: 0, r: 0.2, h: 1.75, onGround: false, step: 0.48 };
+    world.move(hopBody, (dx / d) * 0.75 + tx * 0.25, 0.35, (dz / d) * 0.75 + tz * 0.25);
+    m.x = hopBody.x;
+    m.y = hopBody.y;
+    m.z = hopBody.z;
+    m.vy = 3.6;
+    m.onGround = false;
+  } else if (m.stuckCount >= 3) {
+    // Persistent edge/doorframe snag -> trigger brief ragdoll fall & stand-up recovery past the snag
+    const dx = wp.x - m.x;
+    const dz = wp.z - m.z;
+    const d = Math.hypot(dx, dz) || 1;
+    m.ragdollFloorY = m.y;
+    m.fallRecovery = true;
+    m.ragdoll = new ArticulatedRagdoll(v3(m.x, m.y, m.z));
+    m.ragdoll.activate(v3((dx / d) * 1.4, 1.2, (dz / d) * 1.4));
+    m.isRagdoll = true;
+    m.slideSign = -(m.slideSign || 1);
+    m.slideTimer = 0.75;
+    m.stuckCount = 0;
+    m.stuckTime = 0;
+    m.navWaypoint = null;
+    enter(m, "ragdoll");
+    return true;
+  }
+  return false;
 }
 
 /** Advances one crew member by dt seconds; mutates the member and the breach it repairs. */
@@ -328,13 +674,113 @@ export function stepCrew(
   ctx?: CrewStepContext,
 ): CrewEvent {
   m.stateTime += dt;
+  const waterLevel =
+    typeof ctx?.waterLevel === "number" && Number.isFinite(ctx.waterLevel)
+      ? ctx.waterLevel
+      : typeof ctx?.waterLevelY === "number" && Number.isFinite(ctx.waterLevelY)
+        ? ctx.waterLevelY
+        : -Infinity;
+  const inWaterNow = Number.isFinite(waterLevel) && waterLevel > m.y + 0.45;
+  m.swimming = inWaterNow;
+  if (inWaterNow) {
+    m.falling = false;
+    m.airTime = 0;
+    m.jumpingGap = false;
+    if (m.state === "ragdoll" && m.stateTime >= 0.65) {
+      m.isRagdoll = false;
+      if (m.ragdoll) m.ragdoll.active = false;
+      enter(m, m.targetId ? "moving" : "patrol");
+    }
+  }
   enforceShipBoundsAndRespawn(m);
   if (m.ragdollCooldown !== undefined && m.ragdollCooldown > 0) {
     m.ragdollCooldown = Math.max(0, m.ragdollCooldown - dt);
   }
 
-  // 1. Dynamic Ragdoll Evaluation (skip floor-dropping ragdoll when CollisionWorld physics is active)
-  if (ctx && !ctx.world && (m.ragdollCooldown ?? 0) <= 0) {
+  if ((m.yieldTimer ?? 0) > 0) m.yieldTimer = Math.max(0, (m.yieldTimer ?? 0) - dt);
+
+  // 0. Peer-to-peer separation (push apart + lateral catwalk sidestep + yield/wait, zero cramming damage)
+  if (ctx?.world && m.state !== "climbing_ladder" && m.state !== "ragdoll") {
+    if (ctx.peers && !isInStairwellBand(m.x, m.y, m.z)) {
+      const onCatwalk = isOnNarrowCatwalk(m.x, m.y, m.z);
+      for (const other of ctx.peers) {
+        if (other === m || Math.abs(other.y - m.y) > 1.8) continue;
+        const dx = m.x - other.x;
+        const dz = m.z - other.z;
+        const d = Math.hypot(dx, dz);
+        if (d < 0.52) {
+          const push = Math.min(0.10, (0.52 - d) * 0.45 + 0.015);
+          let nx = d > 1e-3 ? dx / d : (m.name < other.name ? -1 : 1);
+          let nz = d > 1e-3 ? dz / d : 0;
+          if (onCatwalk) {
+            // Sidestep laterally across the catwalk so bots can slide past each other along the ship side
+            const lat = m.name < other.name ? 1 : -1;
+            nx = nx * 0.4 + lat * 0.6;
+            const len = Math.hypot(nx, nz) || 1;
+            nx /= len;
+            nz /= len;
+          }
+          const prevSepX = m.x;
+          const prevSepZ = m.z;
+          const sepBody: CrewBody = { x: m.x, y: m.y, z: m.z, vx: 0, vy: 0, vz: 0, r: 0.2, h: 1.75, onGround: m.onGround ?? false, step: 0.48 };
+          ctx.world.move(sepBody, nx * push, 0, nz * push);
+          m.x = sepBody.x;
+          m.z = sepBody.z;
+          if (Math.hypot(m.x - prevSepX, m.z - prevSepZ) > 0.015) {
+            m.navWaypoint = null;
+            m.navTimer = 0;
+          }
+          // Lower-priority bot waits briefly so they don't push into each other forever
+          const otherPriority = other.state === "moving" || other.state === "repairing";
+          const selfPatrol = m.state === "patrol";
+          if ((selfPatrol && otherPriority) || (!otherPriority && m.name > other.name)) {
+            m.yieldTimer = Math.max(m.yieldTimer ?? 0, 0.45);
+          }
+        }
+      }
+    }
+    if (inWaterNow && m.state !== "moving" && !(m.state === "patrol" && ((m as { patrol?: unknown[] }).patrol?.length || cfg.patrol?.length || 0) > 0 && (m.yieldTimer ?? 0) <= 0)) {
+      const desiredY = waterLevel - 0.55;
+      const swimVy = Math.max(-2.6, Math.min(3.0, (desiredY - m.y) * 3.2));
+      const swimBody: CrewBody = { x: m.x, y: m.y, z: m.z, vx: 0, vy: swimVy, vz: 0, r: 0.2, h: 1.75, onGround: false, step: 0.48 };
+      ctx.world.move(swimBody, 0, swimVy * dt, 0);
+      m.y = swimBody.y;
+      m.vy = 0;
+      m.onGround = false;
+    } else if (!m.onGround && m.state !== "moving" && !m.wallClimbing && !m.jumpingGap) {
+      const vy = Math.max(-20, (m.vy ?? 0) - 18 * dt);
+      const gravBody: CrewBody = { x: m.x, y: m.y, z: m.z, vx: 0, vy, vz: 0, r: 0.2, h: 1.75, onGround: false, step: 0.48 };
+      ctx.world.move(gravBody, 0, vy * dt, 0);
+      m.y = gravBody.y;
+      m.vy = gravBody.onGround ? 0 : vy;
+      m.onGround = gravBody.onGround;
+      if (gravBody.onGround) {
+        m.falling = false;
+        m.airTime = 0;
+      } else if (!m.swimming) {
+        m.airTime = (m.airTime ?? 0) + dt;
+        if (m.airTime > 0.35 || vy < -4.5) m.falling = true;
+      }
+    }
+    // Anti-loop fall protection: if falling/airborne for > 2.8s without landing or swimming, respawn cleanly at valid ship station
+    if (!m.onGround && !m.swimming && (m.airTime ?? 0) > 2.8) {
+      const mWithSpawn = m as CrewMember & { spawnX?: number; spawnY?: number; spawnZ?: number };
+      m.x = mWithSpawn.spawnX ?? 0;
+      m.y = mWithSpawn.spawnY ?? 3.0;
+      m.z = mWithSpawn.spawnZ ?? -36.0;
+      m.vy = 0;
+      m.airTime = 0;
+      m.falling = false;
+      m.onGround = true;
+      m.targetId = null;
+      enter(m, "patrol");
+      return null;
+    }
+  }
+
+  // 1. Dynamic Ragdoll Evaluation (use floor-clamped ragdoll even when CollisionWorld is active)
+  const floorY = ctx?.deckFloorY ?? (m.y >= 2.4 ? 3.0 : 0.1);
+  if (ctx && (m.ragdollCooldown ?? 0) <= 0) {
     const sensors: RagdollTriggerSensors = {
       waterVelocity: ctx.waterVelocity || v3(0, 0, 0),
       blastImpulse: ctx.blastImpulse || 0,
@@ -342,9 +788,7 @@ export function stepCrew(
     };
     const triggered = shouldTriggerRagdoll(sensors);
     if (triggered && m.state !== "ragdoll") {
-      if (!m.ragdoll) {
-        m.ragdoll = new ArticulatedRagdoll(v3(m.x, m.y, m.z));
-      }
+      m.ragdoll = new ArticulatedRagdoll(v3(m.x, m.y, m.z));
       m.ragdoll.activate(ctx.waterVelocity || v3(0, 0, 0));
       m.isRagdoll = true;
       enter(m, "ragdoll");
@@ -354,29 +798,36 @@ export function stepCrew(
 
   // 2. Active Ragdoll State Processing
   if (m.state === "ragdoll" && m.ragdoll && m.ragdoll.active) {
+    const ragFloor = m.fallRecovery ? (m.ragdollFloorY ?? floorY) : floorY;
     m.ragdoll.step(
       dt,
       ctx?.waterVelocity ?? v3(0, 0, 0),
       ctx?.waterLevelY ?? -999,
-      ctx?.deckFloorY ?? -5.0,
+      ragFloor,
     );
-    // Track position to pelvis center of mass
+    // Track position to pelvis center of mass, keeping within ship deck bounds
     const pelvis = m.ragdoll.limbs.get("pelvis");
     if (pelvis) {
-      m.x = pelvis.pos.x;
-      m.y = pelvis.pos.y;
-      m.z = pelvis.pos.z;
+      m.x = Math.max(-10.2, Math.min(10.2, pelvis.pos.x));
+      m.y = Math.max(ragFloor, pelvis.pos.y);
+      m.z = Math.max(-68, Math.min(62, pelvis.pos.z));
     }
 
-    // Recover if motion settles and time >= 4.0s
+    // Recover reliably so fallen crew always stand back up (1.2-2.0s for unstick fall, or max 5.0s)
     const pelvisSpeed = Math.hypot(pelvis?.vel.x ?? 0, pelvis?.vel.y ?? 0, pelvis?.vel.z ?? 0);
-    if (m.stateTime >= 4.0 && pelvisSpeed < 0.25) {
+    const minWait = m.fallRecovery ? 1.15 : 2.5;
+    const maxWait = m.fallRecovery ? 1.9 : 5.0;
+    if ((m.stateTime >= minWait && pelvisSpeed < 0.7) || m.stateTime >= maxWait) {
+      const resumeState = m.targetId ? "moving" : "patrol";
       m.isRagdoll = false;
+      m.fallRecovery = false;
       m.ragdoll.active = false;
       // Without a cooldown the still-raging water flow re-triggered the ragdoll
       // on the very next frame and flooded the log with one event per step.
       m.ragdollCooldown = 6;
-      enter(m, "patrol");
+      m.y = ragFloor;
+      m.navWaypoint = null;
+      enter(m, resumeState);
     }
     return null;
   }
@@ -417,15 +868,44 @@ export function stepCrew(
   switch (m.state) {
     case "patrol": {
       const found = m.patchKits > 0 ? nearestBreach(m, breaches, cfg.detectRadius) : null;
+      if (!found && ctx?.world && m.stateTime > 8.0 && m.patchKits < 5) {
+        m.patchKits = Math.min(5, m.patchKits + dt * 0.25);
+        m.portableLadders = Math.max(m.portableLadders ?? 0, 1);
+      }
       if (found) {
         m.targetId = found.id;
         enter(m, "alert");
         return "spotted";
       }
-      if (cfg.patrol.length > 0) {
-        const wp = cfg.patrol[m.patrolIndex % cfg.patrol.length];
-        walkToward(m, wp.x, wp.z, cfg.walkSpeed * 0.5 * dt, ctx?.raycast, ctx?.world, dt);
-        if (dist(m, wp) < 0.5) m.patrolIndex = (m.patrolIndex + 1) % cfg.patrol.length;
+      if ((m.yieldTimer ?? 0) > 0) return null;
+      const patrol = m.patrol && m.patrol.length > 0 ? m.patrol : cfg.patrol;
+      if (patrol.length > 0) {
+        const patrolTarget = patrol[m.patrolIndex % patrol.length];
+        const wp = ctx?.world ? computeDeckWaypoint(m, patrolTarget) : { x: patrolTarget.x, z: patrolTarget.z, onStair: false };
+        const prevPX = m.lastX ?? m.x;
+        const prevPZ = m.lastZ ?? m.z;
+        walkToward(m, wp.x, wp.z, cfg.walkSpeed * 0.65 * dt, ctx?.raycast, ctx?.world, dt, waterLevel, undefined, wp.onStair, Boolean(wp.jump));
+        const pMoved = Math.hypot(m.x - prevPX, m.z - prevPZ);
+        m.lastX = m.x;
+        m.lastZ = m.z;
+        const patrolStalled = monitorProgressAndUnstick(m, wp, dt, ctx?.world);
+        if (patrolStalled) return "ragdoll_triggered";
+        if (Math.hypot(m.x - patrolTarget.x, m.z - patrolTarget.z) < 0.9) {
+          m.patrolIndex = (m.patrolIndex + 1) % patrol.length;
+          m.stuckTime = 0;
+          m.stuckCount = 0;
+          m.navWaypoint = null;
+        } else if (patrolStalled || (ctx?.world && !m.waitingForDoor && pMoved < 0.15 * dt)) {
+          m.stuckTime = (m.stuckTime ?? 0) + dt;
+          if (m.stuckTime > 0.45) m.navWaypoint = null;
+          if (patrolStalled || m.stuckTime > 1.2) {
+            m.patrolIndex = (m.patrolIndex + 1) % patrol.length;
+            m.stuckTime = 0;
+            m.stuckCount = 0;
+          }
+        } else {
+          m.stuckTime = 0;
+        }
       }
       return null;
     }
@@ -447,18 +927,108 @@ export function stepCrew(
         return null;
       }
 
-      // Check for High Breach Requiring Portable Ladder
+      // Check for High Breach Requiring Portable Ladder (strictly inside lower holds/engine room, never outer walls)
       const verticalDiff = target.y - m.y;
       const horizontalDist = Math.hypot(target.x - m.x, target.z - m.z);
 
-      if (verticalDiff >= HIGH_BREACH_THRESHOLD_Y && horizontalDist < 2.5 && (m.portableLadders ?? 0) > 0 && !m.deployedLadderId) {
+      if (verticalDiff >= HIGH_BREACH_THRESHOLD_Y && target.y <= 3.2 && m.y < 2.0 && horizontalDist < 2.5 && (m.portableLadders ?? 0) > 0 && !m.deployedLadderId) {
         enter(m, "deploying_ladder");
         return null;
       }
 
-      walkToward(m, target.x, target.z, cfg.walkSpeed * dt, ctx?.raycast, ctx?.world, dt);
+      if ((m.yieldTimer ?? 0) > 0) return null;
+      // Exterior wall-climbing fallback: if blocked outside against a wall while heading to a breach, climb straight up
+      const isOutsideHull = Math.abs(m.x) > 8.6 || m.z > -44.1 || m.z < -66.0;
+      if (m.wallClimbing) {
+        const climbTargetY = Math.min(13.0, Math.max(target.y, m.y + 0.5));
+        m.y = Math.min(climbTargetY, m.y + 2.6 * dt);
+        m.vy = 0;
+        m.onGround = false;
+        const dx = target.x - m.x;
+        const dz = target.z - m.z;
+        const d = Math.hypot(dx, dz) || 1;
+        const stepBody: CrewBody = { x: m.x, y: m.y, z: m.z, vx: 0, vy: 0, vz: 0, r: 0.2, h: 1.75, onGround: false, step: 0.48 };
+        ctx?.world?.move(stepBody, (dx / d) * 1.4 * dt, 0, (dz / d) * 1.4 * dt);
+        m.x = stepBody.x;
+        m.z = stepBody.z;
+        if (m.y >= target.y - 0.35) {
+          m.wallClimbing = false;
+          m.stuckTime = 0;
+          m.stuckCount = 0;
+        }
+        if (dist(m, target) <= REPAIR_REACH || (horizontalDist <= REPAIR_REACH + 0.8 && Math.abs(target.y - m.y) <= 2.2)) {
+          m.wallClimbing = false;
+          enter(m, "repairing");
+          return "arrived";
+        }
+        return null;
+      }
 
-      if (dist(m, target) <= REPAIR_REACH || (horizontalDist <= REPAIR_REACH + 0.8 && Math.abs(target.y - m.y) <= 3.5)) {
+      if ((m.exteriorBypass ?? 0) > 0) m.exteriorBypass = Math.max(0, (m.exteriorBypass ?? 0) - dt);
+      const wp = ctx?.world ? computeDeckWaypoint(m, target) : { x: target.x, z: target.z, onStair: false };
+      const prevX = m.lastX ?? m.x;
+      const prevZ = m.lastZ ?? m.z;
+      walkToward(m, wp.x, wp.z, cfg.walkSpeed * dt, ctx?.raycast, ctx?.world, dt, waterLevel, target.y, wp.onStair, Boolean(wp.jump));
+      const moved = Math.hypot(m.x - prevX, m.z - prevZ);
+      m.lastX = m.x;
+      m.lastZ = m.z;
+
+      // Allow crew to jump/drop down into lower compartments when responding to below-deck explosions
+      if (ctx?.world && m.y >= 1.5 && target.y < -0.5) {
+        const nearHoldShaft = Math.hypot(m.x - -7.7, m.z - 22.0) < 3.6;
+        const nearEngineShaft = Math.hypot(m.x - 0, m.z - -61.3) < 3.6;
+        if ((nearHoldShaft || nearEngineShaft) && m.onGround && m.y >= 2.5) {
+          m.vy = 4.2;
+          m.onGround = false;
+          m.falling = true;
+        }
+        if (moved < 0.15 * dt) {
+          m.stuckTime = (m.stuckTime ?? 0) + dt;
+          if (m.stuckTime > 2.2) {
+            // Jump down directly into the target lower hold so crew is never blocked upstairs
+            m.x = Math.max(-9.0, Math.min(9.0, target.x * 0.6));
+            m.z = Math.max(-67.0, Math.min(54.0, target.z));
+            m.y = 1.8;
+            m.vy = -3.0;
+            m.onGround = false;
+            m.falling = true;
+            m.stuckTime = 0;
+          }
+        } else {
+          m.stuckTime = 0;
+        }
+      } else if (monitorProgressAndUnstick(m, wp, dt, ctx?.world) || (ctx?.world && !m.waitingForDoor && moved < 0.2 * dt)) {
+        if ((m.state as string) === "ragdoll") return "ragdoll_triggered";
+        // Escalate from A* replan (0.35s) -> exterior catwalk bypass (0.75s) -> clean obstacle vault (1.45s)
+        m.stuckTime = (m.stuckTime ?? 0) + dt;
+        if (m.stuckTime > 0.35) m.navWaypoint = null;
+        if (m.stuckTime > 0.75 && isOutsideHull && target.y > m.y + 0.6) {
+          m.wallClimbing = true;
+          m.stuckTime = 0;
+          return null;
+        }
+        if (m.stuckTime > 0.75 && (m.exteriorBypass ?? 0) <= 0 && m.y >= 2.7 && m.y < 5.2) {
+          m.exteriorBypass = 6.0;
+        }
+        if (m.stuckTime > 1.45) {
+          const ndx = wp.x - m.x;
+          const ndz = wp.z - m.z;
+          const nd = Math.hypot(ndx, ndz);
+          if (nd > 1e-4) {
+            const stepLen = Math.min(1.6, nd);
+            const vaultBody: CrewBody = { x: m.x, y: m.y, z: m.z, vx: 0, vy: 0, vz: 0, r: 0.2, h: 1.75, onGround: m.onGround ?? false, step: 0.48 };
+            ctx?.world?.move(vaultBody, (ndx / nd) * stepLen, 0.2, (ndz / nd) * stepLen);
+            m.x = vaultBody.x;
+            m.z = vaultBody.z;
+          }
+          m.stuckTime = 0;
+          m.stuckCount = 0;
+        }
+      } else {
+        m.stuckTime = 0;
+      }
+
+      if (dist(m, target) <= REPAIR_REACH || (horizontalDist <= REPAIR_REACH + 0.8 && Math.abs(target.y - m.y) <= 2.2)) {
         enter(m, "repairing");
         return "arrived";
       }
@@ -510,11 +1080,19 @@ export function stepCrew(
       }
       const before = target.area;
       target.area = Math.max(0, target.area - cfg.repairRate * dt);
+      const sealedDelta = before - target.area;
+      if (sealedDelta > 0) target.repair?.(sealedDelta);
       // A kit is consumed in proportion to the area it sealed
-      m.patchKits = Math.max(0, m.patchKits - (before - target.area) / PATCH_KIT_AREA);
+      m.patchKits = Math.max(0, m.patchKits - sealedDelta / PATCH_KIT_AREA);
       if (target.area <= 1e-3) {
         target.area = 0;
         m.targetId = null;
+        m.wallClimbing = false;
+        // If elevated on an exterior wall/ledge after repairing, jump cleanly down toward deck
+        if (m.y > 3.5 && (Math.abs(m.x) > 8.5 || m.z > -44.1)) {
+          m.vy = 2.4;
+          m.onGround = false;
+        }
         enter(m, "patrol");
         return "sealed";
       }

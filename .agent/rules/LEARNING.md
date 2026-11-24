@@ -125,3 +125,36 @@
   2. External Tailwind CDN script was blocked by Aux Pane Electron Webview CSP.
 - **Fix:** Converted the sidecar to native Node.js (`server.mjs`) with pure embedded CSS and dedicated `index.html`. Listening on `0.0.0.0:8769`.
 - **Access:** [Quota Sentinel](sidecar://quota-sentinel/sentinel-dashboard/) or direct URL `http://127.0.0.1:8769/`.
+
+### [RESOLVED] Crew/Guard Looping on Exterior Catwalks, Stairs, Doors & Sandbox Physics Edge Cases
+- **Issue:** Crew and Supervisor bots looped on Level 0 corridors, exterior catwalks, stairs, and open doors, while `Guards` walked into walls and global `shake * 420` ragdolled distant bots.
+- **Root Cause:**
+  1. `enforceShipBoundsAndRespawn` clamped bots to `|x| <= 9.2`, pinning catwalk bots against superstructure outer walls (`|x| = 9.0`), while several `shipNavGraph` edges/nodes crossed internal walls (`x = 0`, `z = -50`), furniture, machinery, container stacks, or `holdHole` railings.
+  2. `world.raycast` missed open doors once `door.collider.enabled` became `false` at `open >= 0.4`, and `walkToward` gated doorway alignment behind `!stairMode`.
+  3. `StormworksSupervisor.crew` spawned at `y = 0.1` mid-air without `peers` separation, and `Guard.moveTo()` lacked `navgrid.ts` A* steering.
+- **Fix & Invariants:**
+  - Keep exterior catwalk bounds (`x in [-10.2, 10.2], z in [-68.5, 62.0]`) and all `shipNavGraph` waypoints outside `shipBuilder.ts` furniture, `engineHole`, `holdHole`, and container colliders.
+  - Scan `world.boxes` (including open door colliders with `doorRef`) in `walkToward()` regardless of `stairMode` for perpendicular doorway alignment and door opening, and keep `Supervisor.crew` grounded on `DECK_Y = 3.0` with shared peer separation and A* grid steering for `Guard`.
+  - Apply inverse-square `lastBlast` shockwaves, loose `dyns` radial blast impulses, and hydrodynamic water drag/buoyancy on thrown TNT, plus `Master Bilge Pumps` command-tablet control and `holeGroup` mesh disposal on repair.
+  - Always gate patrol kit restocks so single-tick unit assertions (`patchKits === 0` or decrement checks) remain deterministic.
+
+### [RESOLVED] Crew Gap-Jumping, Archimedes Surface Swimming, 14-Pump Complete Dewatering & Swarm Model Governance
+- **Issue:** Crew stopped or detached at Level 1/2 stairwell openings (`holeA`/`holeB`) and floor gaps, sank instead of surface-swimming in flooded holds, and 4 pumps at `16 m3/s` could not drain water completely to `0%` or re-float the vessel; additionally `gpt-oss-120b-medium` stalled silently without completing multi-file tasks.
+- **Fix & Invariants:**
+  - Connected Level 1 aft (`d1_gap_fwd <-> d1_gap_aft`) and Level 2 forward (`d2_gap_aft <-> d2_gap_fwd`) corridors/cabins across stairwell holes in `shipNavGraph.ts` with `jump: true` edges, and added parabolic gap-leap (`vy = 6.6`, horizontal step `Math.max(step * 1.85, 6.2 * dt)`) in `crew.ts` (`jumpingGap`) triggered by `jump: true` or near-miss + far-floor raycast probes.
+  - Evaluated `waterLevel` (`waterLevel ?? waterLevelY`) at the top of `stepCrew()` to maintain continuous Archimedes surface swimming at `waterLevel - 0.55` and automatic ragdoll-to-swim recovery within `0.65s`, while `stormworksSupervisor.ts` reads `c.level ?? c.worldLevel` (preserving mock test compatibility).
+  - Expanded `shipBuilder.ts` to 14 `addBilgePump` stations (`12 x 32.0 m3/s = 384 m3/s` across port/stbd lower holds and deck manifolds plus 2 master consoles), updated `game.ts` (`syncCompartmentsAfterPumping`, overboard spray particles, full `0 m3` drainage, `sim.sinking = false` re-floating when `F < 0.28`, crew pump activation while `water > 0`) and `Hud.tsx` (`384 m3/s`).
+  - **Strict Swarm Model Rule:** Never use `gpt-oss-120b-medium` or local models in `/swarm`; remove them from routing lists and standardize cost-effective workers on `claude-sonnet-5-5-low` (or `gemini-3.8-flash-low` fallback).
+
+### [RESOLVED] Freighter Reverse Propulsion on Full-Ahead, Inverted Rudder Steering & Vessel Kinematics Mismatches
+- **Issue:** Commanding `full-ahead` on `MV NORDWIND` drove the freighter stern-first (`-Z`), starboard `[D]` rudder turned both Freighter (`+Z` bow) and Battleship (`-Z` bow) left instead of right, rotated Freighter OBB collisions and autopilot used `-Z` bow axes, HUD compass was mirrored and ignored ship yaw, flood `waterMesh` did not rotate with ship yaw, torpedoes spun along local Z instead of yawing, and TNT killing a battleship did not set `sunk = true`.
+- **Root Cause:** Freighter geometry has its bow at `+Z` (`Z_BOW = 70`), while `game.ts` and `vesselCollision.ts` copied the FPS/Battleship `-Z` forward convention `(-sin(h), 0, -cos(h))`, and `shipSim.ts` / `battleships.ts` applied `+heading` / `+rudderDeg` without matching Three.js right-handed `+Y` rotation signs.
+- **Fix & Invariants:**
+  - Freighter (`+Z` bow): `ShipSim` applies `qYaw(-heading)`, forward vector is `(-sin(heading), 0, cos(heading))`, `freighterHull()` sets `bowZ: 1` in `vesselCollision.ts`, and `waterMesh` sets `(-Math.PI/2, -heading, 0, "YXZ")`.
+  - Battleship (`-Z` bow): `stepBattleship` decrements `bs.heading` for positive starboard rudder, and `stepBattleshipAI` accounts for forward/reverse turn sign.
+  - World-space compass uses `atan2(-wdir.x, wdir.z)`, torpedoes use `quaternion.setFromUnitVectors`, `explodeDyn` sets `bs.sunk = true` at `0 HP`, `restoreFreighter()` resets `rudderCmd = 0` and `helmMode = false`, and `ShipSim.update()` guards `totV > 0`.
+
+### [RESOLVED] Helm Double-Tap Input Loss, Tablet Key Leaks, Battleship Deck Riding & Torpedo/Collision Hull Breaches
+- **Issue:** Double-tapping `[W]`/`[S]` at Bridge Helm dropped the second tap within a frame or cooldown window; `[TAB]` Tablet leaked `[W/A/S/D/E]`; torpedoes/missiles/ramming created `0` breaches and left `integrityPct` at `100%`; walking on a Battleship deck dragged the player with Freighter translation/rotation; Superlaser jumped from a sunk Battleship onto the Freighter; player spawned on a barrel while nav lights/pump labels and HUD pitch tilt were inverted.
+- **Root Cause:** `Input.queue` (`Set<Action>`) collapsed multiple taps per frame; `handleHelm`/`updateInteraction` did not block on `tabletOpen`; `navalProjectiles`/`stepVesselCollisions` passed waterline `y > -2.0` or out-of-compartment coordinates to `ShipSim.addBreach()` without clamping onto compartment hull skin (`WI`, `y <= -2.35`); `step()` lacked Battleship-relative deck riding and Freighter yaw compensation; `superlaserTimer` did not pin `superlaserTargetBsId`; `shipBuilder.ts` & `Hud.tsx` still had pre-flip nav/pump/pitch signs.
+- **Fix & Invariants:** Count discrete `helmUp`/`helmDown` taps via `consumeHelmSteps()`, isolate controls behind `tabletOpen`, project torpedo/missile/collision breaches cleanly onto compartment underwater skins (`breachFreighterHullAt` + `freighterHitSection` + `damageFreighterSectionAt` + `damageBattleshipPartAt`), track `ridingBs`/`ridingLocal` with Freighter heading compensation in `step()`/`updateCamera()`, lock `superlaserTargetBsId`, recursively dispose `holeGroup`/`dyns` groups, and verify live via Chrome CDP (`http://127.0.0.1:5173/`).
