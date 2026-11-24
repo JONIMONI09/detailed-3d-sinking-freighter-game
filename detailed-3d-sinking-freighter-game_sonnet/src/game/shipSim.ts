@@ -4,6 +4,11 @@ import { Compartment, FLOOR_Y, Hole, WI } from "./shipTypes";
 
 const G = 9.81;
 
+/** Largest single hull opening in m^2; merged blasts must not exceed it. */
+export const MAX_HOLE_AREA = 6.0;
+/** Depth at which the wreck is considered fully sunk and stops descending. */
+export const WRECK_REST_DEPTH = 135;
+
 export class ShipSim {
   heaveBase = 0;
   sinkDepth = 0;
@@ -54,7 +59,7 @@ export class ShipSim {
     // Deck and upper hull explosions (pos.y > -2.0) must NEVER create an underwater exterior breach into lower compartments
     if (pos.y > -2.0) return null;
 
-    const area = Math.max(0.6, power * (2.8 - d * 0.55));
+    const area = Math.min(MAX_HOLE_AREA, Math.max(0.6, power * (2.8 - d * 0.55)));
     let hole: Hole;
     if (dS <= dB) {
       const s = Math.sign(pos.x) || 1;
@@ -64,7 +69,10 @@ export class ShipSim {
     }
     const near = c.holes.find((h) => h.pos.distanceTo(hole.pos) < 2.2);
     if (near) {
-      near.area += area * 0.8;
+      // Repeated blasts widen an existing hole, but a hull opening is bounded
+      // by the surrounding structure: without the clamp a few charges in the
+      // same spot produced an arbitrarily large "hole" and instant flooding.
+      near.area = Math.min(MAX_HOLE_AREA, near.area + area * 0.8);
       return near;
     }
     c.holes.push(hole);
@@ -72,8 +80,20 @@ export class ShipSim {
     return hole;
   }
 
-  update(dt: number, t: number, ocean: Ocean, floodSpeed: number) {
+  /**
+   * @param inflowFactor Optional per-compartment regulator (0..1) for trapped
+   *   air pockets. It scales the Torricelli inflow without touching the
+   *   discharge equation itself; vented compartments pass 1.
+   */
+  update(
+    dt: number,
+    t: number,
+    ocean: Ocean,
+    floodSpeed: number,
+    inflowFactor?: (c: Compartment) => number,
+  ) {
     this.group.updateMatrixWorld(true);
+    const mw = this.group.matrixWorld.elements;
     // --- Fluten
     let totalFlow = 0;
     let sumW = 0,
@@ -84,11 +104,18 @@ export class ShipSim {
     for (const c of this.comps) {
       let q = 0;
       let side = 0;
+      const regulator = inflowFactor ? Math.max(0, Math.min(1, inflowFactor(c))) : 1;
       for (const h of c.holes) {
         const wy = this.worldY(h.pos.x, h.pos.y, h.pos.z);
         const inside = Math.max(wy, c.worldLevel);
-        const head = Math.max(0, -inside);
-        const qh = 0.6 * h.area * Math.sqrt(2 * G * head) * 4 * floodSpeed;
+        // The sea surface is not y = 0: waves move it around the hull. Use the
+        // local wave height at the hole so a crest floods harder and a trough
+        // cannot push water through a hole that is above the real waterline.
+        const wx = mw[0] * h.pos.x + mw[4] * h.pos.y + mw[8] * h.pos.z + mw[12];
+        const wz = mw[2] * h.pos.x + mw[6] * h.pos.y + mw[10] * h.pos.z + mw[14];
+        const seaY = ocean.height(wx, wz, t);
+        const head = Math.max(0, seaY - inside);
+        const qh = 0.6 * h.area * Math.sqrt(2 * G * head) * 4 * floodSpeed * regulator;
         q += qh;
         side += h.side * qh;
       }
@@ -130,7 +157,10 @@ export class ShipSim {
       rollT += -Math.max(-1, Math.min(1, list || 0.3)) * Math.min(0.2, this.sinkT * 0.004);
       const sp = Math.min(3.2, 0.15 + this.sinkT * 0.03) * Math.sqrt(floodSpeed);
       this.sinkDepth += sp * dt;
-      if (this.sinkDepth > 135) this.sunk = true;
+      if (this.sinkDepth >= WRECK_REST_DEPTH) {
+        this.sinkDepth = WRECK_REST_DEPTH;
+        this.sunk = true;
+      }
     }
     const k1 = 1 - Math.exp(-dt * 0.6);
     this.pitch += (pitchT - this.pitch) * k1;

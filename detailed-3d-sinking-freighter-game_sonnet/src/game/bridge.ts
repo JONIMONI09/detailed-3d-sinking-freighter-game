@@ -17,6 +17,14 @@ export const TELEGRAPH_SPEED: Readonly<Record<TelegraphOrder, number>> = {
 };
 
 export const MAX_RUDDER_DEG = 35;
+
+/**
+ * Unit vector of the bow for a hull whose local +Z axis is the bow.
+ * A positive heading turns to port; starboard rudder therefore lowers it.
+ */
+export function vesselForward(heading: number): { x: number; z: number } {
+  return { x: Math.sin(heading), z: Math.cos(heading) };
+}
 const RUDDER_RATE_DEG = 6;
 const SPEED_RESPONSE = 0.12;
 
@@ -54,7 +62,10 @@ export function stepHelm(h: HelmState, dt: number, shipLength: number, engineAva
   h.rudderDeg += Math.abs(dr) <= maxStep ? dr : Math.sign(dr) * maxStep;
   const target = engineAvailable ? (TELEGRAPH_SPEED[h.telegraph] ?? 0) : 0;
   h.speed += (target - h.speed) * (1 - Math.exp(-SPEED_RESPONSE * dt));
-  h.heading += (h.speed / shipLength) * Math.tan((h.rudderDeg * Math.PI) / 180) * dt;
+  // Starboard rudder (+deg) turns the bow to starboard. Because a positive
+  // heading rotates the bow to port, the yaw rate is subtracted.
+  h.heading -= (h.speed / shipLength) * Math.tan((h.rudderDeg * Math.PI) / 180) * dt;
+  h.heading = Math.atan2(Math.sin(h.heading), Math.cos(h.heading));
 }
 
 export interface LockableDoor {

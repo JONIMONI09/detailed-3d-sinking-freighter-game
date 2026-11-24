@@ -58,33 +58,34 @@ function testVesselPropulsionAndSteeringKinematics() {
   // With SPEED_RESPONSE = 0.12, speed reaches ~5.6 m/s after 10s
   assert.ok(helm.speed > 5.0, `Vessel must accelerate ahead (got ${helm.speed} m/s)`);
 
-  // Apply starboard rudder (+25 deg)
+  // Apply starboard rudder (+25 deg). A positive heading rotates the bow to
+  // port, so starboard rudder must lower the heading.
   helm.rudderCmd = 25;
   for (let i = 0; i < 50; i++) {
     bridge.stepHelm(helm, 0.1, shipLength, true);
   }
   assert.equal(helm.rudderDeg, 25, 'Rudder must reach commanded +25 deg angle');
-  assert.ok(helm.heading > 0, `Heading must yaw to starboard (> 0), got ${helm.heading} rad`);
+  assert.ok(helm.heading < -0.02, `Heading must swing to starboard (< 0), got ${helm.heading} rad`);
 
-  // Verify motion vector calculation in 3D world coordinates
+  // The Nordwind model carries its bow on local +Z. Ahead means +Z at heading 0
+  // and the bow (not the stern) must lead the vessel through the water.
   const group = new THREE.Group();
   group.position.set(0, 0, 0);
-  group.rotation.y = helm.heading;
+  group.rotation.y = 0;
+  const bowAtZero = bridge.vesselForward(0);
+  const forward = new THREE.Vector3(bowAtZero.x, 0, bowAtZero.z);
+  assert.ok(Math.abs(forward.length() - 1.0) < 1e-4, 'Bow vector must be normalized');
+  assert.ok(forward.z > 0.99, `Vessel must advance toward +Z (bow) at heading 0, got ${forward.z}`);
 
-  // Forward vector: (-sin(yaw), 0, -cos(yaw))
-  const forward = new THREE.Vector3(
-    -Math.sin(group.rotation.y),
-    0,
-    -Math.cos(group.rotation.y),
-  );
-  assert.ok(Math.abs(forward.length() - 1.0) < 1e-4, 'Forward vector must be normalized');
+  // Starboard turn displaces the bow toward -X (right-hand side of a +Z bow).
+  const bowNow = bridge.vesselForward(helm.heading);
+  assert.ok(bowNow.x < 0, `Starboard turn must move the bow toward -X, got ${bowNow.x}`);
 
-  // Advance vessel position
+  // Advance vessel position bow-first
   const dt = 1.0;
   const initialPos = group.position.clone();
   group.position.addScaledVector(forward, helm.speed * dt);
-
-  assert.ok(group.position.distanceTo(initialPos) > 5.0, 'Vessel must advance in 3D space along forward vector');
+  assert.ok(group.position.z - initialPos.z > 5.0, 'Vessel must advance bow-first in 3D space');
 
   console.log('  ok vessel propulsion and kinematic rudder steering advance ship position in 3D');
 }

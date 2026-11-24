@@ -71,6 +71,10 @@ export class CollisionWorld {
   /** Move a body with axis separated collision, sliding and step climbing. */
   move(body: Body, dx: number, dy: number, dz: number): MoveResult {
     const res: MoveResult = { hitX: false, hitY: false, hitZ: false };
+    // A single NaN would poison the body position forever; drop such deltas.
+    if (!Number.isFinite(dx)) dx = 0;
+    if (!Number.isFinite(dy)) dy = 0;
+    if (!Number.isFinite(dz)) dz = 0;
     const bs = this.boxes;
     const r = body.r;
     // horizontal axes
@@ -107,26 +111,94 @@ export class CollisionWorld {
       }
     }
     // vertical
+    const prevY = body.y;
     body.y += dy;
     let grounded = false;
+    let landY = -Infinity;
+    let ceilingY = Infinity;
     for (let i = 0; i < bs.length; i++) {
       const b = bs[i];
       if (!b.enabled) continue;
       if (!(body.x + r > b.minX && body.x - r < b.maxX && body.y + body.h > b.minY && body.y < b.maxY && body.z + r > b.minZ && body.z - r < b.maxZ))
         continue;
       if (dy <= 0) {
-        body.y = b.maxY;
-        if (body.vy < 0) body.vy = 0;
-        grounded = true;
-        res.hitY = true;
+        // Only land on a surface the body was above before this step. Landing
+        // on any overlapping box teleported an embedded body (spawn, teleport,
+        // closing door, blast push) onto the roof of the tallest collider.
+        if (prevY >= b.maxY - 0.02) {
+          if (b.maxY > landY) landY = b.maxY;
+        } else if (this.depenetrate(body, b, res)) {
+          grounded = true;
+        }
       } else {
-        body.y = b.minY - body.h - EPS;
-        if (body.vy > 0) body.vy = 0;
-        res.hitY = true;
+        if (prevY + body.h <= b.minY + 0.02) {
+          if (b.minY < ceilingY) ceilingY = b.minY;
+        } else {
+          this.depenetrate(body, b, res);
+        }
       }
+    }
+    if (landY > -Infinity) {
+      body.y = landY;
+      if (body.vy < 0) body.vy = 0;
+      grounded = true;
+      res.hitY = true;
+    }
+    if (ceilingY < Infinity) {
+      body.y = Math.min(body.y, ceilingY - body.h - EPS);
+      if (body.vy > 0) body.vy = 0;
+      res.hitY = true;
     }
     body.onGround = grounded;
     return res;
+  }
+
+  /**
+   * Separates a body that already overlaps a collider by moving it along the
+   * shallowest penetration axis. Used when a body is embedded (spawn inside
+   * geometry, a door closing on it, an explosion pushing it into a wall) so it
+   * pops out sideways instead of being teleported onto the collider roof.
+   */
+  private depenetrate(body: Body, b: Collider, res: MoveResult): boolean {
+    const r = body.r;
+    const h = body.h;
+    let landed = false;
+    let best = body.x + r - b.minX;
+    let apply = () => {
+      body.x = b.minX - r - EPS;
+      res.hitX = true;
+    };
+    const consider = (amount: number, fn: () => void) => {
+      if (amount < best) {
+        best = amount;
+        apply = fn;
+      }
+    };
+    consider(b.maxX - (body.x - r), () => {
+      body.x = b.maxX + r + EPS;
+      res.hitX = true;
+    });
+    consider(body.z + r - b.minZ, () => {
+      body.z = b.minZ - r - EPS;
+      res.hitZ = true;
+    });
+    consider(b.maxZ - (body.z - r), () => {
+      body.z = b.maxZ + r + EPS;
+      res.hitZ = true;
+    });
+    consider(body.y + h - b.minY, () => {
+      body.y = b.minY - h - EPS;
+      if (body.vy > 0) body.vy = 0;
+      res.hitY = true;
+    });
+    consider(b.maxY - body.y, () => {
+      body.y = b.maxY;
+      if (body.vy < 0) body.vy = 0;
+      res.hitY = true;
+      landed = true;
+    });
+    apply();
+    return landed;
   }
 
   raycast(ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, maxD: number, filter?: (c: Collider) => boolean): RayHit | null {

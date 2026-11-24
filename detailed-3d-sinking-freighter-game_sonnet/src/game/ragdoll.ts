@@ -366,7 +366,14 @@ export class ArticulatedRagdoll {
     deckFloorY = -5.0,
   ): void {
     if (!this.active) return;
+    // The solver divides by dt to recover limb velocities. A zero-length frame
+    // (two animation frames with the same timestamp) would produce NaN/Infinity
+    // for every joint, so such a step is skipped entirely.
+    if (!Number.isFinite(dt) || dt <= 1e-6) return;
     this.timeActive += dt;
+    // Velocity retention must be frame-rate independent: 0.98 per 1/60 s frame
+    // equals exp(-1.2 * dt) per second.
+    const damp = Math.exp(-1.2 * dt);
 
     for (const cfg of HUMANOID_12_SEGMENTS) {
       const limb = this.limbs.get(cfg.id);
@@ -390,9 +397,9 @@ export class ArticulatedRagdoll {
       const tempY = limb.pos.y;
       const tempZ = limb.pos.z;
 
-      limb.pos.x += (limb.pos.x - limb.prevPos.x) * 0.98 + accX * dt * dt;
-      limb.pos.y += (limb.pos.y - limb.prevPos.y) * 0.98 + accY * dt * dt;
-      limb.pos.z += (limb.pos.z - limb.prevPos.z) * 0.98 + accZ * dt * dt;
+      limb.pos.x += (limb.pos.x - limb.prevPos.x) * damp + accX * dt * dt;
+      limb.pos.y += (limb.pos.y - limb.prevPos.y) * damp + accY * dt * dt;
+      limb.pos.z += (limb.pos.z - limb.prevPos.z) * damp + accZ * dt * dt;
 
       limb.prevPos.x = tempX;
       limb.prevPos.y = tempY;

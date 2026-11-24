@@ -129,7 +129,7 @@ export function stepBattleshipAI(bs: Battleship, targetWorldPos: THREE.Vector3, 
   let diff = desiredHeading - bs.heading;
   while (diff > Math.PI) diff -= Math.PI * 2;
   while (diff < -Math.PI) diff += Math.PI * 2;
-  const desiredRudder = Math.max(-28, Math.min(28, (diff * 180) / Math.PI * 0.65));
+  const desiredRudder = Math.max(-28, Math.min(28, (-diff * 180) / Math.PI * 0.65));
   bs.rudderDeg += (desiredRudder - bs.rudderDeg) * Math.min(1, dt * 3.0);
   bs.targetSpeed = 7.5 + bs.level * 1.2;
 }
@@ -155,7 +155,10 @@ export function stepBattleship(
   // Propulsion & rudder steering
   bs.speed += (bs.targetSpeed - bs.speed) * Math.min(1, dt * 0.9);
   if (Math.abs(bs.speed) > 0.05 && Math.abs(bs.rudderDeg) > 0.1) {
-    bs.heading += (bs.rudderDeg * Math.PI / 180) * (bs.speed / 12) * 0.45 * dt;
+    // Starboard rudder (+deg) lowers the heading, because a positive heading
+    // rotates a -Z bow to port.
+    bs.heading -= (bs.rudderDeg * Math.PI / 180) * (bs.speed / 12) * 0.45 * dt;
+    bs.heading = Math.atan2(Math.sin(bs.heading), Math.cos(bs.heading));
   }
   const fx = -Math.sin(bs.heading);
   const fz = -Math.cos(bs.heading);
@@ -210,6 +213,31 @@ export function fireBattleshipSalvo(
     onTurretFire(wp.clone().addScaledVector(dir, 4.0), dir);
     t.cooldown = 3.0;
   }
+}
+
+/** Local-space hull extents used for projectile hit tests (beam, length, height). */
+export const BATTLESHIP_HALF_BEAM = 6.0;
+export const BATTLESHIP_HALF_LENGTH = 28.5;
+
+/**
+ * Hit test against the whole battleship hull instead of a 14 m sphere around
+ * its centre, which missed the bow and stern entirely.
+ */
+export function battleshipHitTest(bs: Battleship, worldPos: THREE.Vector3): boolean {
+  const dx = worldPos.x - bs.group.position.x;
+  const dy = worldPos.y - bs.group.position.y;
+  const dz = worldPos.z - bs.group.position.z;
+  const c = Math.cos(bs.heading);
+  const s = Math.sin(bs.heading);
+  // Inverse yaw (ignore the small wave roll/pitch).
+  const lx = c * dx - s * dz;
+  const lz = s * dx + c * dz;
+  return (
+    Math.abs(lx) <= BATTLESHIP_HALF_BEAM &&
+    Math.abs(lz) <= BATTLESHIP_HALF_LENGTH &&
+    dy >= -3.6 &&
+    dy <= 9.0
+  );
 }
 
 /** Applies damage to a battleship with 30% armor belt absorption. */

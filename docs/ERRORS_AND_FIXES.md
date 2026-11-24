@@ -393,6 +393,136 @@ Use exact commands and real run IDs when they exist.
   `AGENTS.md`, `documentation-maintenance`, `ci-workflow-audit`.
 
 
+### ERR-2026-11-13-03 - Collision solver teleported embedded bodies and accepted NaN deltas
+
+- Date (Europe/Berlin): 2026-11-13
+- Area: `CollisionWorld.move` (`physics.ts`) used by the player, crew, guards and debris
+- Status: Resolved
+- Symptom: A body that spawned, was teleported, pushed by a blast or caught by a
+  closing door inside a collider was snapped onto the roof of that collider.
+  Dropping into any overlapping geometry moved the player to `y = 9` (the top of
+  the wall) instead of leaving them where they were. A single `NaN` velocity
+  (division by a zero-length frame somewhere upstream) permanently poisoned
+  `body.x`, and the vertical pass also resolved collisions against colliders
+  whose `enabled` flag was false.
+- Root cause: The vertical pass treated *any* overlapping box as a floor and set
+  `body.y = b.maxY` without checking whether the body had actually been above
+  that surface before the step. There was no depenetration path and no
+  `Number.isFinite` guard on the incoming deltas.
+- Solution:
+  1. Land only when `prevY >= b.maxY - 0.02` (the highest such surface wins);
+     block ceilings only when `prevY + h <= b.minY + 0.02`.
+  2. New `depenetrate()` separates a genuinely embedded body along its shallowest
+     penetration axis, reports `hitX/hitY/hitZ`, and climbs onto the roof only
+     when that **is** the shallowest axis.
+  3. Non-finite `dx/dy/dz` are replaced with `0`, and the vertical pass honours
+     `Collider.enabled` exactly like the horizontal and overlap passes.
+- Verification: `tests/physics-integrity-and-orientation.test.mjs` - an embedded
+  body is pushed out of a 9 m wall (stays at `y < 2`, `z` moves > 0.5 m), a
+  30 m/s fall still lands on the deck at `y = 0.4`, and `move(body, NaN, 0, NaN)`
+  leaves the position finite.
+- Prevention: The new suite runs inside `npm test`, and `tools/ci_check.py`
+  fails when it is no longer wired in.
+- Related files / skills: `.../game/physics.ts`,
+  `tests/physics-integrity-and-orientation.test.mjs`, `error-fix-document`.
+
+### ERR-2026-11-13-04 - Trapped-air regulator was dead code and flooding ignored the wave surface
+
+- Date (Europe/Berlin): 2026-11-13
+- Area: `shipSim.ts` flooding model, `stormworksSupervisor.ts`, `ingress.ts`
+- Status: Resolved
+- Symptom: Sealed compartments flooded exactly like vented ones: a breached
+  sealed engine room reached 69-100 % fill within 80 s even though the Boyle
+  pocket cap at that depth is about 25 %. The Torricelli head was computed
+  against a fixed sea level `y = 0`, so a hull breach that was above a wave
+  trough still flooded and a crest did not increase the inflow.
+- Root cause: `StormworksSupervisor.step()` scaled `c.flow` *before* calling
+  `shipSim.update()`, but the simulation recomputes `c.flow` from scratch every
+  step, so the factor never reached the integral. `ShipSim.update()` had no
+  notion of the real sea surface at the hole and no regulator hook.
+- Solution:
+  1. `ShipSim.update(dt, t, ocean, floodSpeed, inflowFactor?)` accepts a
+     per-compartment regulator and derives the head from
+     `ocean.height(worldX, worldZ, t)` at the hole (hole position projected with
+     `matrixWorld`).
+  2. The supervisor builds `regulator(c)` from the matrix-projected hole
+     depth (`inflowFactor(pocket, c.water, depth)`) and passes it as the fifth
+     argument; vented holds and compartments without holes pass `1`.
+  3. Merged blast openings are clamped to `MAX_HOLE_AREA = 6 m²`, and the wreck
+     stops descending at `WRECK_REST_DEPTH = 135 m` instead of sinking forever.
+- Verification: `supervisor.mjs` scratch run shows the sealed engine inflow
+  decaying `45.1 -> 5.9 m³/s` instead of staying at ~53 m³/s; the new unit test
+  floods a sealed engine to < 60 % and a vented hold to > 90 %, keeps a hole
+  above a -6 m sea surface dry, and proves the 6 m² cap.
+- Prevention: `ingress.ts` no longer claims to be an unwired prototype, and the
+  regulator signature is covered by a test so the parameter cannot silently be
+  dropped again.
+- Related files / skills: `.../game/shipSim.ts`, `.../game/stormworksSupervisor.ts`,
+  `.../game/ingress.ts`, `.../game/shipTypes.ts`,
+  `tests/physics-integrity-and-orientation.test.mjs`, `error-fix-document`.
+
+### ERR-2026-11-13-05 - Every vessel steamed stern-first and rudders turned the wrong way
+
+- Date (Europe/Berlin): 2026-11-13
+- Area: Freighter helm (`bridge.ts`, `game.ts`) and battleship steering (`battleships.ts`)
+- Status: Resolved
+- Symptom: With `astern` orders the freighter moved *bow first*, and a starboard
+  rudder order swung the bow to port. The AI freighter autopilot used the same
+  inverted convention, so its emergency turn became a turn into the attacker,
+  and battleship AI oversteered away from its target.
+- Root cause: The Nordwind model carries its bow on local **+Z**, but propulsion
+  used `(-sin h, 0, -cos h)` (the camera/Oz convention), while `stepHelm` added
+  the yaw rate for a positive (starboard) rudder. Both signs were inverted
+  relative to the mesh, and `atan2(-dx, -dz)` headings matched the old error.
+- Solution: Added `vesselForward(heading) = (sin h, cos h)` to `bridge.ts`, moved
+  the freighter along it, subtracted the yaw rate for starboard rudder and
+  wrapped the heading to +/-PI. The autopilot now uses `atan2(awayX, awayZ)` and
+  sends `-hDiff` as the rudder order. Battleships got the same sign fix plus a
+  heading wrap. `battleshipHitTest()` replaces the 14 m centre sphere with a
+  yaw-aware 57 m x 12 m x 12.6 m hull envelope.
+- Verification: `tests/vessel-steering-and-engine-breakdown.test.mjs` and
+  `tests/stormworks-prototypes.test.mjs` assert that a +25 deg rudder lowers the
+  heading, that heading 0 advances toward +Z, and that the bow moves to -X when
+  turning to starboard; the new suite checks bow/stern hits, beam and overshoot
+  misses, a 90 deg rotated hull, and that AI closes 40+ m on a distant target.
+- Prevention: The convention is documented at `vesselForward`, and both old
+  tests that encoded the wrong sign were corrected in the same commit.
+- Related files / skills: `.../game/bridge.ts`, `.../game/game.ts`,
+  `.../game/battleships.ts`, `tests/vessel-steering-and-engine-breakdown.test.mjs`,
+  `tests/stormworks-prototypes.test.mjs`,
+  `tests/physics-integrity-and-orientation.test.mjs`, `error-fix-document`.
+
+### ERR-2026-11-13-06 - Ragdoll damping was frame-rate dependent and crew breach ids shifted
+
+- Date (Europe/Berlin): 2026-11-13
+- Area: `ragdoll.ts`, `crew.ts`, `stormworksSupervisor.ts`
+- Status: Resolved
+- Symptom: Ragdoll limbs behaved differently at 30 fps and 144 fps, and a crew
+  member repairing a breach could switch to a different hole after an unrelated
+  repair finished. Crew ragdolls also re-triggered on the next frame after
+  recovery while the water flow was still violent, producing one
+  `[NORDWIND/CREW] ... ragdoll_triggered` log line per step, and the breach
+  write-back loop ran once per crew member (3x per frame) with a `holes` filter
+  nested inside the compartment loop.
+- Root cause: Velocity retention used a fixed `0.98` per *frame* instead of a
+  per-second decay; breach ids were renumbered `1..n` every frame; there was no
+  cooldown after a ragdoll recovered; and the synchronization block sat inside
+  the `for (const member of this.crew)` loop.
+- Solution: `damp = exp(-1.2 * dt)`; a zero-length or non-finite ragdoll step is
+  skipped instead of dividing by `dt`; `Hole.breachId` is assigned once and
+  reused; `ragdollCooldown = 6 s` after recovery; and the breach write-back plus
+  the fully-patched-hole filter now run once per frame after the crew loop.
+- Verification: `tests/ragdoll-physics.test.mjs` and the new suite pass with the
+  dt guard, and `tests/stormworks-supervisor.test.mjs` still proves that the
+  autonomous crew seals a deck breach after the sync refactor.
+- Prevention: The cooldown and the stable ids are commented at their definition
+  sites, and the supervisor sync loop is no longer nested in the crew loop.
+- Related files / skills: `.../game/ragdoll.ts`, `.../game/crew.ts`,
+  `.../game/stormworksSupervisor.ts`, `.../game/shipTypes.ts`,
+  `tests/ragdoll-physics.test.mjs`, `tests/stormworks-supervisor.test.mjs`,
+  `error-fix-document`.
+
+
 ## Open incidents
 
 None at this revision. Add a new entry before merging any future fix, even when

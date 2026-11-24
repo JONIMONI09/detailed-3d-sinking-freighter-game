@@ -60,7 +60,9 @@ void main(){
   float foamHull = 0.0;
   if (uShipOn > 0.5) {
     vec3 lp = (uShipInv * vec4(vWorld,1.0)).xyz;
-    float wf = 1.0 - 0.5*smoothstep(-3.5,-6.5,lp.y);
+    // smoothstep requires edge0 < edge1; the hull tapers to 55 % of its width
+    // between the waterline and the keel.
+    float wf = 1.0 - 0.5*smoothstep(3.5, 6.5, -lp.y);
     float hw = hullW(lp.z)*wf;
     if (lp.y < 2.95 && lp.y > -7.0 && lp.z > -70.0 && abs(lp.x) < hw - 0.12) discard;
     float dd = abs(lp.x) - hw;

@@ -16,11 +16,11 @@ import { rayAABB } from "./physics";
 import { DoorSecurity, TerminalEntry, TerminalLog } from "./doorSecurity";
 import type { SecurityContext } from "./doorSecurity";
 import { StormworksSupervisor } from "./stormworksSupervisor";
-import { stepTelegraph, MAX_RUDDER_DEG, TELEGRAPH_SPEED } from "./bridge";
+import { stepTelegraph, vesselForward, MAX_RUDDER_DEG, TELEGRAPH_SPEED } from "./bridge";
 import { shouldWindowBurst } from "./ingress";
 import { v3 } from "./navmesh3d";
 import { CrewVisual } from "./crewVisual";
-import { Battleship, createBattleship, stepBattleship, stepBattleshipAI, damageBattleship, fireBattleshipSalvo } from "./battleships";
+import { Battleship, battleshipHitTest, createBattleship, stepBattleship, stepBattleshipAI, damageBattleship, fireBattleshipSalvo } from "./battleships";
 import { OrbitalSpaceStationSim, STATION_BASE_Y } from "./spaceStation";
 
 export type Mode = "mission" | "sandbox";
@@ -751,17 +751,20 @@ export class Game {
       const awayZ = this.ship.group.position.z - bs.baseZ;
       const dist = Math.hypot(awayX, awayZ);
       const desiredHeading = dist > 200
-        ? Math.atan2(-awayX, -awayZ) + Math.PI * 0.55 // circle back into combat range
-        : Math.atan2(-awayX, -awayZ); // flee away
+        ? Math.atan2(awayX, awayZ) + Math.PI * 0.55 // circle back into combat range
+        : Math.atan2(awayX, awayZ); // flee away
       let hDiff = desiredHeading - this.supervisor.helm.heading;
       while (hDiff > Math.PI) hDiff -= Math.PI * 2;
       while (hDiff < -Math.PI) hDiff += Math.PI * 2;
       this.supervisor.helm.telegraph = "half-ahead";
-      this.supervisor.helm.rudderCmd = Math.max(-MAX_RUDDER_DEG, Math.min(MAX_RUDDER_DEG, (hDiff * 180) / Math.PI));
+      // Starboard rudder lowers the heading, so a positive heading error needs
+      // negative (port) rudder order to cancel out.
+      this.supervisor.helm.rudderCmd = Math.max(-MAX_RUDDER_DEG, Math.min(MAX_RUDDER_DEG, -(hDiff * 180) / Math.PI));
     }
 
-    // Real vessel propulsion and rudder steering
-    const forward = v3(-Math.sin(this.supervisor.helm.heading), 0, -Math.cos(this.supervisor.helm.heading));
+    // Real vessel propulsion along the modelled bow (local +Z)
+    const bow = vesselForward(this.supervisor.helm.heading);
+    const forward = v3(bow.x, 0, bow.z);
     this.ship.group.position.addScaledVector(forward, this.supervisor.helm.speed * dt);
     this.ship.group.updateMatrixWorld(true);
 
@@ -867,7 +870,7 @@ export class Game {
 
       const localHit = this.ship.group.worldToLocal(proj.pos.clone());
       const hitFreighter = Math.abs(localHit.x) < 11.5 && Math.abs(localHit.z) < 66 && localHit.y > -7 && localHit.y < 10;
-      const hitBs = this.battleships.find((bs, bi) => bi > 0 && !bs.sunk && proj.pos.distanceTo(bs.group.position) < 14);
+      const hitBs = this.battleships.find((bs, bi) => bi > 0 && !bs.sunk && battleshipHitTest(bs, proj.pos));
       const hitWater = proj.kind === "shell" && proj.pos.y <= this.ocean.height(proj.pos.x, proj.pos.z, t);
       if (hitFreighter || hitBs || hitWater || proj.life <= 0) {
         if (hitFreighter) {
@@ -1689,7 +1692,10 @@ export class Game {
       this.shatterIntoPieces(V(tx, 4, tz), 0x475569, 90);
       this.sim.sinking = true;
       this.sim.sunk = true;
-      for (const c of this.ship.compartments) c.fill = 1;
+      for (const c of this.ship.compartments) {
+        c.water = c.volume;
+        c.fill = 1;
+      }
       this.say("☄️ ORBITAL DEATH RAY RIPPED APART & SUNK FREIGHTER NORDWIND!", "alert");
     } else if (shipDist < 65) {
       // Even if already sinking, keep tearing off remaining bridge/hull plates under the beam!
