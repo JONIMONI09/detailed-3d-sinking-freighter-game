@@ -80,7 +80,7 @@ function testVesselPropulsionAndSteeringKinematics() {
     bridge.stepHelm(helm, 0.1, shipLength, true);
   }
   assert.equal(helm.rudderDeg, 25, 'Rudder must reach commanded +25 deg angle');
-  assert.ok(helm.heading > 0, `Heading must yaw to starboard (> 0), got ${helm.heading} rad`);
+  assert.ok(helm.heading > 0.02, `Starboard rudder must raise the heading, got ${helm.heading} rad`);
 
   // Update ShipSim with turned heading and verify bow rotates to starboard (-X when facing +Z)
   // and Freighter's forward vector (-sin(heading), 0, cos(heading)) matches 3D bow orientation!

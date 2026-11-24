@@ -17,6 +17,17 @@ export const TELEGRAPH_SPEED: Readonly<Record<TelegraphOrder, number>> = {
 };
 
 export const MAX_RUDDER_DEG = 35;
+
+/**
+ * Unit vector of the bow for the Nordwind hull (bow on local +Z).
+ *
+ * The ship quaternion applies `rotationY(-heading)`, so a positive heading
+ * swings the bow to starboard and the forward vector is `(-sin, cos)`.
+ * `stepHelm` raises the heading for a starboard rudder to stay consistent.
+ */
+export function vesselForward(heading: number): { x: number; z: number } {
+  return { x: -Math.sin(heading), z: Math.cos(heading) };
+}
 const RUDDER_RATE_DEG = 6;
 const SPEED_RESPONSE = 0.12;
 
@@ -54,7 +65,10 @@ export function stepHelm(h: HelmState, dt: number, shipLength: number, engineAva
   h.rudderDeg += Math.abs(dr) <= maxStep ? dr : Math.sign(dr) * maxStep;
   const target = engineAvailable ? (TELEGRAPH_SPEED[h.telegraph] ?? 0) : 0;
   h.speed += (target - h.speed) * (1 - Math.exp(-SPEED_RESPONSE * dt));
+  // Positive rudder is starboard; the mesh yaw is -heading, so a starboard
+  // turn raises the heading.
   h.heading += (h.speed / shipLength) * Math.tan((h.rudderDeg * Math.PI) / 180) * dt;
+  h.heading = Math.atan2(Math.sin(h.heading), Math.cos(h.heading));
 }
 
 export interface LockableDoor {

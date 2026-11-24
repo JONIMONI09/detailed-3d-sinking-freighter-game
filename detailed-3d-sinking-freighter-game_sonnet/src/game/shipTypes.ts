@@ -259,6 +259,8 @@ export interface Hole {
   nx: number;
   ny: number;
   nz: number;
+  /** Stable id for damage-control targeting (assigned by the supervisor). */
+  breachId?: number;
 }
 
 export interface Compartment {

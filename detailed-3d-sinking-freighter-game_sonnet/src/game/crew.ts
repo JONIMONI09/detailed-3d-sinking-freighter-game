@@ -79,6 +79,8 @@ export interface CrewMember {
   navPath?: Vector3Like[];
   portableLadders?: number;
   deployedLadderId?: string | null;
+  /** Seconds until another hydrodynamic ragdoll may be triggered. */
+  ragdollCooldown?: number;
   pumping?: boolean;
   swimming?: boolean;
   jumpCooldown?: number;
@@ -691,6 +693,9 @@ export function stepCrew(
     }
   }
   enforceShipBoundsAndRespawn(m);
+  if (m.ragdollCooldown !== undefined && m.ragdollCooldown > 0) {
+    m.ragdollCooldown = Math.max(0, m.ragdollCooldown - dt);
+  }
 
   if ((m.yieldTimer ?? 0) > 0) m.yieldTimer = Math.max(0, (m.yieldTimer ?? 0) - dt);
 
@@ -775,7 +780,7 @@ export function stepCrew(
 
   // 1. Dynamic Ragdoll Evaluation (use floor-clamped ragdoll even when CollisionWorld is active)
   const floorY = ctx?.deckFloorY ?? (m.y >= 2.4 ? 3.0 : 0.1);
-  if (ctx) {
+  if (ctx && (m.ragdollCooldown ?? 0) <= 0) {
     const sensors: RagdollTriggerSensors = {
       waterVelocity: ctx.waterVelocity || v3(0, 0, 0),
       blastImpulse: ctx.blastImpulse || 0,
@@ -817,6 +822,9 @@ export function stepCrew(
       m.isRagdoll = false;
       m.fallRecovery = false;
       m.ragdoll.active = false;
+      // Without a cooldown the still-raging water flow re-triggered the ragdoll
+      // on the very next frame and flooded the log with one event per step.
+      m.ragdollCooldown = 6;
       m.y = ragFloor;
       m.navWaypoint = null;
       enter(m, resumeState);

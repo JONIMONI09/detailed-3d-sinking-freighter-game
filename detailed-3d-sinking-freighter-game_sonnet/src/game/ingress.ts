@@ -2,8 +2,9 @@
  * Physical water ingress rules: water may only enter through real openings,
  * and sealed compartments trap an air pocket that resists inflow (Boyle).
  *
- * Pure functions. They are prototypes for the flooding model and are not wired
- * into shipSim.ts, whose equations must stay unchanged.
+ * Pure functions used by the live flooding model: ShipSim's Torricelli inflow is
+ * scaled by `inflowFactor` for sealed compartments (the supervisor owns the
+ * pockets), while `shouldWindowBurst` gates glass failure.
  */
 
 export const WATER_DENSITY = 1025;

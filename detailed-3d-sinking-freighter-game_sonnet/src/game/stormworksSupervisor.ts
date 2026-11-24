@@ -59,6 +59,7 @@ export class StormworksSupervisor {
   fractureJoint = -1;
   activeWaterVelocity = v3(0, 0, 0);
   engineDestroyed = false;
+  private breachIdSeq = 0;
 
   destroyEngine(): void {
     this.engineDestroyed = true;
@@ -120,21 +121,30 @@ export class StormworksSupervisor {
     // 1. Modulate flood speed with sandbox dial
     const currentFloodRate = effectiveFloodSpeed(this.sandbox, baseFloodSpeed);
 
-    // 2. Trapped air pocket ingress regulation (Boyle's law)
-    for (const c of this.compartments) {
+    // 2. Trapped air pocket ingress regulation (Boyle's law).
+    //    The regulator has to reach ShipSim *while* it computes the Torricelli
+    //    inflow. Scaling c.flow before sim.update() did nothing, because the
+    //    simulation recomputes c.flow from scratch on every step.
+    const mw = this.sim.group?.matrixWorld?.elements;
+    const regulator = (c: Compartment): number => {
       const pocket = this.airPockets.get(c.id);
-      if (pocket && !pocket.vented) {
-        const avgHoleDepth = c.holes.length > 0
-          ? c.holes.reduce((sum, h) => sum + Math.max(0, -this.sim.worldY(h.pos.x, h.pos.y, h.pos.z)), 0) / c.holes.length
-          : 3.0;
-
-        const factor = inflowFactor(pocket, c.water, avgHoleDepth);
-        c.flow *= factor;
+      if (!pocket || pocket.vented || c.holes.length === 0) return 1;
+      let depthSum = 0;
+      for (const h of c.holes) {
+        const wy = this.sim.worldY(h.pos.x, h.pos.y, h.pos.z);
+        let seaY = 0;
+        if (mw) {
+          const wx = mw[0] * h.pos.x + mw[4] * h.pos.y + mw[8] * h.pos.z + mw[12];
+          const wz = mw[2] * h.pos.x + mw[6] * h.pos.y + mw[10] * h.pos.z + mw[14];
+          seaY = ocean.height(wx, wz, time);
+        }
+        depthSum += Math.max(0, seaY - wy);
       }
-    }
+      return inflowFactor(pocket, c.water, depthSum / c.holes.length);
+    };
 
     // 3. Step ShipSim physics
-    this.sim.update(dt, time, ocean, currentFloodRate);
+    this.sim.update(dt, time, ocean, currentFloodRate, regulator);
 
     // 4. Euler-Bernoulli Longitudinal Girder Stress & Keel Fracture Evaluation
     const girder = this.calculateHullGirderStress();
@@ -156,15 +166,18 @@ export class StormworksSupervisor {
 
     // 6. Gather active hull breaches for crew repairs
     const breaches: CrewBreach[] = [];
-    let breachId = 1;
     for (const c of this.compartments) {
       const isEngine = c.id === "engine";
       for (const h of c.holes) {
+        // Hole ids must survive other repairs: a running crew member targets a
+        // breach id across frames, so renumbering every frame made it chase the
+        // wrong hole as soon as any other hole was patched.
+        const id = h.breachId ?? (h.breachId = ++this.breachIdSeq);
         const wy = this.sim.worldY(h.pos.x, h.pos.y, h.pos.z);
         const head = Math.max(0.5, -wy);
         const qh = 0.6 * h.area * Math.sqrt(2 * 9.81 * head);
         breaches.push({
-          id: breachId++,
+          id,
           x: h.pos.x,
           y: h.pos.y,
           z: h.pos.z,
@@ -207,19 +220,23 @@ export class StormworksSupervisor {
       if (ev) {
         console.log(`[NORDWIND/CREW] ${member.name} (${member.role}) -> ${ev} at (${member.x.toFixed(1)}, ${member.y.toFixed(1)}, ${member.z.toFixed(1)}) [kits=${member.patchKits}, breaches=${breaches.length}]`);
       }
+    }
 
-      // Synchronize repaired breach areas back to hole geometry
-      for (const b of breaches) {
-        for (const c of this.compartments) {
-          for (const h of c.holes) {
-            if (Math.hypot(h.pos.x - b.x, h.pos.y - b.y, h.pos.z - b.z) < 0.1) {
-              h.area = b.area;
-            }
+    // Synchronize repaired breach areas back to hole geometry. This used to run
+    // inside the crew loop, i.e. three times per frame with a hole filter nested
+    // inside the compartment loop.
+    for (const b of breaches) {
+      for (const c of this.compartments) {
+        for (const h of c.holes) {
+          if (Math.hypot(h.pos.x - b.x, h.pos.y - b.y, h.pos.z - b.z) < 0.1) {
+            h.area = b.area;
           }
-          // Remove fully patched holes
-          c.holes = c.holes.filter((h) => h.area > 0.01);
         }
       }
+    }
+    // Remove fully patched holes (once per frame).
+    for (const c of this.compartments) {
+      c.holes = c.holes.filter((h) => h.area > 0.01);
     }
   }
 

@@ -16,7 +16,7 @@ import { rayAABB } from "./physics";
 import { DoorSecurity, TerminalEntry, TerminalLog } from "./doorSecurity";
 import type { SecurityContext } from "./doorSecurity";
 import { StormworksSupervisor } from "./stormworksSupervisor";
-import { stepTelegraph, MAX_RUDDER_DEG, TELEGRAPH_SPEED } from "./bridge";
+import { stepTelegraph, vesselForward, MAX_RUDDER_DEG, TELEGRAPH_SPEED } from "./bridge";
 import { shouldWindowBurst } from "./ingress";
 import { v3 } from "./navmesh3d";
 import { createCrewMember, stepCrew, type CrewMember } from "./crew";
@@ -1113,11 +1113,14 @@ export class Game {
       while (hDiff > Math.PI) hDiff -= Math.PI * 2;
       while (hDiff < -Math.PI) hDiff += Math.PI * 2;
       this.supervisor.helm.telegraph = "half-ahead";
+      // Positive rudder is starboard and raises the heading, so a positive
+      // heading error is corrected with a positive (starboard) order.
       this.supervisor.helm.rudderCmd = Math.max(-MAX_RUDDER_DEG, Math.min(MAX_RUDDER_DEG, (hDiff * 180) / Math.PI));
     }
 
-    // Real vessel propulsion and rudder steering (Freighter bow is +Z; qYaw uses -heading)
-    const forward = v3(-Math.sin(this.supervisor.helm.heading), 0, Math.cos(this.supervisor.helm.heading));
+    // Real vessel propulsion along the modelled bow (local +Z, mesh yaw = -heading)
+    const bow = vesselForward(this.supervisor.helm.heading);
+    const forward = v3(bow.x, 0, bow.z);
     this.ship.group.position.addScaledVector(forward, this.supervisor.helm.speed * dt);
     this.ship.group.updateMatrixWorld(true);
 
